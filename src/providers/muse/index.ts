@@ -2,7 +2,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { BrowserContext, ElementHandle, Page } from "playwright";
 import type { AppConfig } from "../../core/config";
-import { hammingDistance } from "../../core/ffmpeg";
 import { ProviderError, type GeneratedImage, type GeneratedVideo, type MediaProvider, type ProviderContext } from "../types";
 import { createAccountPool, type AccountPool, type MuseAccount } from "./accounts";
 import { launchProfile } from "./browser";
@@ -32,7 +31,7 @@ import { validateVideoProbe } from "./validate";
 const SCAN_INTERVAL_MS = 3_000;
 const STABLE_CHECKS = 2;
 const MIN_IMAGE_SIDE = 512;
-const SAME_IMAGE_MAX_BITS = 6;
+const OWN_BUBBLE_SETTLE_MS = 2_000;
 const REFUSAL_GRACE_MS = 25_000;
 
 export function videoWaitMs(durationSec: number): number {
@@ -212,7 +211,6 @@ async function acceptCandidate(
   bytes: Uint8Array,
   ctx: ProviderContext,
   accId: string,
-  attachmentHashes: bigint[],
   reasons: string[],
 ): Promise<Omit<Accepted, "threadUrl" | "accountId"> | null> {
   const tmp = await ctx.storage.writeTemp(bytes, job.kind === "video" ? "mp4" : "img");
@@ -236,12 +234,6 @@ async function acceptCandidate(
   const probe = await ctx.ffmpeg.probeImage(tmp).catch(() => null);
   if (!probe || Math.min(probe.width, probe.height) < MIN_IMAGE_SIDE) {
     reasons.push(probe ? `ảnh quá nhỏ ${probe.width}x${probe.height}` : "không phải file ảnh");
-    await ctx.storage.removeTemp(tmp);
-    return null;
-  }
-  const hash = await ctx.ffmpeg.averageHash(tmp);
-  if (attachmentHashes.some((h) => hammingDistance(h, hash) <= SAME_IMAGE_MAX_BITS)) {
-    reasons.push("trùng ảnh đính kèm (không phải ảnh mới tạo)");
     await ctx.storage.removeTemp(tmp);
     return null;
   }
@@ -289,14 +281,12 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
     throw err;
   }
 
-  const attachmentHashes: bigint[] = [];
   for (const [i, file] of job.attachments.entries()) {
     ctx.report(`Đính kèm ảnh ${i + 1}/${job.attachments.length}…`);
     await attachFile(page, file, ctx.signal);
-    attachmentHashes.push(await ctx.ffmpeg.averageHash(file));
   }
 
-  const preSrcs = await page.evaluate<string[]>(callJs(MARK_EXISTING_MEDIA_JS));
+  const preSrcs: string[] = await page.evaluate<string[]>(callJs(MARK_EXISTING_MEDIA_JS));
   for (const s of preSrcs) preNet.add(s);
   const preText = await page.evaluate<string>(callJs(LOG_TEXT_JS));
 
@@ -304,6 +294,8 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
   await sleep(500, ctx.signal);
   submitted = true;
   await submitPrompt(page, input, ctx.signal);
+  await sleep(OWN_BUBBLE_SETTLE_MS, ctx.signal);
+  preSrcs.push(...(await page.evaluate<string[]>(callJs(MARK_EXISTING_MEDIA_JS))));
   const threadUrl = job.threadUrl ?? (await waitThreadUrl(page, ctx.signal));
 
   const started = Date.now();
@@ -348,7 +340,7 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
       rejected.add(src);
       const bytes = await download(page, context, src);
       if (!bytes || bytes.length === 0) continue;
-      const ok = await acceptCandidate(job, bytes, ctx, acc.id, attachmentHashes, reasons);
+      const ok = await acceptCandidate(job, bytes, ctx, acc.id, reasons);
       if (ok) {
         const info = job.kind === "video" ? `${ok.width}x${ok.height} ${ok.durationSec.toFixed(1)}s` : `${ok.width}x${ok.height}`;
         ctx.report(`Đã nhận ${label} ${info} sau ${Math.round((Date.now() - started) / 1000)} giây`);

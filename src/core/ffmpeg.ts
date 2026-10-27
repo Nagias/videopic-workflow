@@ -21,41 +21,7 @@ export type Ffmpeg = {
   measureLuma(video: string, atSec: number): Promise<number>;
   stabilizeBrightness(input: string, out: string, opts: { startLuma: number; endLuma: number; durationSec: number }): Promise<void>;
   concatClips(parts: ConcatPart[], out: string): Promise<void>;
-  averageHash(imageOrVideo: string): Promise<bigint>;
 };
-
-export function hammingDistance(a: bigint, b: bigint): number {
-  let x = a ^ b;
-  let n = 0;
-  while (x > 0n) {
-    n += Number(x & 1n);
-    x >>= 1n;
-  }
-  return n;
-}
-
-function runBuffer(bin: string, args: string[], timeoutMs: number): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-    const chunks: Buffer[] = [];
-    let stderr = "";
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error(`${bin} chạy quá ${Math.round(timeoutMs / 1000)} giây, đã dừng`));
-    }, timeoutMs);
-    child.stdout.on("data", (d: Buffer) => chunks.push(d));
-    child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(new Error(`Không chạy được ${bin} (${err.message})`));
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve(Buffer.concat(chunks));
-      else reject(new Error(`${bin} lỗi (mã ${code}): ${stderr.trim().split("\n").slice(-2).join(" | ")}`));
-    });
-  });
-}
 
 type RunResult = { stdout: string; stderr: string };
 
@@ -206,18 +172,6 @@ export function createFfmpeg(paths: { ffmpegPath: string; ffprobePath: string })
       });
       filters.push(`${labels.join("")}concat=n=${parts.length}:v=1:a=1[v][a]`);
       await ff([...inputs, "-filter_complex", filters.join(";"), "-map", "[v]", "-map", "[a]", ...ENCODE_V, ...ENCODE_A, "-movflags", "+faststart", out], 900_000);
-    },
-
-    async averageHash(file) {
-      const buf = await runBuffer(
-        paths.ffmpegPath,
-        ["-v", "error", "-i", file, "-frames:v", "1", "-vf", "scale=8:8:flags=area,format=gray", "-f", "rawvideo", "-"],
-        30_000,
-      );
-      if (buf.length < 64) throw new Error(`Không tính được dấu vân tay ảnh ${file}`);
-      const px = [...buf.subarray(0, 64)];
-      const avg = px.reduce((s, v) => s + v, 0) / 64;
-      return px.reduce((h, v) => (h << 1n) | (v >= avg ? 1n : 0n), 0n);
     },
   };
 }

@@ -55,10 +55,10 @@ ta.addEventListener('keydown', (e) => {
 </script></body></html>`;
 
 const OLD_VIDEO = `<div class="message"><video src="/old.mp4" width="640" muted preload="metadata"></video></div>`;
-const videoPage = (menu: string, extra: string) => shell(menu, OLD_VIDEO, `${extra} say('<video src="/new.mp4" width="640" muted preload="metadata"></video>', 1500);`);
-const imageOk = `say('<img src="/gen.jpg" width="640">', 1500);`;
-const imageRefuse = `say('<p>Xin lỗi, mình không thể tạo hình ảnh này vì vi phạm nguyên tắc.</p>', 1500);`;
-const imageFail = `say('<p>Mình đã thử nhưng dịch vụ tạo ảnh đang tạm lỗi nên không tạo được lúc này.</p>', 1500);`;
+const videoPage = (menu: string, extra: string) => shell(menu, OLD_VIDEO, `${extra} say('<video src="/new.mp4" width="640" muted preload="metadata"></video>', 3500);`);
+const imageOk = `say('<img src="/gen.jpg" width="640">', 3500);`;
+const imageRefuse = `say('<p>Xin lỗi, mình không thể tạo hình ảnh này vì vi phạm nguyên tắc.</p>', 3500);`;
+const imageFail = `say('<p>Mình đã thử nhưng dịch vụ tạo ảnh đang tạm lỗi nên không tạo được lúc này.</p>', 3500);`;
 
 test.describe("Muse provider trên trang Muse giả (không tốn lượt thật)", () => {
   let env: TestEnv;
