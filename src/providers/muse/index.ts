@@ -324,13 +324,13 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
 
     if (srcs.length === 0 && Date.now() - started > REFUSAL_GRACE_MS) {
       const reply = replyAfterPrompt(await page.evaluate<string>(callJs(LOG_TEXT_JS)), job.text, preText);
+      const failure = findMuseFailure(reply);
+      if (failure) throw new ProviderError("MUSE_FAILED", `Muse báo lỗi khi tạo ${label}: "${failure}". Thường là lỗi tạm phía Muse — chạy lại sau.`);
       const refusal = findRefusal(reply);
       if (refusal && refusalSeen === refusal) {
         throw new ProviderError("REFUSED", `Muse từ chối tạo ${label}: "${refusal}". Thử viết lại prompt nhẹ nhàng hơn.`);
       }
       refusalSeen = refusal;
-      const failure = findMuseFailure(reply);
-      if (failure) throw new ProviderError("MUSE_FAILED", `Muse báo lỗi khi tạo ${label}: "${failure}". Thường là lỗi tạm phía Muse — chạy lại sau.`);
     }
 
     for (const src of srcs) {
@@ -338,7 +338,10 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
       seen.set(src, n);
       if (n < STABLE_CHECKS) continue;
       rejected.add(src);
-      const bytes = await download(page, context, src);
+      const bytes = await download(page, context, src).catch((err: unknown) => {
+        reasons.push(`không tải được ${label} (${err instanceof Error ? err.message.split("\n")[0] : String(err)})`);
+        return null;
+      });
       if (!bytes || bytes.length === 0) continue;
       const ok = await acceptCandidate(job, bytes, ctx, acc.id, reasons);
       if (ok) {

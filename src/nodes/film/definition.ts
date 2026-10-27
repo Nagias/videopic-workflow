@@ -5,6 +5,7 @@ import { PROVIDER_IDS } from "../../shared/providers";
 export const SHOT_SECONDS = 5;
 export const CHAIN_TRIM_SEC = 2 / 24;
 export const LAST_FRAME_FROM_END_SEC = 0.2;
+export const SERVICE_FAILURE_LIMIT = 3;
 
 export const params = z.object({
   provider: z.enum(PROVIDER_IDS, { error: "Chưa chọn dịch vụ" }),

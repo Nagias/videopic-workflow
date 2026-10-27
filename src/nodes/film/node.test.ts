@@ -92,4 +92,18 @@ describe("node film (Dựng phim)", () => {
     expect(referencesFor(shot("a"), character, location).map((r) => r.role)).toEqual(["character", "character", "location"]);
     expect(referencesFor(shot("b", { subject: "none" }), character, location).map((r) => r.role)).toEqual(["location", "location"]);
   });
+
+  it("cầu dao: máy chủ video lỗi 3 lần thì không gửi thêm, cảnh còn lại bỏ qua kèm lý do", async () => {
+    const counter = countingFakeProviders({ failVideoWhen: () => true, failCode: "MUSE_FAILED" });
+    const { character, location } = await refs(counter.providers);
+    const sizes = ["WS", "MS", "CU", "WS", "MS", "CU"] as const;
+    const shots = sizes.map((size, i) => shot(`b${i}`, { size, subject: "none" }));
+    const partials: NodeOutputs[] = [];
+    const ctx = testNodeCtx(env, counter.providers, [], partials);
+    await expect(run(ctx, { character, location, shots: { kind: "shotlist", shots } }, { provider: "fake", fixBrightness: false })).rejects.toThrow(/6\/6 cảnh chưa xong/);
+    expect(counter.log.video).toBeLessThanOrEqual(4);
+    const last = partials.at(-1)?.storyboard;
+    const board = last?.kind === "storyboard" ? last.shots : [];
+    expect(board.filter((b) => b.status === "skipped" && /Dừng: dịch vụ báo lỗi máy chủ 3 lần/.test(b.error ?? "")).length).toBeGreaterThanOrEqual(2);
+  });
 });

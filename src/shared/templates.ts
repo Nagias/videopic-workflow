@@ -11,7 +11,7 @@ const SHOTS: Shot[] = [
   { id: "c01", size: "EWS", angle: "aerial", move: "drone", subject: "none", link: "cut", action: "Early morning mist over the forested hillside, the small tent on the ledge and the stream below" },
   { id: "c02", size: "WS", angle: "eye", move: "handheld", subject: "character", link: "cut", action: "She walks up the slope from the stream toward the tent, carrying a small axe and a bundle of dry branches" },
   { id: "c03", size: "MS", angle: "eye", move: "static", subject: "character", link: "cut", action: "She sets a short log upright on a tree stump next to the tent and raises the axe with both hands" },
-  { id: "c04", size: "INSERT", angle: "high", move: "static", subject: "character", link: "cut", action: "The axe blade splits the log in half, wood chips fly, her hands grip the handle" },
+  { id: "c04", size: "INSERT", angle: "high", move: "static", subject: "none", link: "cut", action: "Close-up of a short firewood log on a tree stump falling apart into two clean halves, fresh pale wood chips scattered on the moss" },
   { id: "c05", size: "MS", angle: "low", move: "handheld", subject: "character", link: "cut", action: "She keeps splitting logs with steady swings, then wipes sweat from her forehead with her forearm" },
   { id: "c06", size: "MS", angle: "low", move: "static", subject: "character", link: "chain", action: "She bends down, gathers the split firewood into her arms and stands up" },
   { id: "c07", size: "CU", angle: "eye", move: "pan", subject: "none", link: "cut", action: "Clear water of the mountain stream flowing over mossy rocks, sunlight sparkling" },

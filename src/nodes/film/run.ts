@@ -1,8 +1,14 @@
 import { requireInput, type NodeRun, type NodeRunContext } from "../../core/node-runtime";
-import type { ChatSessionRef, ImageReference, MediaProvider, ProviderContext } from "../../providers/types";
+import { ProviderError, type ChatSessionRef, type ImageReference, type MediaProvider, type ProviderContext } from "../../providers/types";
 import { checkShotList, composeInChatKeyframePrompt, composeKeyframePrompt, composeMotionPrompt, type Shot } from "../../shared/director";
 import type { ImageSetValue, StoryboardShot } from "../../shared/ports";
-import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC, SHOT_SECONDS, type FilmParams } from "./definition";
+import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC, SERVICE_FAILURE_LIMIT, SHOT_SECONDS, type FilmParams } from "./definition";
+
+class ServiceBreakerOpen extends Error {
+  constructor() {
+    super(`Dừng: dịch vụ báo lỗi máy chủ ${SERVICE_FAILURE_LIMIT} lần — không gửi thêm để tránh tốn lượt. Bấm Chạy lại khi dịch vụ ổn (cảnh đã xong được giữ).`);
+  }
+}
 
 type FinishedShot = { clipId: string; durationSec: number; trimStartSec: number; hasAudio: boolean };
 
@@ -70,6 +76,10 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
   };
   const sem = semaphore(Math.max(1, provider.maxParallel()));
   const characterChat = semaphore(1);
+  let serviceFailures = 0;
+  const ensureServiceUp = () => {
+    if (serviceFailures >= SERVICE_FAILURE_LIMIT) throw new ServiceBreakerOpen();
+  };
   let session: ChatSessionRef | undefined = character.session;
   const locationRefs = location.images.filter((x) => x.view === "wide").map((x) => ({ mediaId: x.mediaId, role: location.role }));
 
@@ -78,8 +88,10 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
     const fallbackRefs = referencesFor(shot, character, location);
     const fallbackPrompt = composeKeyframePrompt(shot, character.description, location.description);
     return ctx.step(["keyframe-chat", provider.id, prompt, character.images.map((x) => x.mediaId), locationRefs.map((x) => x.mediaId)], async () => {
+      ensureServiceUp();
       await characterChat.acquire();
       try {
+        ensureServiceUp();
         const img = await provider.generateImage(
           { prompt, references: locationRefs, session: session ?? "new", fallback: { prompt: fallbackPrompt, references: fallbackRefs } },
           shotCtx(i),
@@ -123,6 +135,7 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
               : await ctx.step(
                 ["keyframe", provider.id, composeKeyframePrompt(shot, character.description, location.description), referencesFor(shot, character, location)],
                 async () => {
+                  ensureServiceUp();
                   const img = await provider.generateImage(
                     { prompt: composeKeyframePrompt(shot, character.description, location.description), references: referencesFor(shot, character, location) },
                     shotCtx(i),
@@ -135,6 +148,7 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
 
           const motion = composeMotionPrompt(shot);
           const clip = await ctx.step(["clip", provider.id, motion, keyframe.mediaId, SHOT_SECONDS], async () => {
+            ensureServiceUp();
             const v = await provider.generateVideo({ prompt: motion, durationSec: SHOT_SECONDS, firstFrameMediaId: keyframe.mediaId }, shotCtx(i));
             return { mediaId: v.mediaId, durationSec: v.durationSec };
           });
@@ -147,7 +161,9 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
           const trim = shot.link === "chain" ? CHAIN_TRIM_SEC : 0;
           return { clipId: finalId, trimStartSec: trim, durationSec: Math.min(probe.durationSec, SHOT_SECONDS) - trim, hasAudio: probe.hasAudio };
         } catch (err) {
-          board[i] = { ...board[i]!, status: "failed", error: err instanceof Error ? err.message : String(err) };
+          if (err instanceof ProviderError && err.code === "MUSE_FAILED") serviceFailures++;
+          const tripped = err instanceof ServiceBreakerOpen;
+          board[i] = { ...board[i]!, status: tripped ? "skipped" : "failed", error: err instanceof Error ? err.message : String(err) };
           publish();
           throw err;
         } finally {

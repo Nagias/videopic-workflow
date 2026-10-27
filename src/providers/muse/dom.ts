@@ -20,7 +20,7 @@ export const NEW_SIDE_CHAT_IN_MENU_SELECTORS = ['text="New side chat"', 'text="�
 
 // Muse không từ chối mà báo lỗi trong chat (đo 27/10/2026: "dịch vụ tạo video đang tạm lỗi", "gặp lỗi hệ thống bất ngờ").
 export const MUSE_FAILURE_RE =
-  /(tạm lỗi|lỗi hệ thống|gặp lỗi|chưa hoàn thành được|không tạo được lúc này|something went wrong|failed to (create|generate))/i;
+  /(tạm lỗi|lỗi hệ thống|gặp lỗi|quá tải|lỗi phía máy chủ|máy chủ.{0,20}lỗi|không khả dụng|chưa hoàn thành được|không tạo được lúc này|something went wrong|failed to (create|generate))/i;
 
 export const SEND_BUTTON_SELECTOR = "button[aria-label*='send' i], button[aria-label*='gửi' i]";
 export const ALLOW_BUTTON_SELECTOR = "[role=log] button:text-is('Cho phép'), [role=log] button:text-is('Allow')";

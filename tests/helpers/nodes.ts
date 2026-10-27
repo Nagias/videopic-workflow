@@ -4,7 +4,7 @@ import type { Storage } from "../../src/core/storage";
 import type { NodeOutputs } from "../../src/shared/ports";
 import { serverNodes } from "../../src/nodes/registry.server";
 import { createFakeProvider } from "../../src/providers/fake";
-import type { MediaProvider, ProviderRegistry } from "../../src/providers/types";
+import { ProviderError, type MediaProvider, type ProviderRegistry } from "../../src/providers/types";
 import type { WorkflowGraph } from "../../src/shared/workflow";
 
 export const testNodes: Record<string, ServerNode> = serverNodes;
@@ -40,7 +40,7 @@ export function testNodeCtx(
 
 export type CallLog = { video: number; image: number; videoPrompts: string[]; firstFrames: (string | undefined)[]; imagePrompts: string[]; imageSessions: string[] };
 
-export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean } = {}): {
+export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string } = {}): {
   providers: ProviderRegistry;
   calls: () => number;
   log: CallLog;
@@ -54,7 +54,9 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
       log.video++;
       log.videoPrompts.push(req.prompt);
       log.firstFrames.push(req.firstFrameMediaId);
-      if (opts.failVideoWhen?.(req.prompt)) return Promise.reject(new Error("Lỗi giả lập của dịch vụ"));
+      if (opts.failVideoWhen?.(req.prompt)) {
+        return Promise.reject(opts.failCode ? new ProviderError(opts.failCode, "Lỗi máy chủ giả lập") : new Error("Lỗi giả lập của dịch vụ"));
+      }
       return fake.generateVideo(req, ctx);
     },
     generateImage: (req, ctx) => {
