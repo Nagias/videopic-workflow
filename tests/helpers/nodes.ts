@@ -1,25 +1,33 @@
-import { serverNode, type ServerNode } from "../../src/core/node-runtime";
-import { definition as genDef } from "../../src/nodes/generate-video/definition";
-import { run as genRun } from "../../src/nodes/generate-video/run";
-import { definition as promptDef } from "../../src/nodes/prompt/definition";
-import { run as promptRun } from "../../src/nodes/prompt/run";
+import type { ServerNode } from "../../src/core/node-runtime";
+import { serverNodes } from "../../src/nodes/registry.server";
 import { createFakeProvider } from "../../src/providers/fake";
-import type { ProviderRegistry, VideoProvider } from "../../src/providers/types";
+import type { MediaProvider, ProviderRegistry } from "../../src/providers/types";
 import type { WorkflowGraph } from "../../src/shared/workflow";
 
-export const testNodes: Record<string, ServerNode> = {
-  prompt: serverNode(promptDef, promptRun),
-  "generate-video": serverNode(genDef, genRun),
-};
+export const testNodes: Record<string, ServerNode> = serverNodes;
 
-export function countingFakeProviders(): { providers: ProviderRegistry; calls: () => number } {
+export type CallLog = { video: number; image: number; videoPrompts: string[]; firstFrames: (string | undefined)[] };
+
+export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean } = {}): {
+  providers: ProviderRegistry;
+  calls: () => number;
+  log: CallLog;
+} {
   const fake = createFakeProvider();
-  let n = 0;
-  const counted: VideoProvider = {
+  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [] };
+  const counted: MediaProvider = {
     id: "fake",
+    maxParallel: () => 2,
     generateVideo: (req, ctx) => {
-      n++;
+      log.video++;
+      log.videoPrompts.push(req.prompt);
+      log.firstFrames.push(req.firstFrameMediaId);
+      if (opts.failVideoWhen?.(req.prompt)) return Promise.reject(new Error("Lỗi giả lập của dịch vụ"));
       return fake.generateVideo(req, ctx);
+    },
+    generateImage: (req, ctx) => {
+      log.image++;
+      return fake.generateImage(req, ctx);
     },
   };
   return {
@@ -29,7 +37,8 @@ export function countingFakeProviders(): { providers: ProviderRegistry; calls: (
         return counted;
       },
     },
-    calls: () => n,
+    calls: () => log.video,
+    log,
   };
 }
 

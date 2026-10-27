@@ -55,6 +55,38 @@ export const FIND_NEW_VIDEO_JS = `([preSrcs, rejected]) => {
   return out;
 }`;
 
+export const FIND_NEW_IMAGE_JS = `([preSrcs, rejected]) => {
+  const pre = new Set(preSrcs), bad = new Set(rejected);
+  const logs = [...document.querySelectorAll('[role=log]')];
+  const inChat = el => logs.length ? logs.some(l => l.contains(el)) : !!el.closest("[class*='message'], [class*='bubble']");
+  const isAvatar = el => !!el.closest("[class*='rounded-full'], [class*='avatar'], [class*='landing']");
+  const out = [];
+  for (const i of document.querySelectorAll('img')) {
+    const src = i.currentSrc || i.src;
+    if (!src || i.hasAttribute('data-vp-pre') || pre.has(src) || bad.has(src) || isAvatar(i) || !inChat(i)) continue;
+    if (!i.complete || i.naturalWidth < 512 || i.naturalHeight < 288) continue;
+    out.push({ src, how: 'img' });
+  }
+  return out;
+}`;
+
+export const COMPOSER_ATTACHMENT_COUNT_JS = `() => {
+  const ta = document.querySelector("textarea[aria-label='Message'], textarea");
+  if (!ta) return -1;
+  let box = ta;
+  for (let i = 0; i < 6 && box.parentElement; i++) box = box.parentElement;
+  const imgs = box.querySelectorAll('img').length;
+  const removers = [...box.querySelectorAll('button, [role=button]')].filter(b => /remove|xóa|xoá|delete/i.test(b.getAttribute('aria-label') || '')).length;
+  return imgs + removers;
+}`;
+
+export const LOG_TEXT_JS = `() => [...document.querySelectorAll('[role=log]')].map(l => l.innerText || '').join('\\n')`;
+
+export const ATTACH_BUTTON_SELECTOR = "[aria-label='Attach file'], [aria-label='Add attachment'], [aria-label='Đính kèm tệp']";
+
+export const REFUSAL_RE =
+  /(mình không thể|tôi không thể|không thể tạo|không được phép|vi phạm (chính sách|nguyên tắc)|i can['’]t (help|create|generate|make)|i cannot (help|create|generate|make)|i['’]m (not able|unable) to|unable to (create|generate)|against (our|my) (policy|policies|guidelines))/i;
+
 export const LOGIN_WALL_JS = `() => {
   const url = location.href.toLowerCase();
   if (/login|signin|sign-in|auth|accounts\\./.test(url)) return true;
