@@ -16,10 +16,10 @@ Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 window.chrome = window.chrome || { runtime: {} };
 `;
 
-export async function launchProfile(profileDir: string, headless: boolean): Promise<BrowserContext> {
+export async function launchProfile(profileDir: string, headless: boolean, channel: "chrome" | "msedge" | "chromium" = "chrome"): Promise<BrowserContext> {
   try {
     const context = await chromium.launchPersistentContext(profileDir, {
-      channel: "chrome",
+      channel: channel === "chromium" ? undefined : channel,
       headless,
       args: CHROME_ARGS,
       ignoreDefaultArgs: ["--enable-automation"],

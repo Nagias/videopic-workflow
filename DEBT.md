@@ -13,6 +13,10 @@ Trả nợ xong: chuyển dòng xuống mục "Đã trả", ghi ngày và commit
 | N-003 | Workflow chỉ có một bản mặc định (`GET /api/workflows/default`), chưa có danh sách / tạo mới / đổi tên | Bộ khung chỉ cần chứng minh luồng xuyên suốt | Muốn giữ nhiều dự án video phải chép tay | Khi bắt đầu làm video thật thứ hai | 27/10/2026 |
 | N-004 | Muse provider chưa đính kèm ảnh (chỉ text-to-video) | Đính kèm ảnh thuộc tính năng 2 (giữ nhân vật, nối khung) | Chưa giữ được mặt/sản phẩm | Tính năng 2 | 27/10/2026 |
 | N-005 | Không có nút huỷ run đang chạy | Run bộ khung chỉ 1 clip (≤ 5 phút) | Run dài chạy sai không dừng được, tốn lượt Muse | Tính năng 2 | 27/10/2026 |
+| N-006 | Selector Muse (`src/providers/muse/dom.ts`) chỉ được kiểm trên trang Muse giả; chưa có lệnh tự kiểm selector trên muse.ai thật mà không gửi prompt | Viết lệnh soi trang cần thêm thời gian; đã có ảnh lỗi `.data/debug/` để sửa nhanh | Muse đổi giao diện → mất 1 lượt mỗi lần thử trước khi biết (đã mất 2 lượt ngày 27/10) | Trước khi chạy chuỗi clip dài (tính năng 2): thêm `npm run muse:check` soi selector không gửi prompt | 27/10/2026 |
+| N-007 | Nhận biết "hồ sơ đã đăng nhập" bằng sự có mặt thư mục IndexedDB của muse.ai (cách Story Studio) | Đơn giản, đủ dùng; lỗi đăng nhập thật vẫn bị bắt ở bước tìm ô chat (`SESSION_EXPIRED`) | Báo sai "đã đăng nhập" khi phiên hết hạn; chỉ biết khi chạy | Khi có lệnh `muse:check` (N-006) thì kiểm thật | 27/10/2026 |
+| N-008 | Gói giao diện > 500 KB (React + React Flow + zod), chưa chia nhỏ | App chạy trên máy, tải một lần qua localhost | Không đáng kể | Khi mở app qua mạng chậm hoặc thêm nhiều thư viện giao diện | 27/10/2026 |
+| N-009 | Quyền `.claude/settings.json` cho chạy `npm run`, `ffmpeg`, `npx playwright` không hỏi = cho agent chạy code tuỳ ý trong dự án | Chủ dự án duyệt cho agent tự chạy, tự test (27/10/2026) | Agent có thể chạy lệnh ngoài ý muốn qua script; chặn chính vẫn là khoá nhánh GitHub + cấm sửa ngoài dự án | Khi có người khác dùng chung repo | 27/10/2026 |
 
 ## Đã trả
 

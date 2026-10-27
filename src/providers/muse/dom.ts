@@ -14,8 +14,12 @@ export const NEW_CHAT_SELECTORS = [
   "[aria-label='New side chat']",
 ];
 
+// Giao diện muse.ai đo ngày 27/10/2026: nút "New side chat" nằm trong menu Chats.
+export const CHAT_SWITCHER_SELECTOR = "[data-testid='hatch-chat-switcher-trigger']";
+export const NEW_SIDE_CHAT_IN_MENU_SELECTORS = ["button:text-is('New side chat')", "button:text-is('Đoạn chat phụ mới')"];
+
 export const SEND_BUTTON_SELECTOR = "button[aria-label*='send' i], button[aria-label*='gửi' i]";
-export const ALLOW_BUTTON_SELECTOR = "button:has-text('Cho phép'), button:has-text('Allow')";
+export const ALLOW_BUTTON_SELECTOR = "[role=log] button:text-is('Cho phép'), [role=log] button:text-is('Allow')";
 
 export const MARK_EXISTING_MEDIA_JS = `() => {
   const srcs = [];

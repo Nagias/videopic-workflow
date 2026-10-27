@@ -52,10 +52,11 @@ Tính năng mẫu (khuôn cho mọi tính năng sau). Kế hoạch: `docs/superp
 2. `createAccountPool().acquire()`: chọn hồ sơ `.data/chrome_profiles/muse_vid_0N` đã đăng nhập (`isProfileLoggedIn()`), xoay vòng, bỏ qua hồ sơ bận/nghỉ.
 3. `launchProfile()`: Chrome đã cài, hồ sơ riêng, mặc định chạy ẩn (`MUSE_HEADLESS=0` để xem).
 4. Vào muse.ai → tìm ô chat (`CHAT_INPUT_SELECTORS`); không thấy mà thấy nút đăng nhập → lỗi `SESSION_EXPIRED`, hồ sơ nghỉ 10 phút.
-5. Mở chat mới (`NEW_CHAT_SELECTORS`), đánh dấu media cũ (`MARK_EXISTING_MEDIA_JS`), gửi prompt theo khuôn `formatVideoPrompt()`.
+5. Mở đoạn chat phụ mới: thử `NEW_CHAT_SELECTORS`, không có thì mở menu Chats (`CHAT_SWITCHER_SELECTOR`) rồi bấm "New side chat" (`NEW_SIDE_CHAT_IN_MENU_SELECTORS`, giao diện đo 27/10/2026). Đánh dấu media cũ (`MARK_EXISTING_MEDIA_JS`), gửi prompt theo khuôn `formatVideoPrompt()`. Mọi đoạn JS chạy trong trang đi qua `callJs()` (nhúng tham số vào chuỗi; `page.evaluate` với chuỗi bỏ qua tham số — lỗi đã gặp).
 6. Quét 3 giây/lần tìm video MỚI (`FIND_NEW_VIDEO_JS` + bắt luồng mạng `video/mp4`), thấy ổn định 2 lần mới tải.
 7. Loại video trùng sha256 đã có trong bảng `media` (video cũ của chat) và video sai (`validateVideoProbe()`: < 3 giây, > 2×yêu cầu+0,5 giây, nhỏ, dọc/vuông).
 8. `storage.importFile()` → `.data/media/YYYY-MM/<id>.mp4`. Hết 300 giây (5s) / 420 giây (10s) không có video hợp lệ → lỗi `NO_MEDIA` kèm lý do từng video bị loại.
+9. Lỗi bất kỳ: `captureDebug()` lưu ảnh + HTML trang Muse vào `.data/debug/muse-<hồ sơ>-<giờ>.png|.html`, đường dẫn ảnh nằm cuối thông báo lỗi trên node. Số đo thật 27/10/2026: một clip 5 giây mất ~104 giây từ lúc bấm Chạy.
 
 ### 2.3 Kiểm chứng tự động của luồng này
 
@@ -65,5 +66,5 @@ Tính năng mẫu (khuôn cho mọi tính năng sau). Kế hoạch: `docs/superp
 | `npx vitest run src/providers` | khuôn prompt Muse, kiểm clip, xoay vòng hồ sơ, chặn Muse trong test |
 | `npx vitest run tests/api.test.ts` | API lưu → chạy → xem clip (206), lỗi 400/404, chạy tiếp sau khi tắt máy giữa chừng |
 | `npx vitest run tests/local-only.test.ts` | trang web lạ không bấm Chạy hộ được (403) |
-| `npm run test:e2e` | Playwright bấm thật: gõ prompt → Chạy → clip 5 giây 1280×720 trong node → Chạy lại = "Dùng lại kết quả"; prompt trống; chọn Muse khi chưa đăng nhập |
+| `npm run test:e2e` | Playwright bấm thật: gõ prompt → Chạy → clip 5 giây 1280×720 trong node → Chạy lại = "Dùng lại kết quả"; prompt trống; chọn Muse khi chưa đăng nhập. Thêm `e2e/muse-driver.spec.ts`: Muse provider chạy trên **trang Muse giả** (menu Chats → New side chat, video cũ vẽ lại dưới link mới) — không tốn lượt |
 | `npm run smoke:muse` | **Muse** thật, 1 clip 5 giây (chạy tay) |

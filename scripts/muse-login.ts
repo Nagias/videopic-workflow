@@ -12,7 +12,7 @@ if (!PROFILE_NAME_RE.test(name)) {
 const cfg = loadConfig();
 const profileDir = path.join(cfg.profilesDir, name);
 console.log(`Mở Chrome hồ sơ ${name} (${profileDir}). Đăng nhập Muse, xong thì đóng cửa sổ Chrome.`);
-const context = await launchProfile(profileDir, false);
+const context = await launchProfile(profileDir, false, cfg.museChannel);
 const page = context.pages()[0] ?? (await context.newPage());
 await page.goto(cfg.museUrl);
 await new Promise<void>((resolve) => context.on("close", () => resolve()));

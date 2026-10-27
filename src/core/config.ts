@@ -11,6 +11,7 @@ const EnvSchema = z.object({
   MUSE_LIVE: z.enum(["0", "1"]).default("0"),
   MUSE_HEADLESS: z.enum(["0", "1"]).default("1"),
   MUSE_URL: z.url().default("https://muse.ai"),
+  MUSE_CHANNEL: z.enum(["chrome", "msedge", "chromium"]).default("chrome"),
   FFMPEG_PATH: z.string().min(1).default("ffmpeg"),
   FFPROBE_PATH: z.string().min(1).default("ffprobe"),
   SERVE_WEB: z.enum(["0", "1"]).default("0"),
@@ -29,6 +30,7 @@ export type AppConfig = {
   museLive: boolean;
   museHeadless: boolean;
   museUrl: string;
+  museChannel: "chrome" | "msedge" | "chromium";
   ffmpegPath: string;
   ffprobePath: string;
   serveWeb: boolean;
@@ -54,6 +56,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     museLive: e.MUSE_LIVE === "1",
     museHeadless: e.MUSE_HEADLESS === "1",
     museUrl: e.MUSE_URL,
+    museChannel: e.MUSE_CHANNEL,
     ffmpegPath: e.FFMPEG_PATH,
     ffprobePath: e.FFPROBE_PATH,
     serveWeb: e.SERVE_WEB === "1",

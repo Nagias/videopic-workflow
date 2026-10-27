@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { BrowserContext, ElementHandle, Page } from "playwright";
 import type { AppConfig } from "../../core/config";
 import { ProviderError, type GeneratedVideo, type ProviderContext, type VideoProvider, type VideoRequest } from "../types";
@@ -7,6 +9,8 @@ import {
   ALLOW_BUTTON_SELECTOR,
   BLOB_TO_DATAURL_JS,
   CHAT_INPUT_SELECTORS,
+  CHAT_SWITCHER_SELECTOR,
+  NEW_SIDE_CHAT_IN_MENU_SELECTORS,
   FIND_NEW_VIDEO_JS,
   LOGIN_WALL_JS,
   MARK_EXISTING_MEDIA_JS,
@@ -77,9 +81,13 @@ async function submitPrompt(page: Page, input: ElementHandle, signal: AbortSigna
   throw new ProviderError("PROMPT_NOT_SENT", "Không gửi được prompt lên Muse (ô nhập vẫn còn chữ sau 20 giây)");
 }
 
+export function callJs(fnSource: string, ...args: unknown[]): string {
+  return `(${fnSource})(${args.map((a) => JSON.stringify(a)).join(", ")})`;
+}
+
 async function download(page: Page, context: BrowserContext, src: string): Promise<Uint8Array | null> {
   if (src.startsWith("blob:")) {
-    const dataUrl = await page.evaluate<string | null, string>(`(${BLOB_TO_DATAURL_JS})` as never, src);
+    const dataUrl = await page.evaluate<string | null>(callJs(BLOB_TO_DATAURL_JS, src));
     return dataUrl?.includes(",") ? Buffer.from(dataUrl.split(",", 2)[1]!, "base64") : null;
   }
   if (src.startsWith("data:")) return Buffer.from(src.split(",", 2)[1] ?? "", "base64");
@@ -87,11 +95,42 @@ async function download(page: Page, context: BrowserContext, src: string): Promi
   return res.ok() ? await res.body() : null;
 }
 
+async function captureDebug(cfg: AppConfig, page: Page, accId: string): Promise<string> {
+  const dir = path.join(cfg.dataDir, "debug");
+  await mkdir(dir, { recursive: true });
+  const base = path.join(dir, `muse-${accId}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+  await page.screenshot({ path: `${base}.png`, fullPage: false, timeout: 10_000 });
+  await writeFile(`${base}.html`, await page.content());
+  return base;
+}
+
 async function generateOnAccount(cfg: AppConfig, acc: MuseAccount, req: VideoRequest, ctx: ProviderContext): Promise<GeneratedVideo> {
   ctx.report(`Mở Chrome hồ sơ ${acc.id}…`);
-  const context = await launchProfile(acc.profileDir, cfg.museHeadless);
+  const context = await launchProfile(acc.profileDir, cfg.museHeadless, cfg.museChannel);
+  const page = context.pages()[0] ?? (await context.newPage());
   try {
-    const page = context.pages()[0] ?? (await context.newPage());
+    return await driveMuse(cfg, acc, req, ctx, context, page);
+  } catch (err) {
+    if (!page.isClosed()) {
+      const where = await captureDebug(cfg, page, acc.id).catch((e: unknown) => `không chụp được (${e instanceof Error ? e.message : String(e)})`);
+      ctx.report(`Đã lưu ảnh và HTML trang Muse lúc lỗi: ${where}`);
+      if (err instanceof Error) err.message = `${err.message} [ảnh lỗi: ${where}.png]`;
+    }
+    throw err;
+  } finally {
+    await context.close();
+  }
+}
+
+async function driveMuse(
+  cfg: AppConfig,
+  acc: MuseAccount,
+  req: VideoRequest,
+  ctx: ProviderContext,
+  context: BrowserContext,
+  page: Page,
+): Promise<GeneratedVideo> {
+  {
     const netCandidates: string[] = [];
     const preNet = new Set<string>();
     let submitted = false;
@@ -109,24 +148,32 @@ async function generateOnAccount(cfg: AppConfig, acc: MuseAccount, req: VideoReq
 
     let input = await firstVisible(page, CHAT_INPUT_SELECTORS, 20_000, ctx.signal);
     if (!input) {
-      if (await page.evaluate<boolean>(`(${LOGIN_WALL_JS})()`)) {
+      if (await page.evaluate<boolean>(callJs(LOGIN_WALL_JS))) {
         throw new ProviderError("SESSION_EXPIRED", `Tài khoản ${acc.id} cần đăng nhập lại (npm run muse:login -- ${acc.id})`);
       }
       throw new ProviderError("INPUT_NOT_FOUND", "Không tìm thấy ô nhập chat của Muse (giao diện có thể đã đổi — sửa src/providers/muse/dom.ts)");
     }
 
-    const newChat = await firstVisible(page, NEW_CHAT_SELECTORS, 3_000, ctx.signal);
+    let newChat = await firstVisible(page, NEW_CHAT_SELECTORS, 3_000, ctx.signal);
+    if (!newChat) {
+      const switcher = await page.$(CHAT_SWITCHER_SELECTOR);
+      if (switcher && (await switcher.isVisible())) {
+        await switcher.click({ timeout: 5_000 });
+        newChat = await firstVisible(page, NEW_SIDE_CHAT_IN_MENU_SELECTORS, 5_000, ctx.signal);
+      }
+    }
     if (newChat) {
-      await newChat.click();
+      ctx.report("Mở đoạn chat phụ mới");
+      await newChat.click({ timeout: 5_000 });
       await sleep(2500, ctx.signal);
       input = (await firstVisible(page, CHAT_INPUT_SELECTORS, 10_000, ctx.signal)) ?? input;
     } else {
       ctx.report("Không thấy nút chat mới, dùng đoạn chat hiện tại");
-      await page.evaluate(`(${SCROLL_CHAT_TO_END_JS})()`);
+      await page.evaluate(callJs(SCROLL_CHAT_TO_END_JS));
       await sleep(3000, ctx.signal);
     }
 
-    const preSrcs = await page.evaluate<string[]>(`(${MARK_EXISTING_MEDIA_JS})()`);
+    const preSrcs = await page.evaluate<string[]>(callJs(MARK_EXISTING_MEDIA_JS));
     for (const s of preSrcs) preNet.add(s);
 
     const prompt = formatVideoPrompt(req.prompt, req.durationSec);
@@ -146,12 +193,15 @@ async function generateOnAccount(cfg: AppConfig, acc: MuseAccount, req: VideoReq
       ctx.report(`Muse đang tạo video… ${Math.round((Date.now() - started) / 1000)} giây`);
 
       const allow = await page.$(ALLOW_BUTTON_SELECTOR);
-      if (allow && (await allow.isVisible())) await allow.click();
+      if (allow && (await allow.isVisible())) {
+        await allow.click({ timeout: 3_000 }).then(
+          () => ctx.report("Muse hỏi phê duyệt, đã bấm Cho phép"),
+          (err: unknown) => ctx.report(`Thấy nút Cho phép nhưng không bấm được (${err instanceof Error ? err.message.split("\n")[0] : String(err)})`),
+        );
+      }
 
-      const found = await page.evaluate<MediaCandidate[], [string[], string[]]>(
-        `(${FIND_NEW_VIDEO_JS})` as never,
-        [preSrcs, [...rejected]],
-      );
+      const found = await page.evaluate<MediaCandidate[]>(callJs(FIND_NEW_VIDEO_JS, [preSrcs, [...rejected]]));
+      if (!Array.isArray(found)) throw new ProviderError("SCAN_FAILED", "Đoạn quét video trong trang Muse không trả danh sách");
       const srcs = [...new Set([...found.map((c) => c.src), ...netCandidates.filter((u) => !rejected.has(u))])];
       for (const src of srcs) {
         const n = (seen.get(src) ?? 0) + 1;
@@ -195,8 +245,6 @@ async function generateOnAccount(cfg: AppConfig, acc: MuseAccount, req: VideoReq
     }
     const why = reasons.length ? ` Các video bị loại: ${[...new Set(reasons)].join("; ")}.` : "";
     throw new ProviderError("NO_MEDIA", `Không nhận được video hợp lệ sau ${Math.round(videoWaitMs(req.durationSec) / 1000)} giây.${why}`);
-  } finally {
-    await context.close();
   }
 }
 
@@ -212,7 +260,9 @@ export function createMuseProvider(cfg: AppConfig, pool: AccountPool = createAcc
         return result;
       } catch (err) {
         pool.release(acc.id, err instanceof ProviderError && err.code === "SESSION_EXPIRED" ? "needs_login" : "cooldown");
-        throw err;
+        if (err instanceof ProviderError) throw err;
+        const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
+        throw new ProviderError("BROWSER_ERROR", `Lỗi khi điều khiển Muse bằng hồ sơ ${acc.id}: ${msg}`, { cause: err });
       }
     },
   };

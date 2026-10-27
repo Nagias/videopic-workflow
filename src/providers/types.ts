@@ -24,8 +24,9 @@ export class ProviderError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    options?: { cause?: unknown },
   ) {
-    super(message);
+    super(message, options);
     this.name = "ProviderError";
   }
 }
