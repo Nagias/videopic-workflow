@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "verify": "npm run lint && npm run typecheck && npm run test",
+    "verify": "npm run gen:nodes -- --check && npm run lint && npm run typecheck && npm run test",
     "verify:full": "npm run verify && npm run test:e2e",
     "gen:nodes": "tsx scripts/gen-nodes.ts",
     "new:node": "tsx scripts/new-node.ts",

@@ -1,6 +1,6 @@
 # VideoPic Workflow — hướng dẫn cho agent
 
-App làm ảnh/video theo workflow kéo-nối node (kiểu ComfyUI / Magnific / Higgsfield), tập trung video bằng Muse, chạy trên máy, giao diện `http://localhost:5173`.
+App làm ảnh/video theo workflow kéo-nối node (kiểu ComfyUI / Magnific / Higgsfield), tập trung video bằng Muse, chạy trên máy, giao diện `http://127.0.0.1:5190`.
 Đọc file này trước mọi việc. Bản đồ tính năng: `FEATURE_MAP.md`. Sổ nợ có chủ đích: `DEBT.md`. Checklist việc dài: `TASKS.md`. Thiết kế: `docs/ARCHITECTURE.md`.
 
 Cách đọc nhãn:
@@ -65,7 +65,7 @@ Nguồn gốc (Lauren Tan, SpaceXAI): agent thích đi đường tắt nên làm
 | Việc | Lệnh |
 |---|---|
 | Cài lần đầu | `npm ci` (cache npm nằm `.cache/npm` trên ổ D; script cài đặt bị tắt trong `package.json` → `allowScripts`) |
-| Chạy app (dev) | `npm run dev` → giao diện `http://localhost:5173`, API `http://localhost:8787` |
+| Chạy app (dev) | `npm run dev` → giao diện `http://127.0.0.1:5190`, API `http://localhost:8787` |
 | Kiểm tra (hook commit + CI chạy đúng lệnh này) | `npm run verify` = kiểm registry node + lint + typecheck + test |
 | Kiểm tra đầy đủ (trước khi mở PR) | `npm run verify:full` = verify + e2e (Playwright bấm thật trên giao diện, dịch vụ giả) |
 | Thêm loại node | `npm run new:node <ten-node>` (sinh thư mục + cập nhật registry) |
@@ -106,6 +106,9 @@ Chi tiết: `docs/ARCHITECTURE.md`. Tóm tắt nơi ghi từng loại dữ liệ
 | 12 | Ghi file media không qua `storage.importFile` | `storage.importFile` | mất dấu sha256 → nhận nhầm video cũ của Muse |
 | 13 | Ghi, xoá file ngoài `D:\29. Workflow VideoPic` | — | chủ dự án cấm (mục 6) |
 | 14 | Commit thẳng lên `main`, force-push | nhánh + PR | khoá nhánh trên GitHub |
+| 15 | File dùng chung (`src/shared/**`, `src/nodes/*/definition.ts`) import code máy chủ hoặc giao diện | chỉ dùng zod và các file shared khác | các file này chạy ở cả hai phía; kéo thêm là vỡ ranh giới |
+| 16 | Thêm node bằng tay thiếu file (không test, không view) | `npm run new:node <ten>` | node thiếu test lọt vào |
+| 17 | Thêm endpoint mà không ghi vào `FEATURE_MAP.md` | ghi dòng mới ở bảng luồng tương ứng | bản đồ lệch code → agent đoán đường |
 
 ### 5.1 Khoá cứng hay khoá mềm (theo mục 2.4)
 
@@ -127,7 +130,12 @@ Chi tiết: `docs/ARCHITECTURE.md`. Tóm tắt nơi ghi từng loại dữ liệ
 | 11 | cứng | `npm run gen:nodes -- --check` trong `verify` | 0 |
 | 12 | mềm | — | 0 |
 | 13 | mềm | quyền trong `.claude/settings.json` chặn một phần | 0 |
-| 14 | cứng | `.githooks/pre-commit` + khoá nhánh GitHub (`main`: bắt PR, bắt check `verify`, cấm force-push, áp cả admin) | 0 |
+| 14 | cứng | `.githooks/pre-commit` + khoá nhánh GitHub (`main`: bắt PR, bắt check `verify` và `e2e`, cấm force-push, áp cả admin) | 0 |
+| 15 | cứng | ESLint `no-restricted-imports` (khối `src/shared/**`) | 0 |
+| 16 | cứng | `scripts/gen-nodes.ts` (từ chối thư mục node thiếu file) + `tests/architecture.test.ts` | 0 |
+| 17 | cứng | `tests/architecture.test.ts` (endpoint và `data-testid` phải có trong `FEATURE_MAP.md`) | 0 |
+
+Ghi nhận khoá cứng đã bắt lỗi thật: 27/10/2026, `src/server.ts` đọc `process.env` (dòng 1); `src/app/_lock_probe.ts` thử cố ý 5 vi phạm (1, 2, 5, 7, 8) đều bị chặn.
 
 ## 6. Quy tắc làm việc của agent
 
@@ -158,3 +166,6 @@ Giải nghĩa các mục A/B/C (agent ghi lại đề xuất đã được duy�
 | Chrome báo hồ sơ đang mở | lỗi khi khởi động hồ sơ | đóng cửa sổ Chrome đang dùng hồ sơ đó (cửa sổ đăng nhập tay) rồi chạy lại |
 | Thiếu ffmpeg | lỗi "Không chạy được ffmpeg" | cài ffmpeg và thêm vào PATH |
 | Run bị dừng giữa chừng (tắt máy) | run ở trạng thái `running` | mở lại `npm run dev`: worker tự chạy tiếp, node đã xong không gọi lại Muse |
+| Muse lỗi không rõ lý do | thông báo lỗi trên node có `[ảnh lỗi: …png]` | mở ảnh + file `.html` cùng tên trong `.data/debug/` để xem Muse đang hiện gì, rồi sửa `dom.ts`; thử lại bằng `npx playwright test e2e/muse-driver.spec.ts` (trang giả, không tốn lượt) trước khi gọi Muse thật |
+| Mở `localhost:5173` ra app khác | dự án khác trên máy chiếm cổng 5173 qua IPv6 | dự án này dùng `http://127.0.0.1:5190`; đổi bằng biến `WEB_PORT` |
+| Muốn xem Chrome điều khiển Muse | — | chạy với `MUSE_HEADLESS=0` |

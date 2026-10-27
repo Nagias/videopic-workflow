@@ -1,0 +1,266 @@
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel-2: #1e222b;
+  --line: #2c313c;
+  --text: #e6e8ee;
+  --muted: #8b93a7;
+  --accent: #6c8cff;
+  --ok: #3ccf8e;
+  --warn: #f2b84b;
+  --err: #ff6b6b;
+  --text-port: #c9a2ff;
+  --video-port: #4fd1c5;
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+button {
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b0d12;
+  font-weight: 600;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.toolbar h1 {
+  font-size: 16px;
+  margin: 0 12px 0 0;
+}
+
+.tool-group {
+  display: flex;
+  gap: 8px;
+}
+
+.muse-accounts,
+.save-state,
+.run-state {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.muse-accounts {
+  margin-left: auto;
+}
+
+.run-state.succeeded {
+  color: var(--ok);
+}
+
+.run-state.failed,
+.save-state.error {
+  color: var(--err);
+}
+
+.banner {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 16px;
+  background: #3a1f24;
+  color: #ffd6d6;
+  border-bottom: 1px solid var(--err);
+}
+
+.banner button {
+  margin-left: auto;
+}
+
+.canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.gnode {
+  width: 320px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+}
+
+.gnode.selected {
+  border-color: var(--accent);
+}
+
+.gnode.status-running {
+  border-color: var(--warn);
+}
+
+.gnode.status-succeeded,
+.gnode.status-cached {
+  border-color: var(--ok);
+}
+
+.gnode.status-failed {
+  border-color: var(--err);
+}
+
+.gnode-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.badge {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.status-succeeded .badge,
+.status-cached .badge {
+  color: var(--ok);
+}
+
+.status-running .badge {
+  color: var(--warn);
+}
+
+.status-failed .badge {
+  color: var(--err);
+}
+
+.port {
+  position: relative;
+  padding: 4px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.port.out {
+  text-align: right;
+}
+
+.port em {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--bg);
+}
+
+.handle.kind-text {
+  background: var(--text-port);
+}
+
+.handle.kind-video {
+  background: var(--video-port);
+}
+
+.gnode-body {
+  padding: 8px 12px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field textarea {
+  resize: vertical;
+  padding: 8px;
+  line-height: 1.4;
+}
+
+.field select {
+  padding: 6px;
+}
+
+.preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  background: #000;
+}
+
+.preview.empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  border: 1px dashed var(--line);
+  background: transparent;
+}
+
+.node-message,
+.node-error {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.node-message {
+  color: var(--muted);
+}
+
+.node-error {
+  color: var(--err);
+  white-space: pre-wrap;
+}
