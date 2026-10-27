@@ -13,7 +13,7 @@ const patterned = (lavfi: string, out: string) =>
 
 const page = (withNewChat: boolean, extra: string) => `<!doctype html><html><body>
 ${withNewChat ? `<button data-testid="hatch-chat-switcher-trigger" onclick="document.getElementById('menu').hidden=false">Chats</button>
-<div id="menu" hidden><button onclick="document.getElementById('log').innerHTML=''; document.getElementById('menu').hidden=true">New side chat</button></div>` : ""}
+<div id="menu" hidden><div role="menuitem" onclick="document.getElementById('log').innerHTML=''; document.getElementById('menu').hidden=true">New side chat</div></div>` : ""}
 <div role="log" id="log"><div class="message"><video src="/old.mp4" width="640" muted preload="metadata"></video></div></div>
 <textarea aria-label="Message"></textarea>
 <script>
@@ -35,7 +35,7 @@ ta.addEventListener('keydown', (e) => {
 
 const imagePage = (refuse: boolean) => `<!doctype html><html><body>
 <button data-testid="hatch-chat-switcher-trigger" onclick="document.getElementById('menu').hidden=false">Chats</button>
-<div id="menu" hidden><button onclick="document.getElementById('log').innerHTML=''; document.getElementById('menu').hidden=true">New side chat</button></div>
+<div id="menu" hidden><div role="menuitem" onclick="document.getElementById('log').innerHTML=''; document.getElementById('menu').hidden=true">New side chat</div></div>
 <div role="log" id="log"></div>
 <div><div><div><div id="composer">
   <input type="file" id="f" style="display:none" />

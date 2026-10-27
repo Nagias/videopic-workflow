@@ -17,6 +17,7 @@ import {
   FIND_NEW_VIDEO_JS,
   LOG_TEXT_JS,
   LOGIN_WALL_JS,
+  MUSE_FAILURE_RE,
   MARK_EXISTING_MEDIA_JS,
   NEW_CHAT_SELECTORS,
   NEW_SIDE_CHAT_IN_MENU_SELECTORS,
@@ -35,7 +36,7 @@ const SAME_IMAGE_MAX_BITS = 6;
 const REFUSAL_GRACE_MS = 25_000;
 
 export function videoWaitMs(durationSec: number): number {
-  return (durationSec > 5 ? 420 : 300) * 1000;
+  return (durationSec > 5 ? 720 : 600) * 1000;
 }
 export const IMAGE_WAIT_MS = 180_000;
 
@@ -49,11 +50,21 @@ export function callJs(fnSource: string, ...args: unknown[]): string {
   return `(${fnSource})(${args.map((a) => JSON.stringify(a)).join(", ")})`;
 }
 
-export function findRefusal(newText: string): string | null {
-  const m = REFUSAL_RE.exec(newText);
+function excerpt(text: string, re: RegExp): string | null {
+  const m = re.exec(text);
   if (!m) return null;
   const start = Math.max(0, m.index - 60);
-  return newText.slice(start, m.index + 160).replace(/\s+/g, " ").trim();
+  return text.slice(start, m.index + 160).replace(/\s+/g, " ").trim();
+}
+
+export const findRefusal = (reply: string) => excerpt(reply, REFUSAL_RE);
+export const findMuseFailure = (reply: string) => excerpt(reply, MUSE_FAILURE_RE);
+
+export function replyAfterPrompt(logText: string, prompt: string, preText: string): string {
+  const marker = prompt.slice(0, 60);
+  const at = logText.lastIndexOf(marker);
+  if (at >= 0) return logText.slice(at + prompt.length);
+  return logText.startsWith(preText) ? logText.slice(preText.length) : "";
 }
 
 type MuseJob = {
@@ -294,13 +305,14 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
     const srcs = [...new Set([...found.map((c) => c.src), ...netCandidates.filter((u) => !rejected.has(u))])];
 
     if (srcs.length === 0 && Date.now() - started > REFUSAL_GRACE_MS) {
-      const text = await page.evaluate<string>(callJs(LOG_TEXT_JS));
-      const fresh = text.startsWith(preText) ? text.slice(preText.length) : text;
-      const refusal = findRefusal(fresh.replace(job.text, ""));
+      const reply = replyAfterPrompt(await page.evaluate<string>(callJs(LOG_TEXT_JS)), job.text, preText);
+      const refusal = findRefusal(reply);
       if (refusal && refusalSeen === refusal) {
         throw new ProviderError("REFUSED", `Muse từ chối tạo ${label}: "${refusal}". Thử viết lại prompt nhẹ nhàng hơn.`);
       }
       refusalSeen = refusal;
+      const failure = findMuseFailure(reply);
+      if (failure) throw new ProviderError("MUSE_FAILED", `Muse báo lỗi khi tạo ${label}: "${failure}". Thường là lỗi tạm phía Muse — chạy lại sau.`);
     }
 
     for (const src of srcs) {

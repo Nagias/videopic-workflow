@@ -20,3 +20,23 @@
 | 27/10/2026 ~21:55 | muse_vid_01 | Như trên, lần 3, bấm qua giao diện | **Thành công**: clip h264 1280×720 24 fps có tiếng, 5,0 giây, nội dung đúng prompt (khung giữa clip đã xem). Mở đoạn chat phụ mới qua menu Chats. Chạy lại = "Dùng lại kết quả", không gọi Muse | 104 giây |
 
 Tổng lượt Muse đã dùng cho bộ khung: 3 (2 lỗi phía app đã sửa, 1 thành công).
+
+## Tính năng 2 — video chuỗi cảnh (kế hoạch: `docs/superpowers/plans/2026-10-27-video-chuoi-canh.md`)
+
+- [x] Task A–D: dịch vụ ảnh/ảnh→video, Muse đính kèm/bắt từ chối, kiến thức đạo diễn, 4 node, mẫu Sơn La, giao diện, test (62 vitest + 8 e2e, chạy giả trọn 12 cảnh ra 59,8 giây)
+- [ ] Task E: chạy Muse thật mẫu Sơn La — **bị chặn** (xem nhật ký 27/10 ~22:50–23:40)
+
+### Nhật ký gọi Muse thật — tính năng 2 (27/10/2026)
+
+| Giờ | Hồ sơ | Việc | Kết quả |
+|---|---|---|---|
+| 22:52 | vid_01 | Ảnh chân dung chính diện (chỉ chữ) | ✅ ~120 giây, đúng yêu cầu (người Việt phổ thông, mộc mạc, sports bra) |
+| 22:53 | vid_03 | Ảnh nghiêng 3/4 **đính kèm** ảnh chân dung | ❌ Muse từ chối: "chưa tạo được… không dựa trên ảnh tham chiếu, hoặc phiên bản minh hoạ" → **ảnh chân thực dựa trên ảnh người tải lên bị chặn** |
+| 22:57 | vid_01 | Video từ ảnh chân dung tải lên | ❌ Muse nhận việc rồi "video failed" sau ~8 phút |
+| 23:05 | vid_01 | Ảnh mới **trong cùng đoạn chat**, không tải lên ("chính cô gái bạn đã tạo trước đó") | ✅ 109 giây — giữ đúng mặt, tóc, trang phục; có lều xanh rêu, suối đá |
+| 23:06 | vid_01 | Video từ chính ảnh đó trong chat (không tải lên) | ❌ "dịch vụ tạo video đang tạm lỗi" sau ~7 phút |
+| 23:15 | vid_04 | Ảnh trong chat + video từ ảnh đó | Ảnh ✅ 61 giây; video ❌ "lỗi hệ thống bất ngờ" |
+| 23:26 | vid_03 | Video thuần chữ (cô gái bổ củi) | ❌ "Failed to create 5s video of woman splitting log" (ô nhiệm vụ Muse) |
+| 23:26 | vid_04 | Ảnh suối không người + video từ ảnh đó | Ảnh ✅ 38 giây; video ❌ "lỗi hệ thống bất ngờ" |
+
+Kết luận: (1) chính sách Muse chặn ảnh chân thực dựa trên ảnh người tải lên; (2) tạo ảnh nối tiếp trong cùng đoạn chat giữ mặt rất tốt; (3) tạo video của Muse thất bại trên cả 3 tài khoản tối 27/10 (cả có người lẫn không người, cả từ chữ lẫn từ ảnh) — lúc 21:55 cùng ngày video từ chữ vẫn thành công → nghi lỗi/giới hạn phía Muse, cần thử lại. Tổng lượt Muse tính năng 2: ~12 (5 ảnh thành công).

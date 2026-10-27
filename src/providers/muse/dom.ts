@@ -16,7 +16,11 @@ export const NEW_CHAT_SELECTORS = [
 
 // Giao diện muse.ai đo ngày 27/10/2026: nút "New side chat" nằm trong menu Chats.
 export const CHAT_SWITCHER_SELECTOR = "[data-testid='hatch-chat-switcher-trigger']";
-export const NEW_SIDE_CHAT_IN_MENU_SELECTORS = ["button:text-is('New side chat')", "button:text-is('Đoạn chat phụ mới')"];
+export const NEW_SIDE_CHAT_IN_MENU_SELECTORS = ['text="New side chat"', 'text="Đoạn chat phụ mới"'];
+
+// Muse không từ chối mà báo lỗi trong chat (đo 27/10/2026: "dịch vụ tạo video đang tạm lỗi", "gặp lỗi hệ thống bất ngờ").
+export const MUSE_FAILURE_RE =
+  /(tạm lỗi|lỗi hệ thống|gặp lỗi|chưa hoàn thành được|không tạo được lúc này|something went wrong|failed to (create|generate))/i;
 
 export const SEND_BUTTON_SELECTOR = "button[aria-label*='send' i], button[aria-label*='gửi' i]";
 export const ALLOW_BUTTON_SELECTOR = "[role=log] button:text-is('Cho phép'), [role=log] button:text-is('Allow')";
@@ -85,7 +89,7 @@ export const LOG_TEXT_JS = `() => [...document.querySelectorAll('[role=log]')].m
 export const ATTACH_BUTTON_SELECTOR = "[aria-label='Attach file'], [aria-label='Add attachment'], [aria-label='Đính kèm tệp']";
 
 export const REFUSAL_RE =
-  /(mình không thể|tôi không thể|không thể tạo|không được phép|vi phạm (chính sách|nguyên tắc)|i can['’]t (help|create|generate|make)|i cannot (help|create|generate|make)|i['’]m (not able|unable) to|unable to (create|generate)|against (our|my) (policy|policies|guidelines))/i;
+  /(mình không thể|tôi không thể|không thể tạo|chưa tạo được|không tạo được|không được phép|i couldn['’]t (create|generate|make)|i wasn['’]t able to|vi phạm (chính sách|nguyên tắc)|i can['’]t (help|create|generate|make)|i cannot (help|create|generate|make)|i['’]m (not able|unable) to|unable to (create|generate)|against (our|my) (policy|policies|guidelines))/i;
 
 export const LOGIN_WALL_JS = `() => {
   const url = location.href.toLowerCase();

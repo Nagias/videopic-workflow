@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../../core/config";
 import { createAccountPool, isProfileLoggedIn } from "./accounts";
-import { assertMuseAllowed, createMuseProvider, findRefusal, videoWaitMs } from "./index";
+import { assertMuseAllowed, createMuseProvider, findMuseFailure, findRefusal, replyAfterPrompt, videoWaitMs } from "./index";
 import { formatImagePrompt, formatVideoPrompt } from "./prompt";
 import { validateVideoProbe } from "./validate";
 
@@ -124,5 +124,19 @@ describe("chờ tài khoản rảnh", () => {
     const b = await pool.acquireWait(new AbortController().signal, () => waited++);
     expect(b.id).toBe("muse_vid_01");
     expect(waited).toBeGreaterThan(0);
+  });
+});
+
+describe("đọc câu trả lời của Muse sau prompt vừa gửi", () => {
+  const prompt = "tạo cho tôi 1 video 5s: [Duration: 5s], cô gái bổ củi cạnh lều";
+  it("không nhận nhầm câu từ chối CŨ nằm phía trên trong đoạn chat", () => {
+    const log = `Xin lỗi, mình chưa tạo được hình này theo đúng yêu cầu.\n${prompt}\nOk mình làm ngay nhé.`;
+    expect(findRefusal(replyAfterPrompt(log, prompt, ""))).toBeNull();
+  });
+  it("bắt câu báo lỗi hệ thống của Muse (đo 27/10/2026) và câu từ chối mới", () => {
+    const failed = `${prompt}\nMình đã thử làm video 5s từ ảnh vừa tạo, nhưng quá trình tạo video gặp lỗi hệ thống bất ngờ nên chưa hoàn thành được.`;
+    expect(findMuseFailure(replyAfterPrompt(failed, prompt, ""))).toMatch(/lỗi hệ thống/);
+    const refused = `${prompt}\nMình chưa tạo được hình này theo đúng yêu cầu của bạn.`;
+    expect(findRefusal(replyAfterPrompt(refused, prompt, ""))).toMatch(/chưa tạo được/);
   });
 });

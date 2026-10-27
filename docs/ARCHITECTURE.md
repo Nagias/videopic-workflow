@@ -86,6 +86,12 @@ Công thức rút từ ComfyUI, Magnific, Higgsfield, Kling, Google Flow và s�
 6. Clip 5 giây giữ mặt tốt hơn clip 10 giây (Story Studio đo: méo mặt sau ~1,5 giây ở clip 10 giây).
 7. Kiến thức đạo diễn ghi thành dữ liệu: cỡ cảnh, chuyển động máy, luật 180°, luật 30°, khuôn quảng cáo.
 
+### 6.1 Giới hạn Muse đo thật (27/10/2026) — thay đổi cách giữ mặt
+
+- Muse **từ chối** tạo ảnh chân thực dựa trên **ảnh người được tải lên** (kể cả ảnh do chính Muse tạo trước đó), gợi ý "không dựa trên ảnh tham chiếu" hoặc "minh hoạ". → Mục 6.3 ("clip nào cũng gắn lại hồ sơ gốc") **không dùng được cho nhân vật chân thực**.
+- Muse **giữ mặt rất tốt khi tạo ảnh nối tiếp trong cùng một đoạn chat**, không tải lên ("chính cô gái trong ảnh bạn đã tạo trước đó"). → Cách đúng: **một đoạn chat cho một nhân vật**: ảnh chân dung → ảnh khung từng cảnh nối tiếp trong chat đó (tuần tự, một tài khoản). Ảnh không người (bối cảnh) vẫn đính kèm được.
+- Tạo video tối 27/10 thất bại trên cả 3 tài khoản (chữ→video lẫn ảnh→video, có người lẫn không người); cùng ngày 21:55 chữ→video vẫn thành công. Chưa kết luận được ảnh→video có bị chặn với người chân thực hay không — cần thử lại khi Muse ổn định.
+
 ## 7. Lộ trình
 
 1. Bộ khung đi được: Prompt → Tạo video (Muse) → xem clip. **(đang làm)**

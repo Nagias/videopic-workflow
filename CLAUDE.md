@@ -168,4 +168,6 @@ Giải nghĩa các mục A/B/C (agent ghi lại đề xuất đã được duy�
 | Run bị dừng giữa chừng (tắt máy) | run ở trạng thái `running` | mở lại `npm run dev`: worker tự chạy tiếp, node đã xong không gọi lại Muse |
 | Muse lỗi không rõ lý do | thông báo lỗi trên node có `[ảnh lỗi: …png]` | mở ảnh + file `.html` cùng tên trong `.data/debug/` để xem Muse đang hiện gì, rồi sửa `dom.ts`; thử lại bằng `npx playwright test e2e/muse-driver.spec.ts` (trang giả, không tốn lượt) trước khi gọi Muse thật |
 | Mở `localhost:5173` ra app khác | dự án khác trên máy chiếm cổng 5173 qua IPv6 | dự án này dùng `http://127.0.0.1:5190`; đổi bằng biến `WEB_PORT` |
+| Muse không trả ảnh/video, chat Muse ghi "tạm lỗi", "lỗi hệ thống" | node báo `MUSE_FAILED` | lỗi phía Muse: đợi rồi bấm Chạy lại (các cảnh đã xong được giữ). Xem ô nhiệm vụ bên phải trang Muse trong ảnh lỗi `.data/debug/` |
+| Muse từ chối ảnh có người | node báo `REFUSED` | không đính kèm ảnh người chân thực (chính sách Muse, `docs/ARCHITECTURE.md` mục 6.1) |
 | Muốn xem Chrome điều khiển Muse | — | chạy với `MUSE_HEADLESS=0` |
