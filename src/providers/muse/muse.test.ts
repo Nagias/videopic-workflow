@@ -136,6 +136,8 @@ describe("đọc câu trả lời của Muse sau prompt vừa gửi", () => {
   it("bắt câu báo lỗi hệ thống của Muse (đo 27/10/2026) và câu từ chối mới", () => {
     const failed = `${prompt}\nMình đã thử làm video 5s từ ảnh vừa tạo, nhưng quá trình tạo video gặp lỗi hệ thống bất ngờ nên chưa hoàn thành được.`;
     expect(findMuseFailure(replyAfterPrompt(failed, prompt, ""))).toMatch(/lỗi hệ thống/);
+    expect(findMuseFailure(`${prompt}
+Mình đã thử tạo 3 lần nhưng bên tạo video đang lỗi (502).`)).toMatch(/đang lỗi/);
     const refused = `${prompt}\nMình chưa tạo được hình này theo đúng yêu cầu của bạn.`;
     expect(findRefusal(replyAfterPrompt(refused, prompt, ""))).toMatch(/chưa tạo được/);
   });

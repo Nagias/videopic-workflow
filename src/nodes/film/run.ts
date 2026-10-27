@@ -4,6 +4,8 @@ import { checkShotList, composeInChatKeyframePrompt, composeKeyframePrompt, comp
 import type { ImageSetValue, StoryboardShot } from "../../shared/ports";
 import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC, SERVICE_FAILURE_LIMIT, SHOT_SECONDS, type FilmParams } from "./definition";
 
+const SERVICE_FAILURE_CODES = new Set(["MUSE_FAILED", "NO_MEDIA"]);
+
 class ServiceBreakerOpen extends Error {
   constructor() {
     super(`Dừng: dịch vụ báo lỗi máy chủ ${SERVICE_FAILURE_LIMIT} lần — không gửi thêm để tránh tốn lượt. Bấm Chạy lại khi dịch vụ ổn (cảnh đã xong được giữ).`);
@@ -161,7 +163,7 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
           const trim = shot.link === "chain" ? CHAIN_TRIM_SEC : 0;
           return { clipId: finalId, trimStartSec: trim, durationSec: Math.min(probe.durationSec, SHOT_SECONDS) - trim, hasAudio: probe.hasAudio };
         } catch (err) {
-          if (err instanceof ProviderError && err.code === "MUSE_FAILED") serviceFailures++;
+          if (err instanceof ProviderError && SERVICE_FAILURE_CODES.has(err.code)) serviceFailures++;
           const tripped = err instanceof ServiceBreakerOpen;
           board[i] = { ...board[i]!, status: tripped ? "skipped" : "failed", error: err instanceof Error ? err.message : String(err) };
           publish();

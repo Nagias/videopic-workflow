@@ -93,8 +93,8 @@ describe("node film (Dựng phim)", () => {
     expect(referencesFor(shot("b", { subject: "none" }), character, location).map((r) => r.role)).toEqual(["location", "location"]);
   });
 
-  it("cầu dao: máy chủ video lỗi 3 lần thì không gửi thêm, cảnh còn lại bỏ qua kèm lý do", async () => {
-    const counter = countingFakeProviders({ failVideoWhen: () => true, failCode: "MUSE_FAILED" });
+  it("cầu dao: máy chủ video lỗi/quá giờ 3 lần thì không gửi thêm, cảnh còn lại bỏ qua kèm lý do", async () => {
+    const counter = countingFakeProviders({ failVideoWhen: () => true, failCode: "NO_MEDIA" });
     const { character, location } = await refs(counter.providers);
     const sizes = ["WS", "MS", "CU", "WS", "MS", "CU"] as const;
     const shots = sizes.map((size, i) => shot(`b${i}`, { size, subject: "none" }));
