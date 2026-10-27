@@ -58,8 +58,7 @@ export function render(dirs: string[]): { server: string; web: string } {
   return { server, web };
 }
 
-function main() {
-  const check = process.argv.includes("--check");
+export function generate(check: boolean): boolean {
   const { server, web } = render(listNodeDirs());
   const targets: [string, string][] = [
     [path.join(NODES_DIR, "registry.server.ts"), server],
@@ -77,8 +76,10 @@ function main() {
       console.log(`Đã sinh ${path.relative(process.cwd(), file)}`);
     }
   }
-  if (stale) process.exit(1);
   if (!check) console.log(`Registry: ${listNodeDirs().join(", ")}`);
+  return !stale;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  if (!generate(process.argv.includes("--check"))) process.exit(1);
+}

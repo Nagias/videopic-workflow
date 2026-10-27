@@ -73,6 +73,17 @@ export default defineConfig(
     rules: { "no-restricted-globals": "off" },
   },
   {
+    files: ["src/shared/**", "src/nodes/*/definition.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [
+          ...serverOnlyImports,
+          { group: ["react", "react-dom", "@xyflow/*", "**/features/**", "**/app/**", "**/view"], message: lockMsg("file dùng chung (shared, definition) không import giao diện.") },
+        ],
+      }],
+    },
+  },
+  {
     files: SERVER_FILES,
     rules: {
       "no-restricted-imports": ["error", {

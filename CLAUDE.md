@@ -106,6 +106,9 @@ Chi tiết: `docs/ARCHITECTURE.md`. Tóm tắt nơi ghi từng loại dữ liệ
 | 12 | Ghi file media không qua `storage.importFile` | `storage.importFile` | mất dấu sha256 → nhận nhầm video cũ của Muse |
 | 13 | Ghi, xoá file ngoài `D:\29. Workflow VideoPic` | — | chủ dự án cấm (mục 6) |
 | 14 | Commit thẳng lên `main`, force-push | nhánh + PR | khoá nhánh trên GitHub |
+| 15 | File dùng chung (`src/shared/**`, `src/nodes/*/definition.ts`) import code máy chủ hoặc giao diện | chỉ dùng zod và các file shared khác | các file này chạy ở cả hai phía; kéo thêm là vỡ ranh giới |
+| 16 | Thêm node bằng tay thiếu file (không test, không view) | `npm run new:node <ten>` | node thiếu test lọt vào |
+| 17 | Thêm endpoint mà không ghi vào `FEATURE_MAP.md` | ghi dòng mới ở bảng luồng tương ứng | bản đồ lệch code → agent đoán đường |
 
 ### 5.1 Khoá cứng hay khoá mềm (theo mục 2.4)
 
@@ -127,7 +130,12 @@ Chi tiết: `docs/ARCHITECTURE.md`. Tóm tắt nơi ghi từng loại dữ liệ
 | 11 | cứng | `npm run gen:nodes -- --check` trong `verify` | 0 |
 | 12 | mềm | — | 0 |
 | 13 | mềm | quyền trong `.claude/settings.json` chặn một phần | 0 |
-| 14 | cứng | `.githooks/pre-commit` + khoá nhánh GitHub (`main`: bắt PR, bắt check `verify`, cấm force-push, áp cả admin) | 0 |
+| 14 | cứng | `.githooks/pre-commit` + khoá nhánh GitHub (`main`: bắt PR, bắt check `verify` và `e2e`, cấm force-push, áp cả admin) | 0 |
+| 15 | cứng | ESLint `no-restricted-imports` (khối `src/shared/**`) | 0 |
+| 16 | cứng | `scripts/gen-nodes.ts` (từ chối thư mục node thiếu file) + `tests/architecture.test.ts` | 0 |
+| 17 | cứng | `tests/architecture.test.ts` (endpoint và `data-testid` phải có trong `FEATURE_MAP.md`) | 0 |
+
+Ghi nhận khoá cứng đã bắt lỗi thật: 27/10/2026, `src/server.ts` đọc `process.env` (dòng 1); `src/app/_lock_probe.ts` thử cố ý 5 vi phạm (1, 2, 5, 7, 8) đều bị chặn.
 
 ## 6. Quy tắc làm việc của agent
 
