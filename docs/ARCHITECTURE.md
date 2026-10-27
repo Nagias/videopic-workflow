@@ -88,8 +88,8 @@ Công thức rút từ ComfyUI, Magnific, Higgsfield, Kling, Google Flow và s�
 
 ### 6.1 Giới hạn Muse đo thật (27/10/2026) — thay đổi cách giữ mặt
 
-- Muse **từ chối** tạo ảnh chân thực dựa trên **ảnh người được tải lên** (kể cả ảnh do chính Muse tạo trước đó), gợi ý "không dựa trên ảnh tham chiếu" hoặc "minh hoạ". → Mục 6.3 ("clip nào cũng gắn lại hồ sơ gốc") **không dùng được cho nhân vật chân thực**.
-- Muse **giữ mặt rất tốt khi tạo ảnh nối tiếp trong cùng một đoạn chat**, không tải lên ("chính cô gái trong ảnh bạn đã tạo trước đó"). → Cách đúng: **một đoạn chat cho một nhân vật**: ảnh chân dung → ảnh khung từng cảnh nối tiếp trong chat đó (tuần tự, một tài khoản). Ảnh không người (bối cảnh) vẫn đính kèm được.
+- **Chưa chắc chắn:** Muse từ chối **1 lần** tạo ảnh chân thực có đính kèm ảnh người (vid_03, ảnh nghiêng 3/4; câu trả lời gợi ý "không dựa trên ảnh tham chiếu" hoặc "minh hoạ"). Chủ dự án dùng Muse thường chỉ gặp báo lỗi máy chủ video, không gặp từ chối kiểu này → một lần chưa đủ kết luận là chính sách; sẽ thử lại. Đính kèm ảnh người được giữ làm **đường dự phòng** khi chat phụ của nhân vật hỏng.
+- Muse **giữ mặt rất tốt khi tạo ảnh nối tiếp trong cùng một đoạn chat**, không tải lên ("chính cô gái trong ảnh bạn đã tạo trước đó"). → Cách đang dùng (chủ dự án chọn 27/10/2026): **một chat phụ cho một nhân vật** — ảnh chân dung → các góc → ảnh khung từng cảnh có nhân vật nối tiếp trong chat đó (tuần tự, một tài khoản). Luôn dùng chat phụ, không dùng chat chính; chat phụ không tạo được → mở chat phụ mới thử lại (lần thử lại của nhân vật đính kèm ảnh chân dung).
 - Tạo video tối 27/10 thất bại trên cả 3 tài khoản (chữ→video lẫn ảnh→video, có người lẫn không người); cùng ngày 21:55 chữ→video vẫn thành công. Chưa kết luận được ảnh→video có bị chặn với người chân thực hay không — cần thử lại khi Muse ổn định.
 
 ## 7. Lộ trình

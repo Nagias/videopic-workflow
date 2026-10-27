@@ -92,6 +92,16 @@ export function composeKeyframePrompt(shot: Shot, character: string, location: s
   return parts.join(". ");
 }
 
+export function composeInChatKeyframePrompt(shot: Shot, location: string): string {
+  return [
+    "Next photo in the same story: the very same woman from the portraits you created earlier in this conversation — exactly the same face, hair, body and outfit",
+    `${SHOT_SIZES[shot.size].en}, ${CAMERA_ANGLES[shot.angle].en}`,
+    shot.action,
+    `Location: ${location}. Keep the tent, stream and landscape exactly as in the attached location photo`,
+    "Photorealistic still from a survival documentary, natural light, realistic skin, no text",
+  ].join(". ");
+}
+
 export function composeMotionPrompt(shot: Shot): string {
   const keep = shot.subject === "character" ? "keep her face, hair and outfit exactly unchanged, " : "";
   return `${shot.action}. Camera: ${CAMERA_MOVES[shot.move].en}. Natural realistic motion, ${keep}no cuts, no new people`;

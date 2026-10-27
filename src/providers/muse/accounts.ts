@@ -23,6 +23,7 @@ export type AccountPool = {
   acquire(): MuseAccount;
   tryAcquire(): MuseAccount | null;
   acquireWait(signal: AbortSignal, onWait?: () => void): Promise<MuseAccount>;
+  acquireSpecific(id: string, signal: AbortSignal, onWait?: () => void): Promise<MuseAccount>;
   loggedInCount(): number;
   release(id: string, outcome: "ok" | "needs_login" | "cooldown"): void;
   snapshot(): { id: string; state: AccountState; loggedIn: boolean }[];
@@ -72,6 +73,21 @@ export function createAccountPool(profilesDir: string, cooldownMs = 60_000, now:
       for (;;) {
         const acc = tryAcquire();
         if (acc) return acc;
+        if (signal.aborted) throw new Error("Đã dừng");
+        onWait?.();
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    },
+    async acquireSpecific(id, signal, onWait) {
+      for (;;) {
+        const acc = listProfiles(profilesDir).find((a) => a.id === id);
+        if (!acc) throw new Error(`Không còn hồ sơ Muse ${id}`);
+        const state = stateOf(acc);
+        if (state === "needs_login") throw new Error(`Tài khoản ${id} cần đăng nhập lại (npm run muse:login -- ${id})`);
+        if (state === "ready") {
+          busy.add(acc.id);
+          return acc;
+        }
         if (signal.aborted) throw new Error("Đã dừng");
         onWait?.();
         await new Promise((r) => setTimeout(r, 2000));

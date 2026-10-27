@@ -40,6 +40,7 @@ export const PortValueSchema = z.discriminatedUnion("kind", [
     role: z.enum(["character", "location"]),
     description: z.string(),
     images: z.array(ImageRefSchema),
+    session: z.object({ accountId: z.string(), threadUrl: z.string() }).optional(),
   }),
   z.object({ kind: z.literal("shotlist"), shots: z.array(ShotSchema) }),
   z.object({ kind: z.literal("storyboard"), shots: z.array(StoryboardShotSchema) }),

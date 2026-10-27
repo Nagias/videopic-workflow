@@ -48,6 +48,11 @@ describe("node film (Dựng phim)", () => {
     const out = await run(ctx, inputs, { provider: "fake", fixBrightness: true });
 
     expect(counter.log.image - imagesForRefs).toBe(3);
+    const shotImagePrompts = counter.log.imagePrompts.slice(imagesForRefs);
+    const shotSessions = counter.log.imageSessions.slice(imagesForRefs);
+    expect(shotImagePrompts.filter((p) => p.startsWith("Next photo in the same story")).length).toBe(2);
+    expect(shotSessions.filter((s) => s === "continue").length).toBe(2);
+    expect(shotSessions.filter((s) => s === "none").length).toBe(1);
     expect(counter.log.video).toBe(4);
     const video = out.video;
     expect(video?.kind).toBe("video");

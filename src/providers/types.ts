@@ -4,7 +4,14 @@ import type { ClipDuration, ProviderId } from "../shared/providers";
 
 export type ImageReference = { mediaId: string; role: string };
 
-export type ImageRequest = { prompt: string; references: ImageReference[] };
+export type ChatSessionRef = { accountId: string; threadUrl: string };
+
+export type ImageRequest = {
+  prompt: string;
+  references: ImageReference[];
+  session?: ChatSessionRef | "new";
+  fallback?: { prompt: string; references: ImageReference[] };
+};
 
 export type VideoRequest = { prompt: string; durationSec: ClipDuration; firstFrameMediaId?: string };
 
@@ -16,7 +23,7 @@ export type ProviderContext = {
 };
 
 export type GeneratedVideo = { mediaId: string; durationSec: number; width: number; height: number };
-export type GeneratedImage = { mediaId: string; width: number; height: number };
+export type GeneratedImage = { mediaId: string; width: number; height: number; session?: ChatSessionRef };
 
 export interface MediaProvider {
   id: ProviderId;

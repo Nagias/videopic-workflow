@@ -1,6 +1,6 @@
 import { requireInput, type NodeRun, type NodeRunContext } from "../../core/node-runtime";
-import type { ImageReference, MediaProvider, ProviderContext } from "../../providers/types";
-import { checkShotList, composeKeyframePrompt, composeMotionPrompt, type Shot } from "../../shared/director";
+import type { ChatSessionRef, ImageReference, MediaProvider, ProviderContext } from "../../providers/types";
+import { checkShotList, composeInChatKeyframePrompt, composeKeyframePrompt, composeMotionPrompt, type Shot } from "../../shared/director";
 import type { ImageSetValue, StoryboardShot } from "../../shared/ports";
 import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC, SHOT_SECONDS, type FilmParams } from "./definition";
 
@@ -69,6 +69,28 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
     ctx.partial({ storyboard: { kind: "storyboard", shots: board.map((b) => ({ ...b })) } });
   };
   const sem = semaphore(Math.max(1, provider.maxParallel()));
+  const characterChat = semaphore(1);
+  let session: ChatSessionRef | undefined = character.session;
+  const locationRefs = location.images.filter((x) => x.view === "wide").map((x) => ({ mediaId: x.mediaId, role: location.role }));
+
+  const characterKeyframe = async (i: number, shot: Shot): Promise<{ mediaId: string }> => {
+    const prompt = composeInChatKeyframePrompt(shot, location.description);
+    const fallbackRefs = referencesFor(shot, character, location);
+    const fallbackPrompt = composeKeyframePrompt(shot, character.description, location.description);
+    return ctx.step(["keyframe-chat", provider.id, prompt, character.images.map((x) => x.mediaId), locationRefs.map((x) => x.mediaId)], async () => {
+      await characterChat.acquire();
+      try {
+        const img = await provider.generateImage(
+          { prompt, references: locationRefs, session: session ?? "new", fallback: { prompt: fallbackPrompt, references: fallbackRefs } },
+          shotCtx(i),
+        );
+        if (img.session) session = img.session;
+        return { mediaId: img.mediaId };
+      } finally {
+        characterChat.release();
+      }
+    });
+  };
   const shotCtx = (i: number): ProviderContext => ({
     signal: ctx.signal,
     report: (m) => {
@@ -96,7 +118,9 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
           publish();
           const keyframe = prev
             ? await ctx.step(["chain-frame", prev.clipId], async () => ({ mediaId: await lastFrameOf(ctx, prev.clipId) }))
-            : await ctx.step(
+            : shot.subject === "character" && session
+              ? await characterKeyframe(i, shot)
+              : await ctx.step(
                 ["keyframe", provider.id, composeKeyframePrompt(shot, character.description, location.description), referencesFor(shot, character, location)],
                 async () => {
                   const img = await provider.generateImage(

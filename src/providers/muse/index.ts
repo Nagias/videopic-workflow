@@ -73,9 +73,18 @@ type MuseJob = {
   attachments: string[];
   requestedSec: number;
   waitMs: number;
+  threadUrl?: string;
+  accountId?: string;
 };
 
-type Accepted = { mediaId: string; width: number; height: number; durationSec: number };
+type Accepted = { mediaId: string; width: number; height: number; durationSec: number; threadUrl: string; accountId: string };
+
+export const MAX_JOB_ATTEMPTS = 2;
+const RETRY_IN_NEW_SIDE_CHAT = new Set(["REFUSED", "MUSE_FAILED", "NO_MEDIA", "SIDE_CHAT_FAILED", "THREAD_NOT_FOUND"]);
+
+export function isSideChatThread(url: string): boolean {
+  return /\/thread\/(?!new(?:[/?#]|$))[^/?#]+/.test(url);
+}
 
 async function sleep(ms: number, signal: AbortSignal): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -165,14 +174,15 @@ async function captureDebug(cfg: AppConfig, page: Page, accId: string): Promise<
   return base;
 }
 
-async function openFreshChat(page: Page, ctx: ProviderContext): Promise<ElementHandle> {
-  let input = await firstVisible(page, CHAT_INPUT_SELECTORS, 20_000, ctx.signal);
-  if (!input) {
-    if (await page.evaluate<boolean>(callJs(LOGIN_WALL_JS))) {
-      throw new ProviderError("SESSION_EXPIRED", "cần đăng nhập lại");
-    }
-    throw new ProviderError("INPUT_NOT_FOUND", "Không tìm thấy ô nhập chat của Muse (giao diện có thể đã đổi — sửa src/providers/muse/dom.ts)");
-  }
+async function findChatInput(page: Page, ctx: ProviderContext): Promise<ElementHandle> {
+  const input = await firstVisible(page, CHAT_INPUT_SELECTORS, 20_000, ctx.signal);
+  if (input) return input;
+  if (await page.evaluate<boolean>(callJs(LOGIN_WALL_JS))) throw new ProviderError("SESSION_EXPIRED", "cần đăng nhập lại");
+  throw new ProviderError("INPUT_NOT_FOUND", "Không tìm thấy ô nhập chat của Muse (giao diện có thể đã đổi — sửa src/providers/muse/dom.ts)");
+}
+
+async function openSideChat(page: Page, ctx: ProviderContext): Promise<ElementHandle> {
+  await findChatInput(page, ctx);
   let newChat = await firstVisible(page, NEW_CHAT_SELECTORS, 3_000, ctx.signal);
   if (!newChat) {
     const switcher = await page.$(CHAT_SWITCHER_SELECTOR);
@@ -181,17 +191,20 @@ async function openFreshChat(page: Page, ctx: ProviderContext): Promise<ElementH
       newChat = await firstVisible(page, NEW_SIDE_CHAT_IN_MENU_SELECTORS, 5_000, ctx.signal);
     }
   }
-  if (newChat) {
-    ctx.report("Mở đoạn chat phụ mới");
-    await newChat.click({ timeout: 5_000 });
-    await sleep(2500, ctx.signal);
-    input = (await firstVisible(page, CHAT_INPUT_SELECTORS, 10_000, ctx.signal)) ?? input;
-  } else {
-    ctx.report("Không thấy nút chat mới, dùng đoạn chat hiện tại");
-    await page.evaluate(callJs(SCROLL_CHAT_TO_END_JS));
-    await sleep(3000, ctx.signal);
+  if (!newChat) throw new ProviderError("SIDE_CHAT_FAILED", "Không mở được chat phụ mới trên Muse (không gửi vào chat chính)");
+  ctx.report("Mở chat phụ mới");
+  await newChat.click({ timeout: 5_000 });
+  await sleep(2500, ctx.signal);
+  return findChatInput(page, ctx);
+}
+
+async function waitThreadUrl(page: Page, signal: AbortSignal): Promise<string> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (isSideChatThread(page.url())) return page.url();
+    await sleep(500, signal);
   }
-  return input;
+  return page.url();
 }
 
 async function acceptCandidate(
@@ -201,7 +214,7 @@ async function acceptCandidate(
   accId: string,
   attachmentHashes: bigint[],
   reasons: string[],
-): Promise<Accepted | null> {
+): Promise<Omit<Accepted, "threadUrl" | "accountId"> | null> {
   const tmp = await ctx.storage.writeTemp(bytes, job.kind === "video" ? "mp4" : "img");
   const sha = await ctx.storage.sha256File(tmp);
   if (ctx.storage.hasSha256(sha)) {
@@ -251,12 +264,24 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
     else if (job.kind === "video" && !preNet.has(url) && !netCandidates.includes(url)) netCandidates.push(url);
   });
 
-  ctx.report("Mở muse.ai…");
-  await page.goto(cfg.museUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
-  await sleep(3000, ctx.signal);
   let input: ElementHandle;
   try {
-    input = await openFreshChat(page, ctx);
+    if (job.threadUrl) {
+      ctx.report("Mở lại chat phụ của nhân vật…");
+      await page.goto(job.threadUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
+      await sleep(3000, ctx.signal);
+      input = await findChatInput(page, ctx);
+      if (!page.url().startsWith(job.threadUrl.split("?")[0]!)) {
+        throw new ProviderError("THREAD_NOT_FOUND", "Chat phụ của nhân vật không còn mở được");
+      }
+      await page.evaluate(callJs(SCROLL_CHAT_TO_END_JS));
+      await sleep(1500, ctx.signal);
+    } else {
+      ctx.report("Mở muse.ai…");
+      await page.goto(cfg.museUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
+      await sleep(3000, ctx.signal);
+      input = await openSideChat(page, ctx);
+    }
   } catch (err) {
     if (err instanceof ProviderError && err.code === "SESSION_EXPIRED") {
       throw new ProviderError("SESSION_EXPIRED", `Tài khoản ${acc.id} cần đăng nhập lại (npm run muse:login -- ${acc.id})`);
@@ -279,6 +304,7 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
   await sleep(500, ctx.signal);
   submitted = true;
   await submitPrompt(page, input, ctx.signal);
+  const threadUrl = job.threadUrl ?? (await waitThreadUrl(page, ctx.signal));
 
   const started = Date.now();
   const deadline = started + job.waitMs;
@@ -326,7 +352,7 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
       if (ok) {
         const info = job.kind === "video" ? `${ok.width}x${ok.height} ${ok.durationSec.toFixed(1)}s` : `${ok.width}x${ok.height}`;
         ctx.report(`Đã nhận ${label} ${info} sau ${Math.round((Date.now() - started) / 1000)} giây`);
-        return ok;
+        return { ...ok, threadUrl, accountId: acc.id };
       }
     }
     await sleep(SCAN_INTERVAL_MS, ctx.signal);
@@ -354,9 +380,10 @@ async function runOnAccount(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx:
 }
 
 export function createMuseProvider(cfg: AppConfig, pool: AccountPool = createAccountPool(cfg.profilesDir)): MediaProvider {
-  const runJob = async (job: MuseJob, ctx: ProviderContext): Promise<Accepted> => {
-    assertMuseAllowed(cfg);
-    const acc = await pool.acquireWait(ctx.signal, () => ctx.report("Chờ tài khoản Muse rảnh…"));
+  const runOnce = async (job: MuseJob, ctx: ProviderContext): Promise<Accepted> => {
+    const acc = job.accountId
+      ? await pool.acquireSpecific(job.accountId, ctx.signal, () => ctx.report(`Chờ tài khoản ${job.accountId} rảnh…`))
+      : await pool.acquireWait(ctx.signal, () => ctx.report("Chờ tài khoản Muse rảnh…"));
     try {
       const result = await runOnAccount(cfg, acc, job, ctx);
       pool.release(acc.id, "ok");
@@ -366,6 +393,21 @@ export function createMuseProvider(cfg: AppConfig, pool: AccountPool = createAcc
       if (err instanceof ProviderError) throw err;
       const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
       throw new ProviderError("BROWSER_ERROR", `Lỗi khi điều khiển Muse bằng hồ sơ ${acc.id}: ${msg}`, { cause: err });
+    }
+  };
+
+  const runJob = async (job: MuseJob, ctx: ProviderContext, retryJob?: MuseJob): Promise<Accepted> => {
+    assertMuseAllowed(cfg);
+    let attempt: MuseJob = job;
+    for (let i = 1; ; i++) {
+      try {
+        return await runOnce(attempt, ctx);
+      } catch (err) {
+        const code = err instanceof ProviderError ? err.code : "";
+        if (i >= MAX_JOB_ATTEMPTS || !RETRY_IN_NEW_SIDE_CHAT.has(code)) throw err;
+        ctx.report(`Chat phụ không tạo được (${code}) — mở chat phụ mới, thử lại lần ${i + 1}/${MAX_JOB_ATTEMPTS}`);
+        attempt = { ...(retryJob ?? job), threadUrl: undefined, accountId: undefined };
+      }
     }
   };
 
@@ -395,17 +437,18 @@ export function createMuseProvider(cfg: AppConfig, pool: AccountPool = createAcc
     },
 
     async generateImage(req, ctx): Promise<GeneratedImage> {
-      const r = await runJob(
-        {
-          kind: "image",
-          text: formatImagePrompt(req.prompt, req.references.map((x) => x.role)),
-          attachments: req.references.map((x) => mediaPath(ctx, x.mediaId)),
-          requestedSec: 0,
-          waitMs: IMAGE_WAIT_MS,
-        },
-        ctx,
-      );
-      return { mediaId: r.mediaId, width: r.width, height: r.height };
+      const toJob = (prompt: string, refs: typeof req.references): MuseJob => ({
+        kind: "image",
+        text: formatImagePrompt(prompt, refs.map((x) => x.role)),
+        attachments: refs.map((x) => mediaPath(ctx, x.mediaId)),
+        requestedSec: 0,
+        waitMs: IMAGE_WAIT_MS,
+      });
+      const session = req.session && req.session !== "new" ? req.session : undefined;
+      const job = { ...toJob(req.prompt, req.references), threadUrl: session?.threadUrl, accountId: session?.accountId };
+      const retry = req.fallback ? toJob(req.fallback.prompt, req.fallback.references) : undefined;
+      const r = await runJob(job, ctx, retry);
+      return { mediaId: r.mediaId, width: r.width, height: r.height, session: { accountId: r.accountId, threadUrl: r.threadUrl } };
     },
   };
 }

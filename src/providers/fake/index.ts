@@ -14,7 +14,8 @@ export function createFakeProvider(): MediaProvider {
       const out = await ctx.storage.tmpPath("jpg");
       await ctx.ffmpeg.makeTestImage({ out, colorHex: colorOf(key), width: 1280, height: 720 });
       const rec = await ctx.storage.importFile(out, { kind: "image", source: "fake", width: 1280, height: 720 });
-      return { mediaId: rec.id, width: 1280, height: 720 };
+      const session = req.session === "new" ? { accountId: "fake", threadUrl: `fake://thread/${key.length}-${rec.id.slice(0, 8)}` } : req.session;
+      return { mediaId: rec.id, width: 1280, height: 720, ...(session ? { session } : {}) };
     },
 
     async generateVideo(req, ctx) {

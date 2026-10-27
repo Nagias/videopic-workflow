@@ -48,7 +48,7 @@ describe("chặn Muse trong test", () => {
     const never = () => {
       throw new Error("không được tới đây");
     };
-    const provider = createMuseProvider(cfg, { acquire: never, tryAcquire: never, acquireWait: never, loggedInCount: () => 0, release: () => undefined, snapshot: () => [] });
+    const provider = createMuseProvider(cfg, { acquire: never, tryAcquire: never, acquireWait: never, acquireSpecific: never, loggedInCount: () => 0, release: () => undefined, snapshot: () => [] });
     await expect(provider.generateVideo({ prompt: "x", durationSec: 5 }, {} as never)).rejects.toThrow(/Test không được gọi Muse thật/);
   });
   it("MUSE_LIVE=1 thì cho phép", () => {

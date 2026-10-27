@@ -38,7 +38,7 @@ export function testNodeCtx(
   };
 }
 
-export type CallLog = { video: number; image: number; videoPrompts: string[]; firstFrames: (string | undefined)[] };
+export type CallLog = { video: number; image: number; videoPrompts: string[]; firstFrames: (string | undefined)[]; imagePrompts: string[]; imageSessions: string[] };
 
 export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean } = {}): {
   providers: ProviderRegistry;
@@ -46,7 +46,7 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
   log: CallLog;
 } {
   const fake = createFakeProvider();
-  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [] };
+  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [] };
   const counted: MediaProvider = {
     id: "fake",
     maxParallel: () => 2,
@@ -59,6 +59,8 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
     },
     generateImage: (req, ctx) => {
       log.image++;
+      log.imagePrompts.push(req.prompt);
+      log.imageSessions.push(req.session === undefined ? "none" : req.session === "new" ? "new" : "continue");
       return fake.generateImage(req, ctx);
     },
   };

@@ -18,11 +18,13 @@ export const CHARACTER_VIEWS = (d: string) => [
     view: "three-quarter",
     label: "chân dung nghiêng 3/4",
     prompt: `Photorealistic portrait photo of the same woman as in the attached photo, three-quarter view turned slightly to the left, same face, same hair, same outfit: ${d}. Outdoor forest background, natural light`,
+    inChatPrompt: `Next photo: the very same woman from the portrait you just created in this conversation — exactly the same face, hair and outfit (${d}). Three-quarter view turned slightly to the left, outdoor forest background, natural light, photorealistic`,
   },
   {
     view: "full-body",
     label: "toàn thân",
     prompt: `Photorealistic full-body photo of the same woman as in the attached photo, standing, head to toe visible, same face, hair and outfit: ${d}. Forest clearing background, natural light`,
+    inChatPrompt: `Next photo: the very same woman from the portraits you created earlier in this conversation — exactly the same face, hair and outfit (${d}). Full body standing, head to toe visible, forest clearing background, natural light, photorealistic`,
   },
 ];
 
