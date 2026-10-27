@@ -1,0 +1,194 @@
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { and, eq } from "drizzle-orm";
+import { ZodError } from "zod";
+import type { ProviderRegistry } from "../providers/types";
+import { NodeOutputsSchema, type NodeOutputs, type PortValue } from "../shared/ports";
+import type { WorkflowGraph, WorkflowNode } from "../shared/workflow";
+import type { Db } from "./db/client";
+import { nodeCache, runNodes } from "./db/schema";
+import type { Ffmpeg } from "./ffmpeg";
+import type { NodeInputs, ServerNode } from "./node-runtime";
+import type { Storage } from "./storage";
+
+export class GraphError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GraphError";
+  }
+}
+
+export type PlannedNode = {
+  node: WorkflowNode;
+  impl: ServerNode;
+  params: unknown;
+  inputs: Map<string, { source: string; sourceHandle: string }>;
+};
+
+export type ExecuteDeps = {
+  db: Db;
+  storage: Storage;
+  ffmpeg: Ffmpeg;
+  providers: ProviderRegistry;
+  nodes: Record<string, ServerNode>;
+};
+
+function zodMessage(err: ZodError): string {
+  return err.issues.map((i) => i.message).join("; ");
+}
+
+export function planGraph(graph: WorkflowGraph, nodes: Record<string, ServerNode>): PlannedNode[] {
+  const byId = new Map<string, WorkflowNode>();
+  for (const n of graph.nodes) {
+    if (byId.has(n.id)) throw new GraphError(`Trùng mã node "${n.id}"`);
+    if (!nodes[n.type]) throw new GraphError(`Loại node "${n.type}" không tồn tại`);
+    byId.set(n.id, n);
+  }
+
+  const planned = new Map<string, PlannedNode>();
+  for (const n of graph.nodes) {
+    const impl = nodes[n.type]!;
+    let params: unknown;
+    try {
+      params = impl.parseParams(n.params);
+    } catch (err) {
+      if (err instanceof ZodError) throw new GraphError(`Node "${impl.definition.label}" (${n.id}): ${zodMessage(err)}`);
+      throw err;
+    }
+    planned.set(n.id, { node: n, impl, params, inputs: new Map() });
+  }
+
+  for (const e of graph.edges) {
+    const src = planned.get(e.source);
+    const dst = planned.get(e.target);
+    if (!src || !dst) throw new GraphError(`Dây nối "${e.id}" trỏ tới node không tồn tại`);
+    const out = src.impl.definition.outputs.find((p) => p.name === e.sourceHandle);
+    const inp = dst.impl.definition.inputs.find((p) => p.name === e.targetHandle);
+    if (!out) throw new GraphError(`Node "${src.impl.definition.label}" không có cổng ra "${e.sourceHandle}"`);
+    if (!inp) throw new GraphError(`Node "${dst.impl.definition.label}" không có cổng vào "${e.targetHandle}"`);
+    if (out.kind !== inp.kind) {
+      throw new GraphError(`Nối sai kiểu: "${src.impl.definition.label}.${out.label}" (${out.kind}) → "${dst.impl.definition.label}.${inp.label}" (${inp.kind})`);
+    }
+    if (dst.inputs.has(e.targetHandle)) throw new GraphError(`Cổng "${inp.label}" của node "${dst.impl.definition.label}" có nhiều hơn một dây nối`);
+    dst.inputs.set(e.targetHandle, { source: e.source, sourceHandle: e.sourceHandle });
+  }
+
+  for (const p of planned.values()) {
+    for (const inp of p.impl.definition.inputs) {
+      if (!p.inputs.has(inp.name)) throw new GraphError(`Node "${p.impl.definition.label}" (${p.node.id}) chưa nối cổng vào "${inp.label}"`);
+    }
+  }
+
+  const order: PlannedNode[] = [];
+  const state = new Map<string, "visiting" | "done">();
+  const visit = (id: string) => {
+    const s = state.get(id);
+    if (s === "done") return;
+    if (s === "visiting") throw new GraphError("Workflow có vòng lặp (node nối ngược về chính nó)");
+    state.set(id, "visiting");
+    const p = planned.get(id)!;
+    for (const src of p.inputs.values()) visit(src.source);
+    state.set(id, "done");
+    order.push(p);
+  };
+  for (const n of graph.nodes) visit(n.id);
+  return order;
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function cacheKeyOf(type: string, params: unknown, upstream: Record<string, string>): string {
+  return createHash("sha256").update(stableStringify({ type, params, upstream })).digest("hex");
+}
+
+function outputsStillValid(outputs: NodeOutputs, storage: Storage): boolean {
+  return Object.values(outputs).every((v: PortValue) => {
+    if (v.kind !== "video") return true;
+    const rec = storage.getMedia(v.mediaId);
+    return rec !== undefined && existsSync(storage.absPath(rec));
+  });
+}
+
+export async function executeRun(deps: ExecuteDeps, runId: string, graph: WorkflowGraph, signal: AbortSignal): Promise<void> {
+  const { db } = deps;
+  const now = () => Date.now();
+  const setNode = (nodeId: string, patch: Partial<typeof runNodes.$inferInsert>) =>
+    db.update(runNodes).set({ ...patch, updatedAt: now() }).where(and(eq(runNodes.runId, runId), eq(runNodes.nodeId, nodeId))).run();
+
+  for (const n of graph.nodes) {
+    db.insert(runNodes)
+      .values({ runId, nodeId: n.id, status: "pending", updatedAt: now() })
+      .onConflictDoNothing()
+      .run();
+  }
+
+  let order: PlannedNode[];
+  try {
+    order = planGraph(graph, deps.nodes);
+  } catch (err) {
+    for (const n of graph.nodes) setNode(n.id, { status: "skipped" });
+    throw err;
+  }
+
+  const outputs = new Map<string, NodeOutputs>();
+  const keys = new Map<string, string>();
+
+  for (let i = 0; i < order.length; i++) {
+    const p = order[i]!;
+    const id = p.node.id;
+    if (signal.aborted) throw new Error("Run đã bị dừng");
+
+    const inputs: NodeInputs = {};
+    const upstream: Record<string, string> = {};
+    for (const [name, src] of p.inputs) {
+      const value = outputs.get(src.source)?.[src.sourceHandle];
+      if (!value) throw new Error(`Node nguồn "${src.source}" không trả cổng "${src.sourceHandle}"`);
+      inputs[name] = value;
+      upstream[name] = `${keys.get(src.source)}:${src.sourceHandle}`;
+    }
+    const key = cacheKeyOf(p.node.type, p.params, upstream);
+    keys.set(id, key);
+
+    const cached = db.select().from(nodeCache).where(eq(nodeCache.cacheKey, key)).get();
+    if (cached) {
+      const parsed = NodeOutputsSchema.parse(JSON.parse(cached.outputJson));
+      if (outputsStillValid(parsed, deps.storage)) {
+        outputs.set(id, parsed);
+        setNode(id, { status: "cached", cacheKey: key, outputJson: cached.outputJson, message: "Dùng lại kết quả trước", error: null });
+        continue;
+      }
+      db.delete(nodeCache).where(eq(nodeCache.cacheKey, key)).run();
+    }
+
+    setNode(id, { status: "running", cacheKey: key, message: "Đang chạy…", error: null });
+    try {
+      const result = await p.impl.run(
+        {
+          signal,
+          report: (message) => setNode(id, { message }),
+          providers: deps.providers,
+          storage: deps.storage,
+          ffmpeg: deps.ffmpeg,
+        },
+        inputs,
+        p.params,
+      );
+      const json = JSON.stringify(NodeOutputsSchema.parse(result));
+      db.insert(nodeCache).values({ cacheKey: key, outputJson: json, createdAt: now() }).onConflictDoNothing().run();
+      outputs.set(id, result);
+      setNode(id, { status: "succeeded", outputJson: json, message: "Xong" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setNode(id, { status: "failed", error: message, message: null });
+      for (const rest of order.slice(i + 1)) setNode(rest.node.id, { status: "skipped" });
+      throw new Error(`Node "${p.impl.definition.label}" lỗi: ${message}`, { cause: err });
+    }
+  }
+}
