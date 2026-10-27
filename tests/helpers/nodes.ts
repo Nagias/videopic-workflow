@@ -1,10 +1,42 @@
-import type { ServerNode } from "../../src/core/node-runtime";
+import type { Ffmpeg } from "../../src/core/ffmpeg";
+import type { NodeRunContext, ServerNode, StepValue } from "../../src/core/node-runtime";
+import type { Storage } from "../../src/core/storage";
+import type { NodeOutputs } from "../../src/shared/ports";
 import { serverNodes } from "../../src/nodes/registry.server";
 import { createFakeProvider } from "../../src/providers/fake";
 import type { MediaProvider, ProviderRegistry } from "../../src/providers/types";
 import type { WorkflowGraph } from "../../src/shared/workflow";
 
 export const testNodes: Record<string, ServerNode> = serverNodes;
+
+export function testNodeCtx(
+  env: { storage: Storage; ffmpeg: Ffmpeg },
+  providers: ProviderRegistry,
+  messages: string[] = [],
+  partials: NodeOutputs[] = [],
+): NodeRunContext {
+  const steps = new Map<string, StepValue>();
+  return {
+    signal: new AbortController().signal,
+    report: (m) => {
+      messages.push(m);
+    },
+    partial: (o) => {
+      partials.push(o);
+    },
+    step: async <T extends StepValue>(keyParts: unknown, fn: () => Promise<T>): Promise<T> => {
+      const k = JSON.stringify(keyParts);
+      const hit = steps.get(k);
+      if (hit) return hit as T;
+      const v = await fn();
+      steps.set(k, v);
+      return v;
+    },
+    providers,
+    storage: env.storage,
+    ffmpeg: env.ffmpeg,
+  };
+}
 
 export type CallLog = { video: number; image: number; videoPrompts: string[]; firstFrames: (string | undefined)[] };
 

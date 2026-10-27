@@ -12,7 +12,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../app/api-client";
 import { webNodes } from "../../../nodes/registry.web";
-import type { MuseAccountsResponse, RunResponse } from "../../../shared/api";
+import type { MuseAccountsResponse, RunResponse, WorkflowListResponse, WorkflowResponse } from "../../../shared/api";
+import { WORKFLOW_TEMPLATES } from "../../../shared/templates";
 import { connectionProblem, fromFlow, toFlow } from "./graph-convert";
 import { GraphNode, type FlowNode } from "./GraphNode";
 import { EditorContext, type EditorApi } from "./node-kit";
@@ -43,22 +44,36 @@ export function Editor() {
   const latest = useRef({ nodes, edges });
   latest.current = { nodes, edges };
 
+  const [workflowList, setWorkflowList] = useState<WorkflowListResponse["workflows"]>([]);
+
+  const showWorkflow = useCallback(
+    (wf: WorkflowResponse) => {
+      loaded.current = false;
+      const flow = toFlow(wf.graph);
+      setNodes(flow.nodes);
+      setEdges(flow.edges);
+      setWorkflowId(wf.id);
+      setRun(null);
+      setSaveState("idle");
+      const url = new URL(window.location.href);
+      url.searchParams.set("wf", wf.id);
+      window.history.replaceState(null, "", url);
+      loaded.current = true;
+      api.listWorkflows().then((l) => setWorkflowList(l.workflows), () => setWorkflowList([]));
+    },
+    [setNodes, setEdges],
+  );
+
   useEffect(() => {
-    api
-      .getDefaultWorkflow()
-      .then((wf) => {
-        const flow = toFlow(wf.graph);
-        setNodes(flow.nodes);
-        setEdges(flow.edges);
-        setWorkflowId(wf.id);
-        loaded.current = true;
-      })
+    const wanted = new URLSearchParams(window.location.search).get("wf");
+    (wanted ? api.getWorkflow(wanted).catch(() => api.getDefaultWorkflow()) : api.getDefaultWorkflow())
+      .then(showWorkflow)
       .catch((e: unknown) => setProblem(`Không tải được workflow: ${e instanceof Error ? e.message : String(e)}`));
     api
       .getMuseAccounts()
       .then(setMuse)
       .catch(() => setMuse(null));
-  }, [setNodes, setEdges]);
+  }, [showWorkflow]);
 
   const save = useCallback(async () => {
     if (!workflowId) return;
@@ -142,20 +157,53 @@ export function Editor() {
 
   const readyMuse = muse?.accounts.filter((a) => a.loggedIn).length ?? 0;
 
+  const switchTo = async (load: () => Promise<WorkflowResponse>) => {
+    setProblem(null);
+    try {
+      if (workflowId) await save();
+      showWorkflow(await load());
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   return (
     <EditorContext.Provider value={editorApi}>
       <div className="editor">
         <div className="toolbar">
           <h1>VideoPic Workflow</h1>
-          <div className="tool-group">
-            {Object.entries(webNodes).map(([type, impl]) => (
-              <button key={type} type="button" data-testid={`add-node-${type}`} onClick={() => addNode(type)}>
-                + {impl.definition.label}
-              </button>
+          <select
+            data-testid="workflow-select"
+            value={workflowId ?? ""}
+            onChange={(e) => void switchTo(() => api.getWorkflow(e.target.value))}
+          >
+            {workflowList.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
             ))}
-          </div>
+          </select>
+          {WORKFLOW_TEMPLATES.map((t) => (
+            <button key={t.id} type="button" data-testid={`template-${t.id}`} onClick={() => void switchTo(() => api.createFromTemplate(t.id))}>
+              + Mẫu {t.name}
+            </button>
+          ))}
+          <select
+            data-testid="add-node"
+            value=""
+            onChange={(e) => {
+              if (e.target.value) addNode(e.target.value);
+            }}
+          >
+            <option value="">+ Thêm node…</option>
+            {Object.entries(webNodes).map(([type, impl]) => (
+              <option key={type} value={type}>
+                {impl.definition.label}
+              </option>
+            ))}
+          </select>
           <span className="muse-accounts" data-testid="muse-accounts" title={muse?.accounts.map((a) => `${a.id}: ${a.state}`).join("\n")}>
-            Muse: {readyMuse}/{muse?.accounts.length ?? 0} tài khoản đã đăng nhập
+            Muse: {readyMuse}/{muse?.accounts.length ?? 0} tài khoản
           </span>
           <span className={`save-state ${saveState}`} data-testid="save-status">
             {saveState === "saving" ? "Đang lưu…" : saveState === "saved" ? "Đã lưu" : saveState === "error" ? "Lưu lỗi" : ""}

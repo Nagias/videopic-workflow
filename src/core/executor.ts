@@ -8,7 +8,7 @@ import type { WorkflowGraph, WorkflowNode } from "../shared/workflow";
 import type { Db } from "./db/client";
 import { nodeCache, runNodes } from "./db/schema";
 import type { Ffmpeg } from "./ffmpeg";
-import type { NodeInputs, ServerNode } from "./node-runtime";
+import type { NodeInputs, ServerNode, StepValue } from "./node-runtime";
 import type { Storage } from "./storage";
 
 export class GraphError extends Error {
@@ -108,12 +108,28 @@ export function cacheKeyOf(type: string, params: unknown, upstream: Record<strin
   return createHash("sha256").update(stableStringify({ type, params, upstream })).digest("hex");
 }
 
-function outputsStillValid(outputs: NodeOutputs, storage: Storage): boolean {
-  return Object.values(outputs).every((v: PortValue) => {
-    if (v.kind !== "video") return true;
-    const rec = storage.getMedia(v.mediaId);
+const MEDIA_KEYS = new Set(["mediaId", "keyframeId", "clipId"]);
+
+export function collectMediaIds(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) for (const v of value) collectMediaIds(v, out);
+  else if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (MEDIA_KEYS.has(k) && typeof v === "string") out.push(v);
+      else collectMediaIds(v, out);
+    }
+  }
+  return out;
+}
+
+function mediaStillValid(value: unknown, storage: Storage): boolean {
+  return collectMediaIds(value).every((id) => {
+    const rec = storage.getMedia(id);
     return rec !== undefined && existsSync(storage.absPath(rec));
   });
+}
+
+function outputsStillValid(outputs: NodeOutputs, storage: Storage): boolean {
+  return Object.values(outputs).every((v: PortValue) => mediaStillValid(v, storage));
 }
 
 export async function executeRun(deps: ExecuteDeps, runId: string, graph: WorkflowGraph, signal: AbortSignal): Promise<void> {
@@ -173,6 +189,19 @@ export async function executeRun(deps: ExecuteDeps, runId: string, graph: Workfl
         {
           signal,
           report: (message) => setNode(id, { message }),
+          partial: (partialOutputs) => setNode(id, { outputJson: JSON.stringify(NodeOutputsSchema.parse(partialOutputs)) }),
+          step: async <T extends StepValue>(keyParts: unknown, fn: () => Promise<T>): Promise<T> => {
+            const stepKey = createHash("sha256").update(`step:${p.node.type}:${stableStringify(keyParts)}`).digest("hex");
+            const hit = db.select().from(nodeCache).where(eq(nodeCache.cacheKey, stepKey)).get();
+            if (hit) {
+              const value = JSON.parse(hit.outputJson) as T;
+              if (mediaStillValid(value, deps.storage)) return value;
+              db.delete(nodeCache).where(eq(nodeCache.cacheKey, stepKey)).run();
+            }
+            const value = await fn();
+            db.insert(nodeCache).values({ cacheKey: stepKey, outputJson: JSON.stringify(value), createdAt: now() }).onConflictDoNothing().run();
+            return value;
+          },
           providers: deps.providers,
           storage: deps.storage,
           ffmpeg: deps.ffmpeg,

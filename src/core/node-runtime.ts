@@ -4,9 +4,13 @@ import type { NodeOutputs, PortValue } from "../shared/ports";
 import type { Ffmpeg } from "./ffmpeg";
 import type { Storage } from "./storage";
 
+export type StepValue = { [k: string]: string | number | boolean | null | StepValue | StepValue[] };
+
 export type NodeRunContext = {
   signal: AbortSignal;
   report(message: string): void;
+  partial(outputs: NodeOutputs): void;
+  step<T extends StepValue>(keyParts: unknown, fn: () => Promise<T>): Promise<T>;
   providers: ProviderRegistry;
   storage: Storage;
   ffmpeg: Ffmpeg;

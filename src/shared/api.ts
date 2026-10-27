@@ -10,6 +10,11 @@ export const WorkflowResponseSchema = z.object({
 });
 export type WorkflowResponse = z.infer<typeof WorkflowResponseSchema>;
 
+export const WorkflowListResponseSchema = z.object({
+  workflows: z.array(z.object({ id: z.string(), name: z.string(), updatedAt: z.number() })),
+});
+export type WorkflowListResponse = z.infer<typeof WorkflowListResponseSchema>;
+
 export const SaveWorkflowBodySchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   graph: WorkflowGraphSchema,

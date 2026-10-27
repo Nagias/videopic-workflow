@@ -42,9 +42,9 @@ describe("khoá cứng kiến trúc", () => {
   it("mọi data-testid trong FEATURE_MAP.md đều có thật trong code giao diện", () => {
     const map = read("FEATURE_MAP.md");
     const ui = walk(path.join(ROOT, "src")).filter((f) => f.endsWith(".tsx")).map((f) => readFileSync(f, "utf8")).join("\n");
-    const ids = [...map.matchAll(/data-testid=([a-z0-9-]+?)(?:-<id>)?\]/g)].map((m) => m[1]!);
-    expect(ids.length).toBeGreaterThan(0);
-    const missing = ids.filter((id) => !ui.includes(`"${id}"`) && !ui.includes(`\`${id}-`) && !ui.includes(`"${id}-`));
+    const ids = [...map.matchAll(/data-testid=([a-z0-9-]+?)((?:-<[^>]+>)*)\]/g)].map((m) => ({ id: m[1]!, dynamic: m[2] !== "" }));
+    expect(ids.length).toBeGreaterThan(15);
+    const missing = ids.filter(({ id, dynamic }) => (dynamic ? !ui.includes(`\`${id}-`) : !ui.includes(`"${id}"`))).map((x) => x.id);
     expect(missing).toEqual([]);
   });
 

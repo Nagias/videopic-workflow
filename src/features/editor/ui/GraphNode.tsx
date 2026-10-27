@@ -15,7 +15,7 @@ export function GraphNode({ id, type, data, selected }: NodeProps<FlowNode>) {
   const status = state?.status;
 
   return (
-    <div className={`gnode ${selected ? "selected" : ""} status-${status ?? "idle"}`} data-testid={`node-${id}`}>
+    <div className={`gnode type-${type} ${selected ? "selected" : ""} status-${status ?? "idle"}`} data-testid={`node-${id}`}>
       <header className="gnode-head">
         <strong>{definition.label}</strong>
         <span className="badge" data-testid={`node-status-${id}`}>
