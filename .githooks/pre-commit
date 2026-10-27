@@ -1,0 +1,8 @@
+#!/bin/sh
+# Khoá cứng CLAUDE.md mục 5 #14: không commit thẳng lên main (trừ commit gốc đầu tiên của repo).
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if git rev-parse --verify -q HEAD >/dev/null 2>&1 && [ "$branch" = "main" ]; then
+  echo "Chặn: không commit thẳng lên main. Tạo nhánh trước: git switch -c <ten-nhanh>"
+  exit 1
+fi
+npm run --silent verify

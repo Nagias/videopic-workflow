@@ -1,0 +1,10 @@
+#!/bin/sh
+# Khoá cứng: dòng đầu commit dạng "<vùng>: <mô tả>" (CLAUDE.md mục 6).
+first=$(head -n 1 "$1")
+case "$first" in
+  Merge*|Revert*) exit 0 ;;
+esac
+if ! printf '%s' "$first" | grep -Eq '^[^: ]+( [^: ]+)?: .{3,}$'; then
+  echo "Chặn: dòng đầu commit phải dạng '<vùng>: <mô tả>' (vd 'nen: dựng khung dự án'). Nhận được: $first"
+  exit 1
+fi

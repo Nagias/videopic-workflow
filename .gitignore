@@ -1,0 +1,13 @@
+# Dữ liệu chạy thật: db, media, hồ sơ Chrome đã đăng nhập Muse — KHÔNG BAO GIỜ lên git
+.data/
+.data-test/
+.cache/
+node_modules/
+dist/
+test-results/
+playwright-report/
+.env
+.env.*
+!.env.example
+*.log
+.claude/settings.local.json
