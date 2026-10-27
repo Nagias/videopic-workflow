@@ -17,6 +17,11 @@ const sideChatMenu = (clearLog: boolean) => `
 <button data-testid="hatch-chat-switcher-trigger" onclick="document.getElementById('menu').hidden=false">Chats</button>
 <div id="menu" hidden><div role="menuitem" onclick="${clearLog ? "document.getElementById('log').innerHTML='';" : ""} document.getElementById('menu').hidden=true; history.pushState({}, '', '/thread/new')">New side chat</div></div>`;
 
+// Tài khoản đã có chat phụ: menu Chats mở bảng "Side chats" có nút "+" (data-testid hatch-chat-compose), bị ẩn cho tới khi mở menu.
+const plusMenu = `
+<button data-testid="hatch-chat-switcher-trigger" onclick="document.getElementById('panel').style.display='block'">Chats</button>
+<div id="panel" style="display:none"><span>Side chats</span><button data-testid="hatch-chat-compose" aria-label="New side chat" onclick="document.getElementById('log').innerHTML=''; history.pushState({}, '', '/thread/new')">+</button></div>`;
+
 const shell = (menu: string, initialLog: string, onSend: string) => `<!doctype html><html><body>
 ${menu}
 <div role="log" id="log">${initialLog}</div>
@@ -102,6 +107,7 @@ test.describe("Muse provider trên trang Muse giả (không tốn lượt thật
       else if (url.startsWith("/image")) res.end(shell(sideChatMenu(true), "", imageOk));
       else if (url.startsWith("/refuse")) res.end(shell(sideChatMenu(true), "", imageRefuse));
       else if (url.startsWith("/flaky")) res.end(shell(sideChatMenu(true), "", ++flakyVisits === 1 ? imageFail : imageOk));
+      else if (url.startsWith("/plusmenu")) res.end(shell(plusMenu, "<div class='message'><p>chat chính cũ</p></div>", imageOk));
       else if (url.startsWith("/nosidechat")) res.end(videoPage("", ""));
       else if (url.startsWith("/keeplog")) res.end(videoPage(sideChatMenu(false), "say('<video src=\"/old-copy.mp4\" width=\"640\" muted></video>', 500);"));
       else res.end(videoPage(sideChatMenu(true), ""));
@@ -154,6 +160,13 @@ test.describe("Muse provider trên trang Muse giả (không tốn lượt thật
     expect(result.session?.accountId).toBe("muse_vid_01");
     expect(result.session?.threadUrl).toMatch(/\/thread\/t-[a-z0-9]+$/);
     expect(messages).toContain("Đính kèm ảnh 1/1…");
+  });
+
+  test("tài khoản đã có chat phụ: mở menu rồi bấm nút + (hatch-chat-compose) để tạo chat phụ mới", async () => {
+    const messages: string[] = [];
+    const result = await provider("/plusmenu").generateImage({ prompt: "x", references: [], session: "new" }, ctx(messages));
+    expect(messages).toContain("Mở chat phụ mới");
+    expect(result.session?.threadUrl).toMatch(/\/thread\/t-/);
   });
 
   test("tiếp tục chat phụ của nhân vật: mở lại đúng đường dẫn chat, không mở chat mới", async () => {

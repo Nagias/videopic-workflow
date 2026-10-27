@@ -188,7 +188,7 @@ async function openSideChat(page: Page, ctx: ProviderContext): Promise<ElementHa
     const switcher = await page.$(CHAT_SWITCHER_SELECTOR);
     if (switcher && (await switcher.isVisible())) {
       await switcher.click({ timeout: 5_000 });
-      newChat = await firstVisible(page, NEW_SIDE_CHAT_IN_MENU_SELECTORS, 5_000, ctx.signal);
+      newChat = await firstVisible(page, [...NEW_CHAT_SELECTORS, ...NEW_SIDE_CHAT_IN_MENU_SELECTORS], 5_000, ctx.signal);
     }
   }
   if (!newChat) throw new ProviderError("SIDE_CHAT_FAILED", "Không mở được chat phụ mới trên Muse (không gửi vào chat chính)");

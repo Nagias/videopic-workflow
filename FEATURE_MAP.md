@@ -86,16 +86,19 @@ Kế hoạch: `docs/superpowers/plans/2026-10-27-video-chuoi-canh.md`. Chủ d�
 
 ### 3.2 Bên trong
 
-- **Hồ sơ nhân vật** `src/nodes/character/` và **Hồ sơ không gian** `src/nodes/location/`: `generateReferenceSet()` (`src/core/reference-set.ts`) tạo ảnh đầu tiên từ mô tả, các ảnh sau đính kèm ảnh đầu (cùng người/cùng nơi). Góc: `CHARACTER_VIEWS` (chính diện, 3/4, toàn thân), `LOCATION_VIEWS` (toàn cảnh, cận).
+- **Hồ sơ nhân vật** `src/nodes/character/`: `generateReferenceSet(..., "chat")` (`src/core/reference-set.ts`) — ảnh chính diện mở **chat phụ mới**, các góc sau tạo **nối tiếp trong chat đó** (`inChatPrompt`, không tải ảnh người lên); kết quả giữ `session` (tài khoản + đường dẫn chat phụ) để node Dựng phim dùng tiếp. Hỏng thì mở chat phụ mới, đính kèm ảnh chính diện (`fallback`). Góc: `CHARACTER_VIEWS`.
+- **Hồ sơ không gian** `src/nodes/location/`: `generateReferenceSet(..., "attach")` — ảnh không người, các ảnh sau đính kèm ảnh đầu. Góc: `LOCATION_VIEWS`.
 - **Danh sách cảnh** `src/nodes/shotlist/`: dữ liệu đạo diễn `src/shared/director.ts` — `SHOT_SIZES`, `CAMERA_ANGLES`, `CAMERA_MOVES`; `checkShotList()` chặn cảnh đầu "nối", nối khác chủ thể, nối liền quá `MAX_CHAIN_RUN` (2); cảnh báo luật 30°.
 - **Dựng phim** `src/nodes/film/run.ts`:
-  1. Mỗi cảnh: "cắt" → ảnh khung `composeKeyframePrompt()` + ảnh tham chiếu `referencesFor()` (có nhân vật: mặt + toàn thân + toàn cảnh; cảnh phụ: 2 ảnh bối cảnh). "Nối" → khung cuối clip trước (`lastFrameOf()`, lùi `LAST_FRAME_FROM_END_SEC`).
+  1. Mỗi cảnh: "cắt" có nhân vật → `characterKeyframe()`: ảnh khung tạo **lần lượt trong chat phụ của nhân vật** (khoá `characterChat`, prompt `composeInChatKeyframePrompt()`, đính kèm ảnh toàn cảnh không người); hỏng → chat phụ mới với `referencesFor()` + `composeKeyframePrompt()`. "Cắt" cảnh phụ → `composeKeyframePrompt()` + 2 ảnh bối cảnh. "Nối" → khung cuối clip trước (`lastFrameOf()`, lùi `LAST_FRAME_FROM_END_SEC`).
   2. Clip `SHOT_SECONDS` (5) giây từ ảnh khung, prompt `composeMotionPrompt()`.
   3. Bù sáng `fixBrightness()` (đo độ sáng đầu/cuối, `stabilizeBrightness()`).
   4. Ghép `concatClips()`: chuẩn 1280×720 24 fps, cắt `CHAIN_TRIM_SEC` ở đầu cảnh nối, làm mềm tiếng ở mối nối.
   - Song song theo `provider.maxParallel()` (Muse = số hồ sơ đã đăng nhập); cảnh nối chờ cảnh trước.
   - Mỗi bước con qua `ctx.step()` (cache theo khoá băm): sửa một cảnh chỉ chạy lại cảnh đó; cảnh lỗi không làm mất cảnh đã xong.
-- **Muse** thêm `generateImage()`: đính kèm từng ảnh (`attachFile()`), chú thích vai trò ảnh trong prompt (`formatImagePrompt()`), loại ảnh trùng ảnh đính kèm bằng dấu vân tay (`averageHash()`), chuẩn hoá 1280×720 (`normalizeImage()`); bắt từ chối (`findRefusal()`, lỗi `REFUSED`); chờ hồ sơ rảnh (`acquireWait()`).
+- **Muse** thêm `generateImage()`: đính kèm từng ảnh (`attachFile()`), chú thích vai trò ảnh trong prompt (`formatImagePrompt()`), loại ảnh trùng ảnh đính kèm bằng dấu vân tay (`averageHash()`), chuẩn hoá 1280×720 (`normalizeImage()`); bắt từ chối (`findRefusal()`, `REFUSED`) và báo lỗi của Muse (`findMuseFailure()`, `MUSE_FAILED`) chỉ trong câu trả lời sau prompt (`replyAfterPrompt()`); chờ hồ sơ rảnh (`acquireWait()`, `acquireSpecific()` cho chat của nhân vật).
+- **Luôn dùng chat phụ** (chủ dự án yêu cầu 27/10/2026): `openSideChat()` — nút `hatch-chat-compose` ("+" cạnh "Side chats") hoặc chữ "New side chat" trong menu Chats; không mở được → `SIDE_CHAT_FAILED`, **không** gửi vào chat chính. Đường dẫn chat lấy bằng `waitThreadUrl()` (`isSideChatThread()`).
+- **Chat phụ không tạo được → mở chat phụ mới thử lại** (`runJob()`, `MAX_JOB_ATTEMPTS` = 2, các mã trong `RETRY_IN_NEW_SIDE_CHAT`).
 
 ### 3.3 Kiểm chứng tự động
 

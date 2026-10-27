@@ -39,4 +39,7 @@ Tổng lượt Muse đã dùng cho bộ khung: 3 (2 lỗi phía app đã sửa, 
 | 23:26 | vid_03 | Video thuần chữ (cô gái bổ củi) | ❌ "Failed to create 5s video of woman splitting log" (ô nhiệm vụ Muse) |
 | 23:26 | vid_04 | Ảnh suối không người + video từ ảnh đó | Ảnh ✅ 38 giây; video ❌ "lỗi hệ thống bất ngờ" |
 
+| 28/10 00:17 | vid_01 → vid_03 | Smoke 1 clip chữ→video trong chat phụ | ❌ vid_01: không mở được chat phụ (nút "+" chưa được tìm sau khi mở menu — đã sửa); tự thử lại chat phụ mới trên vid_03: Muse "hệ thống tạo video gặp lỗi bất ngờ… hẹn thử lại 01:36". Muse tự trả lời chủ dự án: máy chủ video lỗi 502 |
+| 28/10 ~00:35 | vid_01, vid_03, vid_04 | Qua giao diện: Hồ sơ nhân vật (3 ảnh nối tiếp trong 1 chat phụ) + Hồ sơ không gian (2 ảnh) | ✅ 3 ảnh nhân vật cùng một người, cùng trang phục (góc 3/4 ra toàn thân — cần chỉnh prompt) |
+
 Kết luận: (1) Muse từ chối 1 lần ảnh chân thực có đính kèm ảnh người — **chưa chắc là chính sách** (chủ dự án chỉ gặp báo lỗi máy chủ video), cần thử lại; (2) tạo ảnh nối tiếp trong cùng đoạn chat giữ mặt rất tốt; (3) tạo video của Muse thất bại trên cả 3 tài khoản tối 27/10 (cả có người lẫn không người, cả từ chữ lẫn từ ảnh) — lúc 21:55 cùng ngày video từ chữ vẫn thành công → nghi lỗi/giới hạn phía Muse, cần thử lại. Tổng lượt Muse tính năng 2: ~12 (5 ảnh thành công).
