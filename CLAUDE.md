@@ -1,6 +1,6 @@
 # VideoPic Workflow — hướng dẫn cho agent
 
-App làm ảnh/video theo workflow kéo-nối node (kiểu ComfyUI / Magnific / Higgsfield), tập trung video bằng Muse, chạy trên máy, giao diện `http://localhost:5173`.
+App làm ảnh/video theo workflow kéo-nối node (kiểu ComfyUI / Magnific / Higgsfield), tập trung video bằng Muse, chạy trên máy, giao diện `http://127.0.0.1:5190`.
 Đọc file này trước mọi việc. Bản đồ tính năng: `FEATURE_MAP.md`. Sổ nợ có chủ đích: `DEBT.md`. Checklist việc dài: `TASKS.md`. Thiết kế: `docs/ARCHITECTURE.md`.
 
 Cách đọc nhãn:
@@ -65,7 +65,7 @@ Nguồn gốc (Lauren Tan, SpaceXAI): agent thích đi đường tắt nên làm
 | Việc | Lệnh |
 |---|---|
 | Cài lần đầu | `npm ci` (cache npm nằm `.cache/npm` trên ổ D; script cài đặt bị tắt trong `package.json` → `allowScripts`) |
-| Chạy app (dev) | `npm run dev` → giao diện `http://localhost:5173`, API `http://localhost:8787` |
+| Chạy app (dev) | `npm run dev` → giao diện `http://127.0.0.1:5190`, API `http://localhost:8787` |
 | Kiểm tra (hook commit + CI chạy đúng lệnh này) | `npm run verify` = kiểm registry node + lint + typecheck + test |
 | Kiểm tra đầy đủ (trước khi mở PR) | `npm run verify:full` = verify + e2e (Playwright bấm thật trên giao diện, dịch vụ giả) |
 | Thêm loại node | `npm run new:node <ten-node>` (sinh thư mục + cập nhật registry) |

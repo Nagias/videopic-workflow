@@ -16,7 +16,7 @@ describe("API luồng 1: lưu → chạy → xem clip", () => {
   });
 
   const startAndFinish = async () => {
-    const start = await s.app.inject({ method: "POST", url: "/api/workflows/default/runs" });
+    const start = await s.app.inject({ method: "POST", url: "/api/workflows/default/runs", payload: {} });
     expect(start.statusCode).toBe(202);
     const { runId } = start.json<{ runId: string }>();
     while (await s.deps.queue.processNext());

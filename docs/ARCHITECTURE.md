@@ -4,7 +4,7 @@ Tài liệu thiết kế gốc (spec). Chủ dự án duyệt kiến trúc ngày
 
 ## 1. Sản phẩm là gì
 
-App chạy trên máy Windows của chủ dự án, mở bằng trình duyệt ở `http://localhost:5173`. Người dùng kéo nối các node trên một canvas (giống ComfyUI / Magnific Spaces / Higgsfield), viết prompt ngay trên node, chọn dịch vụ tạo video (Muse thật hoặc bản giả để thử), bấm **Chạy**. Kết quả từng node (clip, ảnh, khung hình) lưu trên ổ D và hiện ngay trên node.
+App chạy trên máy Windows của chủ dự án, mở bằng trình duyệt ở `http://127.0.0.1:5190`. Người dùng kéo nối các node trên một canvas (giống ComfyUI / Magnific Spaces / Higgsfield), viết prompt ngay trên node, chọn dịch vụ tạo video (Muse thật hoặc bản giả để thử), bấm **Chạy**. Kết quả từng node (clip, ảnh, khung hình) lưu trên ổ D và hiện ngay trên node.
 
 Đích xa: chuỗi clip 5–10 giây của Muse nối tiếp nhau giữ nguyên mặt người, sản phẩm, không gian; video ngắn khoảng 2 phút trước (kênh review / giải trí bán hàng), video dài 10–60 phút sau.
 
