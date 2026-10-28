@@ -73,6 +73,15 @@ describe("prompt Muse chống nhựa", () => {
     expect(p).toContain("đúng trang phục: cô gái mặc áo bra thể thao màu than, tay trần");
   });
 
+  it("prompt chuyển động cảnh có người/tay giữ đúng trang phục suốt clip (đo 28/10: cảnh 10 mọc tay áo khi tay di chuyển); cảnh không người thì không", () => {
+    const outfit = "cô gái mặc áo bra thể thao màu than, tay trần";
+    for (const subject of ["character", "hands"] as const) {
+      expect(motionPrompt(shot({ subject }), { character: outfit })).toContain(`Trang phục giữ nguyên suốt clip: ${outfit}; không mặc thêm, không đổi quần áo`);
+    }
+    expect(motionPrompt(shot({ subject: "none" }), { character: outfit })).not.toContain("Trang phục");
+    expect(motionPrompt(shot())).not.toContain("Trang phục");
+  });
+
   it("prompt video dặn chỉ làm đúng việc đã tả (đo 28/10: Muse tự nhóm lửa trước cảnh đánh lửa)", () => {
     expect(motionPrompt(shot())).toContain("chỉ làm đúng việc đã tả, không làm thêm bước tiếp theo");
     expect(textVideoPrompt(shot({ subject: "none", props: "" }), { look: DEFAULT_LOOK, location: "suối" })).toContain("chỉ làm đúng việc đã tả");

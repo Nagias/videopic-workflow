@@ -60,10 +60,13 @@ function endStates(shot: Shot): string {
   return changed.length ? `Cuối cảnh: ${changed.map((p) => `${p.name} ${p.to}`).join(", ")}.` : "";
 }
 
-export function motionPrompt(shot: Shot): string {
+// Cảnh có người/tay: nhắc trang phục suốt clip — đo 28/10/2026 cảnh nối chỉ thấy tay vẫn mọc tay áo khi tay di chuyển.
+export function motionPrompt(shot: Shot, c: { character?: string } = {}): string {
+  const outfit = shot.subject !== "none" && c.character ? `Trang phục giữ nguyên suốt clip: ${c.character}; không mặc thêm, không đổi quần áo.` : "";
   return [
     "Tạo video 5 giây từ ảnh đính kèm, giữ nguyên người, đồ vật và bối cảnh trong ảnh.",
     `Việc xảy ra sau khung hình này: ${shot.motion.trim()}.`,
+    outfit,
     endStates(shot),
     `Máy quay: ${CAMERA_MOVES[shot.move].vi}.`,
     VIDEO_RULES,
