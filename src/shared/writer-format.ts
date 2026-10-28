@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { checkShotList, ShotSchema, type Shot } from "./director";
-import { PropSpecItemSchema, type PropSpecItem } from "./ports";
+import { propSpecProblems, PropSpecItemSchema, type PropSpecItem } from "./ports";
 
 // Đọc câu trả lời chữ của Biên kịch: lấy khối JSON, kiểm cấu trúc và luật đạo diễn (cùng luật với Danh sách cảnh).
 
@@ -47,6 +47,6 @@ export function parseWriterReply(text: string): WriterParse {
   const parsed = WriterOutputSchema.safeParse(json);
   if (!parsed.success) return { ok: false, errors: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) };
   const known = parsed.data.props.map((p) => ({ name: p.name, states: p.states }));
-  const { errors } = checkShotList(parsed.data.shots, known);
+  const errors = [...propSpecProblems(parsed.data.props), ...checkShotList(parsed.data.shots, known).errors];
   return errors.length ? { ok: false, errors } : { ok: true, value: parsed.data };
 }

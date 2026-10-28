@@ -2,11 +2,11 @@ import type { NodeViewProps } from "../../features/editor/ui/node-kit";
 import { AssetPicker, ImageSetGallery, ProviderSelect } from "../../features/editor/ui/widgets";
 import type { CharacterParams } from "./definition";
 
-export function CharacterView({ id, params, setParams, state }: NodeViewProps<CharacterParams>) {
+export function CharacterView({ id, params, setParams, replaceParams, state }: NodeViewProps<CharacterParams>) {
   const set = state?.output?.character;
   return (
     <div className="stack">
-      <AssetPicker id={id} kind="character" onPick={(p) => setParams(p)} />
+      <AssetPicker id={id} kind="character" onPick={replaceParams} />
       <label className="field">
         <span>Tên</span>
         <input className="nodrag" data-testid={`asset-name-${id}`} value={params.name ?? ""} placeholder="vd: Cô gái Sơn La" onChange={(e) => setParams({ name: e.target.value })} />

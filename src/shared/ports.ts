@@ -26,6 +26,18 @@ export const PropSpecItemSchema = z.object({
 });
 export type PropSpecItem = z.infer<typeof PropSpecItemSchema>;
 
+// Luật chung cho danh sách đồ vật (node Đồ vật và Biên kịch dùng cùng một luật).
+export function propSpecProblems(items: PropSpecItem[]): string[] {
+  const seen = new Set<string>();
+  const problems: string[] = [];
+  for (const item of items) {
+    const key = item.name.trim().toLowerCase();
+    if (seen.has(key)) problems.push(`Đồ vật trùng tên "${item.name.trim()}"`);
+    seen.add(key);
+  }
+  return problems;
+}
+
 export const PropItemSchema = z.object({
   name: z.string(),
   description: z.string(),

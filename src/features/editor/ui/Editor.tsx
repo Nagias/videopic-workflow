@@ -150,6 +150,7 @@ export function Editor() {
     () => ({
       setParams: (nodeId, patch) =>
         setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, params: { ...n.data.params, ...patch } } } : n))),
+      replaceParams: (nodeId, params) => setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, params: { ...params } } } : n))),
       stateOf: (nodeId) => run?.nodes[nodeId],
       refreshKey: `${workflowId ?? ""}:${run?.id ?? ""}:${run?.status ?? ""}`,
     }),

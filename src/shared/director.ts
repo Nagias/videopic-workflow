@@ -66,6 +66,28 @@ export const ShotSchema = z.preprocess(
 );
 export type Shot = z.infer<typeof ShotSchema>;
 
+// Tham số trong workflow đã lưu là dữ liệu thô (có thể dạng cũ hoặc thiếu trường): giao diện đọc qua đây trước khi dùng.
+export function normalizeShots(raw: unknown): Shot[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item, i) => {
+    const parsed = ShotSchema.safeParse(item);
+    if (parsed.success) return parsed.data;
+    const r = (item && typeof item === "object" ? (upgradeLegacyShot(item) as Record<string, unknown>) : {});
+    const str = (k: string) => (typeof r[k] === "string" ? r[k] : "");
+    return {
+      id: str("id") || `c${String(i + 1).padStart(2, "0")}`,
+      size: (str("size") in SHOT_SIZES ? str("size") : "MS") as Shot["size"],
+      angle: (str("angle") in CAMERA_ANGLES ? str("angle") : "eye") as Shot["angle"],
+      move: (str("move") in CAMERA_MOVES ? str("move") : "static") as Shot["move"],
+      subject: (str("subject") in SUBJECTS ? str("subject") : "character") as Shot["subject"],
+      link: str("link") === "chain" ? "chain" : "cut",
+      start: str("start"),
+      motion: str("motion"),
+      props: str("props"),
+    };
+  });
+}
+
 export const MAX_CHAIN_RUN = 2;
 
 export type ShotListCheck = { errors: string[]; warnings: string[] };

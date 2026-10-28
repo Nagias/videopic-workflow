@@ -3,11 +3,11 @@ import { AssetPicker, ImageSetGallery, ProviderSelect } from "../../features/edi
 import { DEFAULT_LOOK } from "../../shared/prompts";
 import type { LocationParams } from "./definition";
 
-export function LocationView({ id, params, setParams, state }: NodeViewProps<LocationParams>) {
+export function LocationView({ id, params, setParams, replaceParams, state }: NodeViewProps<LocationParams>) {
   const set = state?.output?.location;
   return (
     <div className="stack">
-      <AssetPicker id={id} kind="location" onPick={(p) => setParams(p)} />
+      <AssetPicker id={id} kind="location" onPick={replaceParams} />
       <label className="field">
         <span>Tên</span>
         <input className="nodrag" data-testid={`asset-name-${id}`} value={params.name ?? ""} placeholder="vd: Sườn đồi Sơn La" onChange={(e) => setParams({ name: e.target.value })} />

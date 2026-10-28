@@ -46,6 +46,26 @@ describe("node props (Đồ vật)", () => {
     expect(counter.log.image).toBe(1);
   });
 
+  it("nối Biên kịch mà kịch bản không có đồ vật nào → ra danh sách rỗng, không lỗi, không gọi dịch vụ", async () => {
+    const counter = countingFakeProviders();
+    const out = await run(testNodeCtx(env, counter.providers), { spec: { kind: "propspec", items: [] } }, definition.params.parse({ items: [], provider: "fake" }));
+    expect(out.props).toEqual({ kind: "props", items: [] });
+    expect(counter.log.image).toBe(0);
+  });
+
+  it("một món lỗi: các món khác vẫn xong và được giữ, lỗi nêu tên món; chạy lại chỉ làm món lỗi", async () => {
+    let broken = true;
+    const counter = countingFakeProviders({ failImageWhen: (p) => broken && p.includes("rìu") });
+    const ctx = testNodeCtx(env, counter.providers);
+    const params = definition.params.parse({ items, provider: "fake" });
+    await expect(run(ctx, {}, params)).rejects.toThrow(/1\/2 đồ vật chưa xong.*rìu: Lỗi ảnh giả lập/);
+    const afterFail = counter.log.image;
+    expect(afterFail).toBe(3);
+    broken = false;
+    await run(ctx, {}, params);
+    expect(counter.log.image - afterFail).toBe(1);
+  });
+
   it("không có món nào, trùng tên hoặc thiếu trạng thái → lỗi rõ, không gọi dịch vụ", async () => {
     const counter = countingFakeProviders();
     const ctx = testNodeCtx(env, counter.providers);

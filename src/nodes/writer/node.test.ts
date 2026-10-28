@@ -43,6 +43,14 @@ describe("node writer (Biên kịch)", () => {
     expect(counter.log.textPrompts[1]).toMatch(/không có người tác động/);
   });
 
+  it("đồ vật trùng tên trong kịch bản → nhờ sửa trong cùng chat (không để node Đồ vật báo lỗi sau)", async () => {
+    const dup = { ...good, props: [good.props[0], good.props[0]] };
+    const counter = countingFakeProviders({ textReply: (_p, n) => fenced(n === 1 ? dup : good) });
+    await run(testNodeCtx(env, counter.providers), {}, definition.params.parse({ idea, shotCount: 8, provider: "fake" }));
+    expect(counter.log.textSessions).toEqual(["new", "continue"]);
+    expect(counter.log.textPrompts[1]).toMatch(/trùng tên "khúc gỗ"/);
+  });
+
   it("sai 3 lần → lỗi rõ kèm lỗi cuối, không lặp thêm", async () => {
     const counter = countingFakeProviders({ textReply: () => "Xin lỗi, mình chưa viết được." });
     await expect(run(testNodeCtx(env, counter.providers), {}, definition.params.parse({ idea, shotCount: 8, provider: "fake" }))).rejects.toThrow(

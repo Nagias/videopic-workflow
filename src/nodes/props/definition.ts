@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineNode } from "../../shared/node-definition";
-import { PropSpecItemSchema, type PropSpecItem } from "../../shared/ports";
+import { propSpecProblems, PropSpecItemSchema, type PropSpecItem } from "../../shared/ports";
 import { PROVIDER_IDS } from "../../shared/providers";
 
 // Một dòng gõ tay trong node: trạng thái viết cách nhau bằng dấu phẩy, trạng thái đầu là trạng thái gốc.
@@ -18,17 +18,17 @@ export function rowsToSpec(rows: PropRow[]): PropSpecItem[] {
   return rows.map((r) => ({ name: r.name.trim(), description: r.description.trim(), states: r.states.split(",").map((s) => s.trim()).filter(Boolean) }));
 }
 
-export function checkSpec(items: PropSpecItem[]): PropSpecItem[] {
-  if (items.length === 0) throw new Error("Chưa có đồ vật nào (gõ trong node Đồ vật hoặc nối từ Biên kịch)");
-  const seen = new Set<string>();
-  return items.map((item) => {
-    const parsed = PropSpecItemSchema.safeParse(item);
-    if (!parsed.success) throw new Error(`Đồ vật "${item.name || "?"}": ${parsed.error.issues.map((i) => i.message).join("; ")}`);
-    const key = parsed.data.name.toLowerCase();
-    if (seen.has(key)) throw new Error(`Đồ vật trùng tên "${parsed.data.name}"`);
-    seen.add(key);
-    return parsed.data;
+// allowEmpty: danh sách đến từ Biên kịch — kịch bản không cần đồ vật nào là hợp lệ.
+export function checkSpec(items: PropSpecItem[], opts: { allowEmpty: boolean }): PropSpecItem[] {
+  if (items.length === 0 && !opts.allowEmpty) throw new Error("Chưa có đồ vật nào (gõ trong node Đồ vật hoặc nối từ Biên kịch)");
+  const parsed = items.map((item) => {
+    const r = PropSpecItemSchema.safeParse(item);
+    if (!r.success) throw new Error(`Đồ vật "${item.name || "?"}": ${r.error.issues.map((i) => i.message).join("; ")}`);
+    return r.data;
   });
+  const problems = propSpecProblems(parsed);
+  if (problems.length) throw new Error(problems.join("; "));
+  return parsed;
 }
 
 export const definition = defineNode<PropsParams>({

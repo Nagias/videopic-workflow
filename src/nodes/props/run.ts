@@ -6,13 +6,15 @@ import { DEFAULT_LOOK, propStatePrompt, propStillPrompt } from "../../shared/pro
 import { checkSpec, rowsToSpec, type PropsParams } from "./definition";
 
 export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
-  const spec = checkSpec(inputs.spec?.kind === "propspec" ? inputs.spec.items : rowsToSpec(params.items));
+  const fromWriter = inputs.spec?.kind === "propspec";
+  const spec = checkSpec(inputs.spec?.kind === "propspec" ? inputs.spec.items : rowsToSpec(params.items), { allowEmpty: fromWriter });
   const provider = ctx.providers.get(params.provider);
   const sem = semaphore(Math.max(1, provider.maxParallel()));
   const items: PropItem[] = spec.map((s) => ({ name: s.name, description: s.description, images: [] }));
   const publish = () => ctx.partial({ props: { kind: "props", items: items.map((i) => ({ ...i, images: [...i.images] })) } });
 
-  await Promise.all(
+  // allSettled: một món lỗi không bỏ rơi các món khác đang chạy (ảnh của chúng vẫn vào cache để lần sau dùng lại).
+  const settled = await Promise.allSettled(
     spec.map(async (item, k) => {
       await sem.acquire();
       try {
@@ -45,6 +47,10 @@ export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
       }
     }),
   );
+  const failed = settled
+    .map((r, k) => (r.status === "rejected" ? `${spec[k]!.name}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}` : null))
+    .filter(Boolean);
+  if (failed.length) throw new Error(`${failed.length}/${spec.length} đồ vật chưa xong (các món đã xong được giữ, bấm Chạy để làm tiếp). ${failed.join(" | ")}`);
   const out: PropSetValue = { kind: "props", items };
   return { props: out };
 };

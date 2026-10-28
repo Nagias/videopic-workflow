@@ -51,7 +51,7 @@ export type CallLog = {
   textSessions: string[];
 };
 
-export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string; textReply?: (prompt: string, call: number) => string } = {}): {
+export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string; textReply?: (prompt: string, call: number) => string; failImageWhen?: (prompt: string) => boolean } = {}): {
   providers: ProviderRegistry;
   calls: () => number;
   log: CallLog;
@@ -81,6 +81,7 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
       log.imagePrompts.push(req.prompt);
       log.imageSessions.push(req.session === undefined ? "none" : req.session === "new" ? "new" : "continue");
       log.imageRefs.push(req.references.map((r) => ({ mediaId: r.mediaId, role: r.role })));
+      if (opts.failImageWhen?.(req.prompt)) return Promise.reject(new Error("Lỗi ảnh giả lập"));
       return fake.generateImage(req, ctx);
     },
   };

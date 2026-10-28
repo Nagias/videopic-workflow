@@ -1,4 +1,4 @@
-import { CAMERA_ANGLES, CAMERA_MOVES, checkShotList, SHOT_SIZES, SUBJECTS, type Shot } from "../../shared/director";
+import { CAMERA_ANGLES, CAMERA_MOVES, checkShotList, normalizeShots, SHOT_SIZES, SUBJECTS, type Shot } from "../../shared/director";
 import type { NodeViewProps } from "../../features/editor/ui/node-kit";
 import type { ShotListParams } from "./definition";
 
@@ -10,7 +10,7 @@ const options = (o: Record<string, { label: string }>) =>
   ));
 
 export function ShotListView({ id, params, setParams }: NodeViewProps<ShotListParams>) {
-  const shots = params.shots ?? [];
+  const shots = normalizeShots(params.shots);
   const check = checkShotList(shots);
   const update = (i: number, patch: Partial<Shot>) => setParams({ shots: shots.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
   const remove = (i: number) => setParams({ shots: shots.filter((_, j) => j !== i) });
