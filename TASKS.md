@@ -24,7 +24,7 @@ Tổng lượt Muse đã dùng cho bộ khung: 3 (2 lỗi phía app đã sửa, 
 ## Tính năng 2 — video chuỗi cảnh (kế hoạch: `docs/superpowers/plans/2026-10-27-video-chuoi-canh.md`)
 
 - [x] Task A–D: dịch vụ ảnh/ảnh→video, Muse đính kèm/bắt từ chối, kiến thức đạo diễn, 4 node, mẫu Sơn La, giao diện, test (62 vitest + 8 e2e, chạy giả trọn 12 cảnh ra 59,8 giây)
-- [ ] Task E: chạy Muse thật mẫu Sơn La — **bị chặn** (xem nhật ký 27/10 ~22:50–23:40)
+- [x] Task E: chạy Muse thật mẫu Sơn La — xong 28/10 07:03, phim 59,8 giây 1280x720 (`.data/exports/Sinh-ton-Son-La-60s.mp4`)
 
 ### Nhật ký gọi Muse thật — tính năng 2 (27/10/2026)
 
@@ -44,5 +44,6 @@ Tổng lượt Muse đã dùng cho bộ khung: 3 (2 lỗi phía app đã sửa, 
 
 | 28/10 01:05–01:45 | vid_01/03/04 | Chạy cả mẫu Sơn La qua giao diện (lần 1) | Hồ sơ dùng lại cache. Ảnh khung: đều ✅ trừ cảnh 4 (Muse từ chối 2 lần mô tả "lưỡi rìu bổ khúc gỗ" cận cảnh). Video: cảnh 2, 3 ✅ (đẹp, đúng người); cảnh 1, 5, 8 ❌ Muse "quá tải/lỗi 502"; cảnh 9 ❌ lỗi app (tải blob "Failed to fetch" → đã sửa). Dừng tay theo quy tắc lặp lỗi 3 lần |
 | 28/10 01:50– | vid_01/03/04 | Chạy lại sau khi thêm cầu dao, sửa cảnh 4 (không rìu, cảnh phụ) | Cache: cảnh 2, 3 và ảnh khung cũ không tốn lượt. Ảnh khung cảnh 4 mới ✅. Video cảnh 1, 4, 5 lần 1 ❌ Muse 502 (Muse tự thử 3 lần bên trong, mỗi lần hỏng ~5–10 phút) |
+| 28/10 06:56–07:03 | vid_01/03/04 | Chạy tiếp lần 3 khi Muse hết lỗi 502 | ✅ 10 cảnh còn lại xong trong 7 phút (mỗi clip 55–76 giây), không lỗi, không thử lại. Cache giữ cảnh 2, 3 và ảnh khung cũ. Gọi thật: 10 video + 1 ảnh khung (cảnh 12; cảnh nối 6, 10 lấy khung cuối clip trước, không gọi Muse). Đã xem đầu/giữa/cuối từng clip: đúng kịch bản, cùng một người, chỗ nối 5→6 và 9→10 khớp tư thế |
 
 Kết luận: (1) Muse từ chối 1 lần ảnh chân thực có đính kèm ảnh người — **chưa chắc là chính sách** (chủ dự án chỉ gặp báo lỗi máy chủ video), cần thử lại; (2) tạo ảnh nối tiếp trong cùng đoạn chat giữ mặt rất tốt; (3) tạo video của Muse thất bại trên cả 3 tài khoản tối 27/10 (cả có người lẫn không người, cả từ chữ lẫn từ ảnh) — lúc 21:55 cùng ngày video từ chữ vẫn thành công → nghi lỗi/giới hạn phía Muse, cần thử lại. Tổng lượt Muse tính năng 2: ~12 (5 ảnh thành công).
