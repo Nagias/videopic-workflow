@@ -15,6 +15,8 @@ import { definition as propsDefinition } from "./props/definition";
 import { run as propsRun } from "./props/run";
 import { definition as shotlistDefinition } from "./shotlist/definition";
 import { run as shotlistRun } from "./shotlist/run";
+import { definition as writerDefinition } from "./writer/definition";
+import { run as writerRun } from "./writer/run";
 
 export const serverNodes: Record<string, ServerNode> = {
   [characterDefinition.type]: serverNode(characterDefinition, characterRun),
@@ -24,4 +26,5 @@ export const serverNodes: Record<string, ServerNode> = {
   [promptDefinition.type]: serverNode(promptDefinition, promptRun),
   [propsDefinition.type]: serverNode(propsDefinition, propsRun),
   [shotlistDefinition.type]: serverNode(shotlistDefinition, shotlistRun),
+  [writerDefinition.type]: serverNode(writerDefinition, writerRun),
 };

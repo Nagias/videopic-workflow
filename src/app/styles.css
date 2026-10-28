@@ -413,3 +413,14 @@ button.icon {
   font-size: 12px;
   opacity: 0.75;
 }
+
+.writer-result ol {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+}
+.writer-result li {
+  margin-bottom: 6px;
+}

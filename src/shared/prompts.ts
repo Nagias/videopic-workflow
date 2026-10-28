@@ -120,3 +120,39 @@ export function propStatePrompt(item: PropSpecItem, state: string, look: string,
   const where = attached ? "trong ảnh đính kèm" : "trong ảnh bạn vừa tạo";
   return `Ảnh tiếp theo, khung ngang 16:9: chính ${item.name} ${where}, cùng góc chụp và nền, nay ở trạng thái: ${state}. Không có người, không có tay người. ${look}. Không chữ.`;
 }
+
+// Biên kịch: luật chia cảnh học từ ViMax (khung đầu là ảnh đứng yên, chuyển động chỉ là việc xảy ra sau đó,
+// gọi nhân vật bằng đặc điểm nhìn thấy, cảnh đầu rộng nhất) + luật đồ vật/trạng thái của dự án.
+export const WRITER_TAG = "KỊCH BẢN JSON";
+
+export function writerPrompt(w: { idea: string; shotCount: number; character?: string; location?: string }): string {
+  return [
+    `Bạn là đạo diễn kiêm biên kịch phim ngắn làm bằng AI. Hãy viết ${WRITER_TAG} cho ý tưởng dưới đây.`,
+    `Ý tưởng: ${w.idea.trim()}`,
+    w.character ? `Nhân vật chính (đã có ảnh mẫu, giữ nguyên): ${w.character}` : "",
+    w.location ? `Bối cảnh (đã có ảnh mẫu, giữ nguyên): ${w.location}` : "",
+    `Số cảnh: ${w.shotCount} (mỗi cảnh 5 giây).`,
+    "Luật:",
+    "1. Cảnh 1 là cảnh rộng nhất giới thiệu bối cảnh (size EWS hoặc WS).",
+    "2. start = khung đầu, là ẢNH ĐỨNG YÊN: ai ở đâu trong khung, quay mặt hướng nào, đồ vật nằm đâu; không có hành động đang diễn ra.",
+    "3. motion = việc xảy ra trong 5 giây SAU khung đầu: một động tác chính, có lực và có hệ quả nhìn thấy được; gọi nhân vật bằng đặc điểm nhìn thấy (quần áo, tóc), không dùng tên; không tả lại khung đầu.",
+    '4. "props" liệt kê mọi đồ vật quan trọng (cả đồ cố định như lều, bếp đá) với mô tả cụ thể (chất liệu, màu, cỡ) và các trạng thái; trạng thái đầu là trạng thái gốc.',
+    '5. Trường props của mỗi cảnh ghi đồ vật trong khung, mỗi dòng "tên: trạng thái đầu -> trạng thái cuối" hoặc "tên: trạng thái"; tối đa 2 món mỗi cảnh; tên và trạng thái phải đúng như trong "props".',
+    "6. Đồ vật xuất hiện lại phải đúng trạng thái cuối lần trước. Đồ vật đổi trạng thái thì trong khung phải có người tác động (subject character hoặc hands).",
+    '7. subject: "character" (thấy nhân vật), "hands" (chỉ thấy tay nhân vật), "none" (không người: thiên nhiên, chi tiết, B-roll).',
+    '8. link: "cut" (cắt cảnh) hoặc "chain" (nối tiếp: lấy khung cuối cảnh trước làm khung đầu, cùng subject với cảnh trước, start để rỗng, tối đa 2 cảnh nối liền).',
+    "9. Hai cảnh cắt liền nhau không trùng cả cỡ cảnh lẫn góc máy. Không cảnh bạo lực, máu me, không người lạ.",
+    "10. size thuộc EWS, WS, MS, MCU, CU, INSERT; angle thuộc eye, low, high, aerial; move thuộc static, push_in, pull_out, pan, tilt, handheld, orbit, drone.",
+    "Chỉ trả lời đúng một khối ```json theo mẫu dưới, không tạo ảnh hay video:",
+    "```json",
+    '{"props":[{"name":"khúc gỗ","description":"khúc gỗ thông ngắn dài 40 cm, vỏ nâu sẫm","states":["nguyên khúc","bổ đôi"]}],',
+    ' "shots":[{"id":"c01","size":"EWS","angle":"aerial","move":"drone","subject":"none","link":"cut","start":"…","motion":"…","props":""}]}',
+    "```",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function repairPrompt(errors: string[]): string {
+  return [`${WRITER_TAG} vừa rồi chưa dùng được vì các lỗi sau. Hãy sửa và trả lại TOÀN BỘ kịch bản trong một khối \`\`\`json, giữ nguyên các cảnh đã đúng:`, ...errors.map((e) => `- ${e}`)].join("\n");
+}
