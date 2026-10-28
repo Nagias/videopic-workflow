@@ -41,7 +41,7 @@ describe("node film (Dựng phim)", () => {
   it("4 cảnh (cắt, nối, cảnh phụ, cắt): cảnh nối dùng khung cuối clip trước, ghép ra ~20 giây, storyboard đủ", async () => {
     const counter = countingFakeProviders();
     const { character, location } = await refs(counter.providers);
-    expect(character.kind === "imageset" && character.images.map((i) => i.view)).toEqual(["front", "three-quarter", "full-body"]);
+    expect(character.kind === "imageset" && character.images.map((i) => i.view)).toEqual(["face", "front", "side", "back"]);
     const imagesForRefs = counter.log.image;
 
     const shots = [shot("s1"), shot("s2", { link: "chain", size: "CU" }), shot("s3", { subject: "none", size: "EWS" }), shot("s4", { size: "WS" })];

@@ -1,4 +1,5 @@
 import { requireInput, type NodeRun, type NodeRunContext } from "../../core/node-runtime";
+import { semaphore } from "../../core/semaphore";
 import { ProviderError, type ChatSessionRef, type ImageReference, type MediaProvider, type ProviderContext } from "../../providers/types";
 import { checkShotList, type Shot } from "../../shared/director";
 import { DEFAULT_LOOK, keyframePrompt, motionPrompt } from "../../shared/prompts";
@@ -15,30 +16,11 @@ class ServiceBreakerOpen extends Error {
 
 type FinishedShot = { clipId: string; durationSec: number; trimStartSec: number; hasAudio: boolean; brightness?: Brightness };
 
-function semaphore(max: number) {
-  let active = 0;
-  const waiting: (() => void)[] = [];
-  return {
-    async acquire() {
-      if (active < max) {
-        active++;
-        return;
-      }
-      await new Promise<void>((r) => waiting.push(r));
-      active++;
-    },
-    release() {
-      active--;
-      waiting.shift()?.();
-    },
-  };
-}
-
 export function referencesFor(shot: Shot, character: ImageSetValue, location: ImageSetValue): ImageReference[] {
   const pick = (set: ImageSetValue, views: string[]) =>
     views.flatMap((v) => set.images.filter((i) => i.view === v)).map((i) => ({ mediaId: i.mediaId, role: set.role }));
   const loc = pick(location, ["wide", "close"]);
-  return shot.subject === "character" ? [...pick(character, ["front", "full-body"]), ...loc.slice(0, 1)] : loc;
+  return shot.subject === "character" ? [...pick(character, ["face", "front"]), ...loc.slice(0, 1)] : loc;
 }
 
 async function lastFrameOf(ctx: NodeRunContext, clipId: string): Promise<string> {

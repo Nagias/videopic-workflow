@@ -18,7 +18,10 @@ export function ProviderSelect({ id, value, onChange }: { id: string; value: Pro
 }
 
 const VIEW_LABEL: Record<string, string> = {
+  face: "Mặt cận",
   front: "Chính diện",
+  side: "Nghiêng",
+  back: "Sau lưng",
   "three-quarter": "Nghiêng 3/4",
   "full-body": "Toàn thân",
   wide: "Toàn cảnh",

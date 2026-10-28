@@ -116,6 +116,7 @@ export function propStillPrompt(item: PropSpecItem, look: string): string {
   return `Tạo 1 ảnh khung ngang 16:9: ảnh chụp thật một ${item.name}: ${item.description}, ở trạng thái ${item.states[0] ?? ""}. Chụp trọn món đồ, nằm trên mặt đất thật có bóng đổ tự nhiên, nền đơn giản, không có người, không có tay người. ${look}. Không chữ.`;
 }
 
-export function propStatePrompt(item: PropSpecItem, state: string, look: string): string {
-  return `Ảnh tiếp theo, khung ngang 16:9: chính ${item.name} trong ảnh bạn vừa tạo, cùng góc chụp và nền, nay ở trạng thái: ${state}. Không có người, không có tay người. ${look}. Không chữ.`;
+export function propStatePrompt(item: PropSpecItem, state: string, look: string, attached = false): string {
+  const where = attached ? "trong ảnh đính kèm" : "trong ảnh bạn vừa tạo";
+  return `Ảnh tiếp theo, khung ngang 16:9: chính ${item.name} ${where}, cùng góc chụp và nền, nay ở trạng thái: ${state}. Không có người, không có tay người. ${look}. Không chữ.`;
 }

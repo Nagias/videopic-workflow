@@ -1,5 +1,6 @@
 import type { NodeViewProps } from "../../features/editor/ui/node-kit";
 import { ImageSetGallery, ProviderSelect } from "../../features/editor/ui/widgets";
+import { DEFAULT_LOOK } from "../../shared/prompts";
 import type { LocationParams } from "./definition";
 
 export function LocationView({ id, params, setParams, state }: NodeViewProps<LocationParams>) {
@@ -7,13 +8,24 @@ export function LocationView({ id, params, setParams, state }: NodeViewProps<Loc
   return (
     <div className="stack">
       <label className="field">
-        <span>Mô tả bối cảnh (địa hình, vật cố định, ánh sáng)</span>
+        <span>Mô tả bối cảnh (địa hình, cây cối, ánh sáng — đồ vật như lều, bếp đá để ở node Đồ vật)</span>
         <textarea
           className="nodrag nowheel"
           rows={5}
           data-testid={`location-text-${id}`}
           value={params.description ?? ""}
           onChange={(e) => setParams({ description: e.target.value })}
+        />
+      </label>
+      <label className="field">
+        <span>Tông ảnh dùng chung cho mọi cảnh</span>
+        <textarea
+          className="nodrag nowheel"
+          rows={2}
+          data-testid={`location-look-${id}`}
+          value={params.look ?? ""}
+          placeholder={DEFAULT_LOOK}
+          onChange={(e) => setParams({ look: e.target.value })}
         />
       </label>
       <ProviderSelect id={id} value={params.provider} onChange={(provider) => setParams({ provider })} />

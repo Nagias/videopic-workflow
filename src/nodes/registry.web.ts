@@ -11,6 +11,8 @@ import { definition as locationDefinition } from "./location/definition";
 import { LocationView } from "./location/view";
 import { definition as promptDefinition } from "./prompt/definition";
 import { PromptView } from "./prompt/view";
+import { definition as propsDefinition } from "./props/definition";
+import { PropsView } from "./props/view";
 import { definition as shotlistDefinition } from "./shotlist/definition";
 import { ShotListView } from "./shotlist/view";
 
@@ -20,5 +22,6 @@ export const webNodes: Record<string, WebNode> = {
   [generateVideoDefinition.type]: webNode(generateVideoDefinition, GenerateVideoView),
   [locationDefinition.type]: webNode(locationDefinition, LocationView),
   [promptDefinition.type]: webNode(promptDefinition, PromptView),
+  [propsDefinition.type]: webNode(propsDefinition, PropsView),
   [shotlistDefinition.type]: webNode(shotlistDefinition, ShotListView),
 };
