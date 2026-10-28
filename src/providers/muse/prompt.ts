@@ -15,7 +15,7 @@ export function formatVideoPrompt(prompt: string, durationSec: ClipDuration, has
       ? "[Mode: Image-to-Video] Dùng đúng ảnh đính kèm làm khung hình gốc, giữ nguyên bố cục, gương mặt và trang phục nhân vật, không cắt cảnh"
       : "[Mode: Text-to-Video Motion Generation]",
     `Action: ${action}`,
-    "Pacing: cinematic 24fps smooth pacing, natural realistic motion",
+    "Pacing: chuyển động tự nhiên như quay vlog bằng điện thoại",
     "16:9 landscape",
   ];
   return `tạo cho tôi 1 video ${durationSec}s: ${tags.join(", ")}`;

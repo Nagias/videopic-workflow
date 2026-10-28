@@ -1,32 +1,32 @@
 import { z } from "zod";
 
-// Kiến thức đạo diễn dạng dữ liệu: mỗi lựa chọn có nhãn tiếng Việt (giao diện) và câu tiếng Anh (prompt Muse).
+// Kiến thức đạo diễn dạng dữ liệu: mỗi lựa chọn có nhãn (giao diện) và câu mô tả (prompt Muse, tiếng Việt).
 
 export const SHOT_SIZES = {
-  EWS: { label: "Toàn cảnh rất rộng", en: "extreme wide establishing shot" },
-  WS: { label: "Toàn cảnh", en: "wide shot, full body visible" },
-  MS: { label: "Trung cảnh", en: "medium shot from the waist up" },
-  MCU: { label: "Cận trung", en: "medium close-up from the chest up" },
-  CU: { label: "Cận cảnh", en: "close-up" },
-  INSERT: { label: "Cận chi tiết", en: "extreme close-up insert of the detail" },
+  EWS: { label: "Toàn cảnh rất rộng", vi: "toàn cảnh rất rộng, thấy cả khu vực" },
+  WS: { label: "Toàn cảnh", vi: "toàn cảnh, thấy trọn người từ đầu đến chân" },
+  MS: { label: "Trung cảnh", vi: "trung cảnh, từ thắt lưng trở lên" },
+  MCU: { label: "Cận trung", vi: "cận trung, từ ngực trở lên" },
+  CU: { label: "Cận cảnh", vi: "cận cảnh" },
+  INSERT: { label: "Cận chi tiết", vi: "cận chi tiết vào đồ vật hoặc bàn tay" },
 } as const;
 
 export const CAMERA_ANGLES = {
-  eye: { label: "Ngang tầm mắt", en: "eye-level camera" },
-  low: { label: "Góc thấp", en: "low-angle camera" },
-  high: { label: "Góc cao", en: "high-angle camera" },
-  aerial: { label: "Từ trên cao (flycam)", en: "aerial drone view" },
+  eye: { label: "Ngang tầm mắt", vi: "máy ngang tầm mắt" },
+  low: { label: "Góc thấp", vi: "máy đặt thấp nhìn lên" },
+  high: { label: "Góc cao", vi: "máy đặt cao nhìn xuống" },
+  aerial: { label: "Từ trên cao (flycam)", vi: "nhìn từ flycam trên cao" },
 } as const;
 
 export const CAMERA_MOVES = {
-  static: { label: "Đứng yên", en: "locked-off static camera" },
-  push_in: { label: "Đẩy vào chậm", en: "slow dolly push-in" },
-  pull_out: { label: "Kéo ra chậm", en: "slow dolly pull-out" },
-  pan: { label: "Lia ngang", en: "slow horizontal pan" },
-  tilt: { label: "Lia dọc", en: "slow tilt" },
-  handheld: { label: "Cầm tay", en: "subtle handheld camera with natural sway" },
-  orbit: { label: "Quay vòng", en: "slow orbit around the subject" },
-  drone: { label: "Flycam bay tới", en: "slow aerial drone glide forward" },
+  static: { label: "Đứng yên", vi: "máy đứng yên trên chân máy" },
+  push_in: { label: "Đẩy vào chậm", vi: "máy tiến chậm vào gần" },
+  pull_out: { label: "Kéo ra chậm", vi: "máy lùi chậm ra xa" },
+  pan: { label: "Lia ngang", vi: "máy lia ngang chậm" },
+  tilt: { label: "Lia dọc", vi: "máy lia dọc chậm" },
+  handheld: { label: "Cầm tay", vi: "máy cầm tay hơi rung tự nhiên" },
+  orbit: { label: "Quay vòng", vi: "máy đi vòng chậm quanh chủ thể" },
+  drone: { label: "Flycam bay tới", vi: "flycam bay chậm về phía trước" },
 } as const;
 
 export type ShotSize = keyof typeof SHOT_SIZES;
@@ -161,34 +161,4 @@ export function checkShotList(shots: Shot[], known?: KnownProp[]): ShotListCheck
   });
   checkProps(shots, known, errors, warnings);
   return { errors, warnings };
-}
-
-export function composeKeyframePrompt(shot: Shot, character: string, location: string): string {
-  const size = SHOT_SIZES[shot.size].en;
-  const angle = CAMERA_ANGLES[shot.angle].en;
-  const parts = [
-    `Photorealistic cinematic still frame from a survival documentary filmed on a real camera, ${size}, ${angle}`,
-    shot.subject === "character" ? `Subject: ${character}. ${shot.start}` : `${shot.start}. No people in frame`,
-    `Location: ${location}`,
-    shot.subject === "character"
-      ? "Keep the woman's face, hair, body and outfit exactly as in the character reference photos; keep the tent, stream and landscape exactly as in the location photos"
-      : "Keep the tent, stream and landscape exactly as in the location photos",
-    "Natural light, realistic skin and textures, no makeup look, no text",
-  ];
-  return parts.join(". ");
-}
-
-export function composeInChatKeyframePrompt(shot: Shot, location: string): string {
-  return [
-    "Next photo in the same story: the very same woman from the portraits you created earlier in this conversation — exactly the same face, hair, body and outfit",
-    `${SHOT_SIZES[shot.size].en}, ${CAMERA_ANGLES[shot.angle].en}`,
-    shot.start,
-    `Location: ${location}. Keep the tent, stream and landscape exactly as in the attached location photo`,
-    "Photorealistic still from a survival documentary, natural light, realistic skin, no text",
-  ].join(". ");
-}
-
-export function composeMotionPrompt(shot: Shot): string {
-  const keep = shot.subject === "character" ? "keep her face, hair and outfit exactly unchanged, " : "";
-  return `${shot.motion}. Camera: ${CAMERA_MOVES[shot.move].en}. Natural realistic motion, ${keep}no cuts, no new people`;
 }

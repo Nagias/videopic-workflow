@@ -15,6 +15,7 @@ describe("formatVideoPrompt", () => {
     expect(p.startsWith("tạo cho tôi 1 video 5s: [Duration: 5s]")).toBe(true);
     expect(p).toContain("Action: một con báo đi qua suối,");
     expect(p).toContain("16:9 landscape");
+    expect(p).not.toMatch(/cinematic/i);
   });
   it("từ chối prompt rỗng", () => {
     expect(() => formatVideoPrompt("  ", 5)).toThrow(/trống/);

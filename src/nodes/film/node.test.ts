@@ -52,7 +52,7 @@ describe("node film (Dựng phim)", () => {
     expect(counter.log.image - imagesForRefs).toBe(3);
     const shotImagePrompts = counter.log.imagePrompts.slice(imagesForRefs);
     const shotSessions = counter.log.imageSessions.slice(imagesForRefs);
-    expect(shotImagePrompts.filter((p) => p.startsWith("Next photo in the same story")).length).toBe(2);
+    expect(shotImagePrompts.filter((p) => /chính người trong các ảnh bạn đã tạo ở trên/.test(p)).length).toBe(2);
     expect(shotSessions.filter((s) => s === "continue").length).toBe(2);
     expect(shotSessions.filter((s) => s === "none").length).toBe(1);
     expect(counter.log.video).toBe(4);
@@ -65,14 +65,14 @@ describe("node film (Dựng phim)", () => {
     }
     const board = out.storyboard?.kind === "storyboard" ? out.storyboard.shots : [];
     expect(board.map((b) => b.status)).toEqual(["done", "done", "done", "done"]);
-    const s2Frame = counter.log.firstFrames[counter.log.videoPrompts.findIndex((p) => p.startsWith("action s2"))];
+    const s2Frame = counter.log.firstFrames[counter.log.videoPrompts.findIndex((p) => p.includes("action s2"))];
     expect(env.storage.getMedia(s2Frame!)?.source).toBe("last-frame");
     expect(partials.length).toBeGreaterThan(4);
   });
 
   it("cảnh 2 lỗi: cảnh 3 (nối) bị bỏ qua, cảnh khác vẫn xong; chạy lại chỉ làm cảnh 2 và 3", async () => {
     let broken = true;
-    const counter = countingFakeProviders({ failVideoWhen: (p) => broken && p.startsWith("action s2") });
+    const counter = countingFakeProviders({ failVideoWhen: (p) => broken && p.includes("action s2") });
     const { character, location } = await refs(counter.providers);
     const shots = [shot("s1"), shot("s2", { size: "WS" }), shot("s3", { link: "chain", size: "CU" }), shot("s4", { subject: "none", size: "EWS" })];
     const ctx = testNodeCtx(env, counter.providers);

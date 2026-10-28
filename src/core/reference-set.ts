@@ -3,7 +3,7 @@ import type { ProviderId } from "../shared/providers";
 import type { ImageSetValue } from "../shared/ports";
 import type { NodeRunContext } from "./node-runtime";
 
-export type ReferenceView = { view: string; label: string; prompt: string; inChatPrompt?: string };
+import type { ReferenceView } from "../shared/prompts";
 
 export type ReferenceMode = "chat" | "attach";
 

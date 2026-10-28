@@ -1,6 +1,7 @@
 import { requireInput, type NodeRun, type NodeRunContext } from "../../core/node-runtime";
 import { ProviderError, type ChatSessionRef, type ImageReference, type MediaProvider, type ProviderContext } from "../../providers/types";
-import { checkShotList, composeInChatKeyframePrompt, composeKeyframePrompt, composeMotionPrompt, type Shot } from "../../shared/director";
+import { checkShotList, type Shot } from "../../shared/director";
+import { DEFAULT_LOOK, keyframePrompt, motionPrompt } from "../../shared/prompts";
 import type { ImageSetValue, StoryboardShot } from "../../shared/ports";
 import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC, SERVICE_FAILURE_LIMIT, SHOT_SECONDS, type FilmParams } from "./definition";
 
@@ -83,19 +84,20 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
     if (serviceFailures >= SERVICE_FAILURE_LIMIT) throw new ServiceBreakerOpen();
   };
   let session: ChatSessionRef | undefined = character.session;
+  const kf = { look: location.look ?? DEFAULT_LOOK, location: location.description, props: [], character: character.description };
   const locationRefs = location.images.filter((x) => x.view === "wide").map((x) => ({ mediaId: x.mediaId, role: location.role }));
 
   const characterKeyframe = async (i: number, shot: Shot): Promise<{ mediaId: string }> => {
-    const prompt = composeInChatKeyframePrompt(shot, location.description);
+    const prompt = keyframePrompt(shot, { ...kf, refs: ["bối cảnh"], inChat: true });
     const fallbackRefs = referencesFor(shot, character, location);
-    const fallbackPrompt = composeKeyframePrompt(shot, character.description, location.description);
+    const fallbackPrompt = keyframePrompt(shot, { ...kf, refs: [], inChat: false });
     return ctx.step(["keyframe-chat", provider.id, prompt, character.images.map((x) => x.mediaId), locationRefs.map((x) => x.mediaId)], async () => {
       ensureServiceUp();
       await characterChat.acquire();
       try {
         ensureServiceUp();
         const img = await provider.generateImage(
-          { prompt, references: locationRefs, session: session ?? "new", fallback: { prompt: fallbackPrompt, references: fallbackRefs } },
+          { prompt, references: locationRefs, session: session ?? "new", fallback: { prompt: fallbackPrompt, references: fallbackRefs }, verbatim: true },
           shotCtx(i),
         );
         if (img.session) session = img.session;
@@ -135,11 +137,11 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
             : shot.subject === "character" && session
               ? await characterKeyframe(i, shot)
               : await ctx.step(
-                ["keyframe", provider.id, composeKeyframePrompt(shot, character.description, location.description), referencesFor(shot, character, location)],
+                ["keyframe", provider.id, keyframePrompt(shot, { ...kf, refs: [], inChat: false }), referencesFor(shot, character, location)],
                 async () => {
                   ensureServiceUp();
                   const img = await provider.generateImage(
-                    { prompt: composeKeyframePrompt(shot, character.description, location.description), references: referencesFor(shot, character, location) },
+                    { prompt: keyframePrompt(shot, { ...kf, refs: [], inChat: false }), references: referencesFor(shot, character, location), verbatim: true },
                     shotCtx(i),
                   );
                   return { mediaId: img.mediaId };
@@ -148,10 +150,10 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
           board[i].keyframeId = keyframe.mediaId;
           publish();
 
-          const motion = composeMotionPrompt(shot);
+          const motion = motionPrompt(shot);
           const clip = await ctx.step(["clip", provider.id, motion, keyframe.mediaId, SHOT_SECONDS], async () => {
             ensureServiceUp();
-            const v = await provider.generateVideo({ prompt: motion, durationSec: SHOT_SECONDS, firstFrameMediaId: keyframe.mediaId }, shotCtx(i));
+            const v = await provider.generateVideo({ prompt: motion, durationSec: SHOT_SECONDS, firstFrameMediaId: keyframe.mediaId, verbatim: true }, shotCtx(i));
             return { mediaId: v.mediaId, durationSec: v.durationSec };
           });
           const finalId = params.fixBrightness
