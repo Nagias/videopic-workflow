@@ -11,6 +11,8 @@ export type NodeDefinition<P> = {
   defaults: P;
   // Node tạo ảnh mẫu: chạy xong thì kết quả vào kho tài sản dùng chung (chọn lại ở workflow khác không tốn lượt).
   library?: AssetKind;
+  // Phiên bản phần code quyết định kết quả (prompt): đưa vào khoá cache node (codeVersion() ở src/shared/prompts.ts).
+  cacheVersion?: string;
 };
 
 export const ASSET_KINDS = ["character", "location", "props"] as const;

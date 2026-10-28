@@ -106,8 +106,9 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function cacheKeyOf(type: string, params: unknown, upstream: Record<string, string>): string {
-  return createHash("sha256").update(stableStringify({ type, params, upstream })).digest("hex");
+export function cacheKeyOf(type: string, params: unknown, upstream: Record<string, string>, version?: string): string {
+  const parts = version === undefined ? { type, params, upstream } : { type, params, upstream, version };
+  return createHash("sha256").update(stableStringify(parts)).digest("hex");
 }
 
 function mediaStillValid(value: unknown, storage: Storage): boolean {
@@ -162,7 +163,7 @@ export async function executeRun(deps: ExecuteDeps, runId: string, graph: Workfl
       inputs[name] = value;
       upstream[name] = `${keys.get(src.source)}:${src.sourceHandle}`;
     }
-    const key = cacheKeyOf(p.node.type, p.params, upstream);
+    const key = cacheKeyOf(p.node.type, p.params, upstream, p.impl.definition.cacheVersion);
     keys.set(id, key);
 
     const cached = db.select().from(nodeCache).where(eq(nodeCache.cacheKey, key)).get();

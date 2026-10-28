@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import type { Db } from "../../core/db/client";
 import { assets } from "../../core/db/schema";
 import { collectMediaIds } from "../../core/media-ids";
@@ -37,6 +37,8 @@ export function recordAsset(db: Db, a: { cacheKey: string; kind: AssetKind; para
     outputJson: JSON.stringify(a.outputs),
     updatedAt: Date.now(),
   };
+  // Cùng loại + cùng tham số mà khoá khác (prompt trong code đổi) → mục cũ thay bằng mục mới.
+  db.delete(assets).where(and(eq(assets.kind, a.kind), eq(assets.paramsJson, row.paramsJson), ne(assets.cacheKey, a.cacheKey))).run();
   db.insert(assets).values(row).onConflictDoUpdate({ target: assets.cacheKey, set: row }).run();
 }
 

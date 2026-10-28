@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineNode } from "../../shared/node-definition";
+import { codeVersion, repairPrompt, writerPrompt } from "../../shared/prompts";
 import { PROVIDER_IDS } from "../../shared/providers";
 
 export const WRITER_MAX_TRIES = 3;
@@ -23,6 +24,7 @@ export const definition = defineNode<WriterParams>({
     { name: "shots", kind: "shotlist", label: "Cảnh" },
     { name: "props", kind: "propspec", label: "Danh sách đồ vật" },
   ],
+  cacheVersion: codeVersion(writerPrompt, repairPrompt),
   params,
   defaults: { idea: "", shotCount: 12, provider: "fake" },
 });

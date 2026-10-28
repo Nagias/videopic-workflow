@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineNode } from "../../shared/node-definition";
-import { DEFAULT_LOOK } from "../../shared/prompts";
+import { codeVersion, DEFAULT_LOOK, LOCATION_SHEET } from "../../shared/prompts";
 import { PROVIDER_IDS } from "../../shared/providers";
 
 export const params = z.object({
@@ -20,6 +20,7 @@ export const definition = defineNode<LocationParams>({
   inputs: [],
   outputs: [{ name: "location", kind: "imageset", label: "Không gian" }],
   library: "location",
+  cacheVersion: codeVersion(LOCATION_SHEET),
   params,
   defaults: { name: "", description: "", look: DEFAULT_LOOK, provider: "fake" },
 });
