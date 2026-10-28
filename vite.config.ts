@@ -9,7 +9,7 @@ export default defineConfig({
     host: "127.0.0.1",
     port: Number(process.env.WEB_PORT ?? 5190),
     strictPort: true,
-    watch: { ignored: ["**/.data/**", "**/.data-test/**", "**/.cache/**", "**/test-results/**"] },
+    watch: { ignored: (p: string) => /[\\/](\.data|\.data-test|\.cache|test-results|playwright-report|dist)([\\/]|$)/.test(p) },
     proxy: { "/api": { target: `http://127.0.0.1:${API_PORT}`, changeOrigin: false } },
   },
   build: { outDir: "dist", emptyOutDir: true },

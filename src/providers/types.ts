@@ -2,7 +2,18 @@ import type { Ffmpeg } from "../core/ffmpeg";
 import type { Storage } from "../core/storage";
 import type { ClipDuration, ProviderId } from "../shared/providers";
 
-export type VideoRequest = { prompt: string; durationSec: ClipDuration };
+export type ImageReference = { mediaId: string; role: string };
+
+export type ChatSessionRef = { accountId: string; threadUrl: string };
+
+export type ImageRequest = {
+  prompt: string;
+  references: ImageReference[];
+  session?: ChatSessionRef | "new";
+  fallback?: { prompt: string; references: ImageReference[] };
+};
+
+export type VideoRequest = { prompt: string; durationSec: ClipDuration; firstFrameMediaId?: string };
 
 export type ProviderContext = {
   signal: AbortSignal;
@@ -12,13 +23,16 @@ export type ProviderContext = {
 };
 
 export type GeneratedVideo = { mediaId: string; durationSec: number; width: number; height: number };
+export type GeneratedImage = { mediaId: string; width: number; height: number; session?: ChatSessionRef };
 
-export interface VideoProvider {
+export interface MediaProvider {
   id: ProviderId;
   generateVideo(req: VideoRequest, ctx: ProviderContext): Promise<GeneratedVideo>;
+  generateImage(req: ImageRequest, ctx: ProviderContext): Promise<GeneratedImage>;
+  maxParallel(): number;
 }
 
-export type ProviderRegistry = { get(id: ProviderId): VideoProvider };
+export type ProviderRegistry = { get(id: ProviderId): MediaProvider };
 
 export class ProviderError extends Error {
   constructor(

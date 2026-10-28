@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppDeps } from "../../core/app-deps";
 import { workflows } from "../../core/db/schema";
-import { SaveWorkflowBodySchema, type WorkflowResponse } from "../../shared/api";
+import { SaveWorkflowBodySchema, type WorkflowListResponse, type WorkflowResponse } from "../../shared/api";
+import { WORKFLOW_TEMPLATES } from "../../shared/templates";
 import { WorkflowGraphSchema, type WorkflowGraph } from "../../shared/workflow";
 
 export const DEFAULT_WORKFLOW_ID = "default";
@@ -34,6 +35,27 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: AppDeps): voi
       deps.db.insert(workflows).values(row).run();
     }
     return toResponse(row);
+  });
+
+  app.get("/api/workflows", () => {
+    const rows = deps.db.select({ id: workflows.id, name: workflows.name, updatedAt: workflows.updatedAt }).from(workflows).all();
+    const res: WorkflowListResponse = { workflows: rows.sort((a, b) => b.updatedAt - a.updatedAt) };
+    return res;
+  });
+
+  app.get<{ Params: { id: string } }>("/api/workflows/:id", async (req, reply) => {
+    const row = get(req.params.id);
+    if (!row) return reply.code(404).send({ error: "Không tìm thấy workflow" });
+    return toResponse(row);
+  });
+
+  app.post<{ Params: { templateId: string } }>("/api/workflows/from-template/:templateId", async (req, reply) => {
+    const tpl = WORKFLOW_TEMPLATES.find((t) => t.id === req.params.templateId);
+    if (!tpl) return reply.code(404).send({ error: "Không có mẫu workflow này" });
+    const id = `${tpl.id}-${Date.now().toString(36)}`;
+    const row = { id, name: tpl.name, graphJson: JSON.stringify(tpl.graph), updatedAt: Date.now() };
+    deps.db.insert(workflows).values(row).run();
+    return reply.code(201).send(toResponse(row));
   });
 
   app.put<{ Params: { id: string } }>("/api/workflows/:id", async (req, reply) => {

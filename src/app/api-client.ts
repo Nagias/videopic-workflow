@@ -4,6 +4,7 @@ import {
   MuseAccountsResponseSchema,
   RunResponseSchema,
   StartRunResponseSchema,
+  WorkflowListResponseSchema,
   WorkflowResponseSchema,
   type SaveWorkflowBody,
 } from "../shared/api";
@@ -20,6 +21,10 @@ async function call<S extends z.ZodType>(schema: S, url: string, init?: RequestI
 
 export const api = {
   getDefaultWorkflow: () => call(WorkflowResponseSchema, "/api/workflows/default"),
+  getWorkflow: (id: string) => call(WorkflowResponseSchema, `/api/workflows/${encodeURIComponent(id)}`),
+  listWorkflows: () => call(WorkflowListResponseSchema, "/api/workflows"),
+  createFromTemplate: (templateId: string) =>
+    call(WorkflowResponseSchema, `/api/workflows/from-template/${encodeURIComponent(templateId)}`, { method: "POST", body: "{}" }),
   saveWorkflow: (id: string, body: SaveWorkflowBody) =>
     call(WorkflowResponseSchema, `/api/workflows/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }),
   startRun: (workflowId: string) =>

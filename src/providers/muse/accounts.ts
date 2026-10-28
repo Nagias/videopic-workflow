@@ -21,6 +21,10 @@ export function listProfiles(profilesDir: string): MuseAccount[] {
 
 export type AccountPool = {
   acquire(): MuseAccount;
+  tryAcquire(): MuseAccount | null;
+  acquireWait(signal: AbortSignal, onWait?: () => void): Promise<MuseAccount>;
+  acquireSpecific(id: string, signal: AbortSignal, onWait?: () => void): Promise<MuseAccount>;
+  loggedInCount(): number;
   release(id: string, outcome: "ok" | "needs_login" | "cooldown"): void;
   snapshot(): { id: string; state: AccountState; loggedIn: boolean }[];
 };
@@ -40,8 +44,7 @@ export function createAccountPool(profilesDir: string, cooldownMs = 60_000, now:
     return "ready";
   };
 
-  return {
-    acquire() {
+  const tryAcquire = (): MuseAccount | null => {
       const all = listProfiles(profilesDir);
       if (all.length === 0 || all.every((a) => stateOf(a) === "needs_login")) {
         throw new Error(
@@ -56,8 +59,41 @@ export function createAccountPool(profilesDir: string, cooldownMs = 60_000, now:
           return acc;
         }
       }
-      throw new Error("Mọi tài khoản Muse đang bận hoặc đang nghỉ sau lỗi. Thử lại sau ít phút.");
+      return null;
+  };
+
+  return {
+    tryAcquire,
+    acquire() {
+      const acc = tryAcquire();
+      if (!acc) throw new Error("Mọi tài khoản Muse đang bận hoặc đang nghỉ sau lỗi. Thử lại sau ít phút.");
+      return acc;
     },
+    async acquireWait(signal, onWait) {
+      for (;;) {
+        const acc = tryAcquire();
+        if (acc) return acc;
+        if (signal.aborted) throw new Error("Đã dừng");
+        onWait?.();
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    },
+    async acquireSpecific(id, signal, onWait) {
+      for (;;) {
+        const acc = listProfiles(profilesDir).find((a) => a.id === id);
+        if (!acc) throw new Error(`Không còn hồ sơ Muse ${id}`);
+        const state = stateOf(acc);
+        if (state === "needs_login") throw new Error(`Tài khoản ${id} cần đăng nhập lại (npm run muse:login -- ${id})`);
+        if (state === "ready") {
+          busy.add(acc.id);
+          return acc;
+        }
+        if (signal.aborted) throw new Error("Đã dừng");
+        onWait?.();
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    },
+    loggedInCount: () => listProfiles(profilesDir).filter((a) => isProfileLoggedIn(a.profileDir)).length,
     release(id, outcome) {
       busy.delete(id);
       if (outcome === "needs_login") needsLoginUntil.set(id, now() + NEEDS_LOGIN_RECHECK_MS);

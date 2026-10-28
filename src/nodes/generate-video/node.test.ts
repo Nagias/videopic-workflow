@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { countingFakeProviders } from "../../../tests/helpers/nodes";
+import { countingFakeProviders, testNodeCtx } from "../../../tests/helpers/nodes";
 import { createTestEnv, type TestEnv } from "../../../tests/helpers/test-env";
 import { definition } from "./definition";
 import { run } from "./run";
@@ -24,7 +24,7 @@ describe("node generate-video", () => {
     const { providers, calls } = countingFakeProviders();
     const messages: string[] = [];
     const out = await run(
-      { signal: new AbortController().signal, report: (m) => messages.push(m), providers, storage: env.storage, ffmpeg: env.ffmpeg },
+      testNodeCtx(env, providers, messages),
       { prompt: { kind: "text", text: "sản phẩm trên bàn gỗ" } },
       { provider: "fake", durationSec: 5 },
     );
@@ -36,7 +36,7 @@ describe("node generate-video", () => {
   it("báo lỗi khi thiếu đầu vào prompt", async () => {
     const { providers } = countingFakeProviders();
     await expect(
-      run({ signal: new AbortController().signal, report: () => undefined, providers, storage: env.storage, ffmpeg: env.ffmpeg }, {}, { provider: "fake", durationSec: 5 }),
+      run(testNodeCtx(env, providers), {}, { provider: "fake", durationSec: 5 }),
     ).rejects.toThrow(/Thiếu đầu vào/);
   });
 });

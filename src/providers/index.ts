@@ -3,14 +3,14 @@ import type { ProviderId } from "../shared/providers";
 import { createFakeProvider } from "./fake";
 import { createMuseProvider } from "./muse";
 import type { AccountPool } from "./muse/accounts";
-import type { ProviderRegistry, VideoProvider } from "./types";
+import type { ProviderRegistry, MediaProvider } from "./types";
 
 export function createProviders(cfg: AppConfig, musePool: AccountPool): ProviderRegistry {
-  const factories: Record<ProviderId, () => VideoProvider> = {
+  const factories: Record<ProviderId, () => MediaProvider> = {
     fake: createFakeProvider,
     muse: () => createMuseProvider(cfg, musePool),
   };
-  const cache = new Map<ProviderId, VideoProvider>();
+  const cache = new Map<ProviderId, MediaProvider>();
   return {
     get(id) {
       let p = cache.get(id);
