@@ -88,6 +88,7 @@ describe("node film (Dựng phim)", () => {
     expect(counter.log.imagePrompts[before]).toContain("ảnh 2: khúc gỗ (nguyên khúc)");
     expect(counter.log.imagePrompts[before + 1]).toContain("Chỉ thấy bàn tay");
     expect(counter.log.videoPrompts[0]).toContain("Cuối cảnh: khúc gỗ bổ đôi");
+    expect(counter.log.videoPrompts.every((p) => p.includes("Trang phục giữ nguyên suốt clip: an adult Vietnamese woman"))).toBe(true);
   });
 
   it("B-roll không người nhưng có đồ vật: ảnh khung mới (chat mới) có đính kèm, không đi chữ→video", async () => {

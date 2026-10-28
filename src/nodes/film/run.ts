@@ -167,7 +167,7 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
             keyframeId = keyframe.mediaId;
             board[i] = { ...board[i], keyframeId };
             publish();
-            const prompt = motionPrompt(shot);
+            const prompt = motionPrompt(shot, { character: character.description });
             clip = await ctx.step(["clip", provider.id, prompt, keyframe.mediaId, SHOT_SECONDS], async () => {
               ensureServiceUp();
               const v = await provider.generateVideo({ prompt, durationSec: SHOT_SECONDS, firstFrameMediaId: keyframe.mediaId, verbatim: true }, shotCtx(i));
