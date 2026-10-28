@@ -37,6 +37,7 @@ export const definition = defineNode<PropsParams>({
   description: "Ảnh mẫu từng đồ vật (rìu, khúc gỗ, lều…) và các trạng thái của nó (nguyên → bổ đôi), để mọi cảnh giữ đúng hình dạng.",
   inputs: [{ name: "spec", kind: "propspec", label: "Từ Biên kịch", optional: true }],
   outputs: [{ name: "props", kind: "props", label: "Đồ vật" }],
+  library: "props",
   params,
   defaults: { name: "", items: [], provider: "fake" },
 });

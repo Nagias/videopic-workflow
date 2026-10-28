@@ -108,3 +108,14 @@ Kế hoạch: `docs/superpowers/plans/2026-10-27-video-chuoi-canh.md`. Chủ d�
 | `npx vitest run src/core/ffmpeg.test.ts` | ảnh→clip, khung cuối, chuẩn hoá ảnh dọc, bù sáng, ghép clip 10 giây cắt về 5, clip không tiếng |
 | `npx playwright test e2e/muse-driver.spec.ts` | trang Muse giả: tạo ảnh có đính kèm (không nhận nhầm ảnh mình gửi), Muse từ chối → `REFUSED` |
 | `npx playwright test e2e/chuoi-canh.spec.ts` | bấm thật: tạo từ mẫu → đổi sang dịch vụ giả → Chạy → storyboard 12 ô "xong" → phim ~60 giây |
+
+## 4. Luồng 3 — Ảnh mẫu dùng chung, phân cảnh khung đầu/chuyển động, Biên kịch Muse (28/10/2026)
+
+Thiết kế: `docs/superpowers/specs/2026-10-28-chat-luong-video-design.md`. Kế hoạch: `docs/superpowers/plans/2026-10-28-chat-luong-video.md`.
+
+### 4.1 Người dùng làm gì → hệ thống làm gì
+
+| Bước | Thao tác (phần tử) | Phía giao diện | API | Phía máy chủ | Tốn |
+|---|---|---|---|---|---|
+| 1 | Chọn ảnh mẫu đã tạo `[data-testid=asset-pick-<id>]` (node Nhân vật, Không gian, Đồ vật) | `AssetPicker()` điền lại tham số (Đồ vật: thêm món) | `GET /api/assets` (tham số `?kind=character|location|props`) | `listAssets()` (`src/features/assets/store.ts`) | — |
+| 2 | Đặt tên ảnh mẫu `[data-testid=asset-name-<id>]` | tự lưu | `PUT /api/workflows/:id` | executor gọi `recordAsset()` khi node có `definition.library` chạy xong hoặc lấy cache | — |

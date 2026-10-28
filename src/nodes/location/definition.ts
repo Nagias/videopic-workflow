@@ -19,6 +19,7 @@ export const definition = defineNode<LocationParams>({
   description: "Tạo bộ ảnh mẫu của bối cảnh không có người, kèm câu tông ảnh dùng chung cho mọi cảnh.",
   inputs: [],
   outputs: [{ name: "location", kind: "imageset", label: "Không gian" }],
+  library: "location",
   params,
   defaults: { name: "", description: "", look: DEFAULT_LOOK, provider: "fake" },
 });

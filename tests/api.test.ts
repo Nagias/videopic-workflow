@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runs } from "../src/core/db/schema";
 import { createQueue } from "../src/core/queue";
-import { RunResponseSchema, WorkflowResponseSchema } from "../src/shared/api";
+import { AssetListResponseSchema, RunResponseSchema, WorkflowResponseSchema } from "../src/shared/api";
 import { promptToVideoGraph } from "./helpers/nodes";
 import { createTestServer, type TestServer } from "./helpers/server";
 
@@ -129,5 +129,46 @@ describe("API mẫu workflow", () => {
     const { planGraph } = await import("../src/core/executor");
     const { WORKFLOW_TEMPLATES } = await import("../src/shared/templates");
     expect(() => planGraph(WORKFLOW_TEMPLATES[0].graph, s.deps.nodes)).not.toThrow();
+  });
+});
+
+describe("API kho tài sản dùng chung", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await createTestServer();
+  });
+  afterEach(async () => {
+    await s.cleanup();
+  });
+
+  const characterGraph = (description: string, name?: string) => ({
+    nodes: [{ id: "c", type: "character", position: { x: 0, y: 0 }, params: { name, description, provider: "fake" } }],
+    edges: [],
+  });
+  const runWorkflow = async (id: string, graph: unknown) => {
+    expect((await s.app.inject({ method: "PUT", url: `/api/workflows/${id}`, payload: { graph } })).statusCode).toBe(200);
+    const start = await s.app.inject({ method: "POST", url: `/api/workflows/${id}/runs`, payload: {} });
+    while (await s.deps.queue.processNext());
+    return RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${start.json<{ runId: string }>().runId}` })).json());
+  };
+
+  it("node ảnh mẫu chạy xong thì vào kho; workflow khác dùng lại đúng tham số thì không gọi dịch vụ", async () => {
+    const desc = "một cô gái Việt Nam 20 tuổi, tóc buộc đuôi ngựa, áo thể thao màu than";
+    expect((await runWorkflow("wf-a", characterGraph(desc, "Cô gái Sơn La"))).status).toBe("succeeded");
+    const list = AssetListResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/assets?kind=character" })).json());
+    expect(list.assets).toHaveLength(1);
+    expect(list.assets[0]).toMatchObject({ kind: "character", name: "Cô gái Sơn La", params: { description: desc } });
+    expect(list.assets[0]?.thumbnailMediaId).toBeTruthy();
+    const empty = AssetListResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/assets?kind=props" })).json());
+    expect(empty.assets).toEqual([]);
+
+    const callsBefore = s.imageCalls();
+    const reused = await runWorkflow("wf-b", characterGraph(desc, "Cô gái Sơn La"));
+    expect(reused.nodes.c?.status).toBe("cached");
+    expect(s.imageCalls()).toBe(callsBefore);
+  });
+
+  it("kind lạ trả 400", async () => {
+    expect((await s.app.inject({ method: "GET", url: "/api/assets?kind=xyz" })).statusCode).toBe(400);
   });
 });

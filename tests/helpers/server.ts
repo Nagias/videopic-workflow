@@ -6,11 +6,11 @@ import { createAccountPool } from "../../src/providers/muse/accounts";
 import { countingFakeProviders, testNodes } from "./nodes";
 import { createTestEnv, type TestEnv } from "./test-env";
 
-export type TestServer = TestEnv & { app: FastifyInstance; deps: AppDeps; calls: () => number };
+export type TestServer = TestEnv & { app: FastifyInstance; deps: AppDeps; calls: () => number; imageCalls: () => number };
 
 export async function createTestServer(): Promise<TestServer> {
   const env = createTestEnv();
-  const { providers, calls } = countingFakeProviders();
+  const { providers, calls, log } = countingFakeProviders();
   const base = { db: env.db, storage: env.storage, ffmpeg: env.ffmpeg, providers, nodes: testNodes };
   const deps: AppDeps = { ...base, cfg: env.cfg, queue: createQueue(base), musePool: createAccountPool(env.cfg.profilesDir) };
   const app = await buildServer(deps);
@@ -19,6 +19,7 @@ export async function createTestServer(): Promise<TestServer> {
     app,
     deps,
     calls,
+    imageCalls: () => log.image,
     async cleanup() {
       await deps.queue.stop();
       await app.close();

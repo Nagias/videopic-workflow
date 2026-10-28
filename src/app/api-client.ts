@@ -1,6 +1,8 @@
 import type { z } from "zod";
+import type { AssetKind } from "../shared/node-definition";
 import {
   ApiErrorSchema,
+  AssetListResponseSchema,
   MuseAccountsResponseSchema,
   RunResponseSchema,
   StartRunResponseSchema,
@@ -31,4 +33,5 @@ export const api = {
     call(StartRunResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/runs`, { method: "POST", body: "{}" }),
   getRun: (runId: string) => call(RunResponseSchema, `/api/runs/${encodeURIComponent(runId)}`),
   getMuseAccounts: () => call(MuseAccountsResponseSchema, "/api/muse/accounts"),
+  listAssets: (kind: AssetKind) => call(AssetListResponseSchema, `/api/assets?kind=${encodeURIComponent(kind)}`),
 };

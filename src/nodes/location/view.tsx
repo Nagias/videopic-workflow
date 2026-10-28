@@ -1,5 +1,5 @@
 import type { NodeViewProps } from "../../features/editor/ui/node-kit";
-import { ImageSetGallery, ProviderSelect } from "../../features/editor/ui/widgets";
+import { AssetPicker, ImageSetGallery, ProviderSelect } from "../../features/editor/ui/widgets";
 import { DEFAULT_LOOK } from "../../shared/prompts";
 import type { LocationParams } from "./definition";
 
@@ -7,6 +7,11 @@ export function LocationView({ id, params, setParams, state }: NodeViewProps<Loc
   const set = state?.output?.location;
   return (
     <div className="stack">
+      <AssetPicker id={id} kind="location" onPick={(p) => setParams(p)} />
+      <label className="field">
+        <span>Tên</span>
+        <input className="nodrag" data-testid={`asset-name-${id}`} value={params.name ?? ""} placeholder="vd: Sườn đồi Sơn La" onChange={(e) => setParams({ name: e.target.value })} />
+      </label>
       <label className="field">
         <span>Mô tả bối cảnh (địa hình, cây cối, ánh sáng — đồ vật như lều, bếp đá để ở node Đồ vật)</span>
         <textarea

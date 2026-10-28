@@ -15,6 +15,7 @@ export const definition = defineNode<CharacterParams>({
   description: "Tạo bộ ảnh mẫu của nhân vật (mặt cận, toàn thân chính diện, nghiêng, sau lưng) để mọi cảnh giữ đúng mặt và trang phục.",
   inputs: [],
   outputs: [{ name: "character", kind: "imageset", label: "Nhân vật" }],
+  library: "character",
   params,
   defaults: { name: "", description: "", provider: "fake" },
 });

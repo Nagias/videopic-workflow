@@ -1,6 +1,6 @@
 import { mediaUrl } from "../../shared/api";
 import type { NodeViewProps } from "../../features/editor/ui/node-kit";
-import { ProviderSelect } from "../../features/editor/ui/widgets";
+import { AssetPicker, ProviderSelect } from "../../features/editor/ui/widgets";
 import type { PropRow, PropsParams } from "./definition";
 
 export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsParams>) {
@@ -9,9 +9,15 @@ export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsP
   const update = (i: number, patch: Partial<PropRow>) => setParams({ items: items.map((it, j) => (j === i ? { ...it, ...patch } : it)) });
   const remove = (i: number) => setParams({ items: items.filter((_, j) => j !== i) });
   const add = () => setParams({ items: [...items, { name: "", description: "", states: "" }] });
+  const addFromLibrary = (picked: Record<string, unknown>) => {
+    const more = Array.isArray(picked.items) ? (picked.items as PropRow[]) : [];
+    const fresh = more.filter((m) => !items.some((it) => it.name.trim().toLowerCase() === m.name.trim().toLowerCase()));
+    setParams({ items: [...items, ...fresh] });
+  };
 
   return (
     <div className="stack nowheel">
+      <AssetPicker id={id} kind="props" onPick={addFromLibrary} />
       <p className="hint">Nối cổng "Từ Biên kịch" thì danh sách dưới đây bị bỏ qua.</p>
       {items.map((it, i) => (
         <div className="shot-row" key={i}>
