@@ -92,11 +92,21 @@ Công thức rút từ ComfyUI, Magnific, Higgsfield, Kling, Google Flow và s�
 - Muse **giữ mặt rất tốt khi tạo ảnh nối tiếp trong cùng một đoạn chat**, không tải lên ("chính cô gái trong ảnh bạn đã tạo trước đó"). → Cách đang dùng (chủ dự án chọn 27/10/2026): **một chat phụ cho một nhân vật** — ảnh chân dung → các góc → ảnh khung từng cảnh có nhân vật nối tiếp trong chat đó (tuần tự, một tài khoản). Luôn dùng chat phụ, không dùng chat chính; chat phụ không tạo được → mở chat phụ mới thử lại (lần thử lại của nhân vật đính kèm ảnh chân dung).
 - Tạo video tối 27/10 thất bại trên cả 3 tài khoản (chữ→video lẫn ảnh→video, có người lẫn không người); cùng ngày 21:55 chữ→video vẫn thành công. Chưa kết luận được ảnh→video có bị chặn với người chân thực hay không — cần thử lại khi Muse ổn định.
 
+### 6.2 Chống "nhựa" và cảnh sạn (28/10/2026, thiết kế `docs/superpowers/specs/2026-10-28-chat-luong-video-design.md`)
+
+- Mọi prompt Muse của luồng phim ở **một file** `src/shared/prompts.ts` (tiếng Việt, gửi nguyên văn `verbatim`). Không dùng "cinematic/photorealistic/2K"; một câu **tông ảnh** chốt ở node Không gian (mặc định "ảnh điện thoại như khung hình vlog, trời hơi âm u, màu không chỉnh") đi vào mọi ảnh và video.
+- Cảnh v2 (`src/shared/director.ts`): **khung đầu** (ảnh đứng yên) + **chuyển động** (chỉ việc xảy ra sau khung đầu) + **đồ vật trong khung** (`tên: trạng thái đầu -> trạng thái cuối`). `checkShotList()` chặn: đồ vật xuất hiện lại sai trạng thái, đồ vật đổi trạng thái mà không có người/tay tác động, tên/trạng thái không có trong node Đồ vật.
+- Đường tạo cảnh (`src/nodes/film/run.ts`): nối → khung cuối; có người/tay → ảnh khung trong chat phụ của nhân vật, đính kèm bối cảnh + tối đa 2 ảnh mẫu đồ vật đúng trạng thái đầu; không người có đồ vật → ảnh khung chat mới; không người không đồ vật → **chữ→video thẳng**.
+- Ảnh mẫu: nhân vật 4 góc (mặt cận, chính diện, nghiêng, sau lưng), không gian 2 ảnh, node **Đồ vật** (ảnh tĩnh vật + từng trạng thái tạo nối tiếp trong cùng chat). Bước con khoá theo mô tả món → món giống hệt ở workflow khác không tốn lượt.
+- **Kho tài sản** (bảng `assets`, ghi duy nhất ở `src/features/assets/store.ts`): executor ghi khi node có `definition.library` chạy xong; giao diện "Dùng lại từ kho" điền lại tham số → trúng cache.
+- **Biên kịch** (`src/nodes/writer/`): chat Muse viết JSON danh sách cảnh + đồ vật theo luật ViMax; `parseWriterReply()` kiểm bằng đúng `checkShotList()`; sai thì gửi lỗi sửa trong cùng chat (tối đa 3 lần). Muse đọc câu trả lời chữ: chờ chữ đứng yên 3 lần quét, cắt sau mã đánh dấu cuối prompt.
+- Ghép phim nén **một lần** (x264 medium, CRF 17), bù sáng áp ngay trong lần nén đó.
+
 ## 7. Lộ trình
 
-1. Bộ khung đi được: Prompt → Tạo video (Muse) → xem clip. **(đang làm)**
-2. Video ngắn đến ~2 phút: hồ sơ gốc, ảnh khung, chuỗi clip, chỉnh màu, ghép.
-3. Node Đạo diễn viết danh sách cảnh (thử dùng chính khung chat Muse).
+1. Bộ khung đi được: Prompt → Tạo video (Muse) → xem clip. (xong)
+2. Video ngắn đến ~2 phút: hồ sơ gốc, ảnh khung, chuỗi clip, chỉnh màu, ghép. (xong 28/10)
+3. Biên kịch viết danh sách cảnh bằng chính khung chat Muse; ảnh mẫu đồ vật; kho tài sản. (xong 28/10)
 4. Video dài 10–60 phút.
 
 ## 8. Nguồn mượn
@@ -106,7 +116,9 @@ Công thức rút từ ComfyUI, Magnific, Higgsfield, Kling, Google Flow và s�
 | Thao tác Muse (selector, chat mới, nhận media mới, kiểm clip) | Story Studio `backend/runners/muse_fleet_runner.py` | code của chủ dự án |
 | Khuôn bộ điều khiển Muse + bản giả | github.com/www222fff/muse2api | MIT |
 | Giao diện provider | github.com/siri2moon/moonreel | MIT |
-| Prompt Đạo diễn | github.com/HKUDS/ViMax | MIT, dùng ở tính năng 3 |
+| Luật chia cảnh khung đầu / chuyển động, cảnh đầu rộng nhất, gọi nhân vật bằng đặc điểm (prompt Biên kịch, `src/shared/prompts.ts`) | github.com/HKUDS/ViMax | MIT — `NOTICE.md` |
+| Bộ ảnh mẫu nhân vật 4 góc, đồ vật tĩnh vật không tay người, trạng thái đồ vật từ ảnh gốc, tông ảnh chốt một lần | github.com/HBAI-Ltd/Toonflow-app | MIT — `NOTICE.md` |
+| Biên kịch tự lọc danh sách đồ vật để tạo ảnh mẫu | github.com/chatfire-AI/huobao-drama | CC BY-NC-SA — chỉ học ý tưởng, không chép chữ |
 | Workflow JSON, cổng có kiểu, cache theo khoá băm | ComfyUI | học ý tưởng |
 | Canvas + khung cuối làm tham chiếu + timeline | github.com/bynne2602/museflow | tham khảo giao diện |
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../../app/api-client";
 import { mediaUrl, type AssetSummary } from "../../../shared/api";
 import type { AssetKind } from "../../../shared/node-definition";
+import { useEditor } from "./node-kit";
 import type { ImageSetValue, StoryboardShot } from "../../../shared/ports";
 import { PROVIDERS, type ProviderId } from "../../../shared/providers";
 
@@ -84,7 +85,8 @@ export function AssetPicker({ id, kind, onPick }: { id: string; kind: AssetKind;
       (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)),
     );
   };
-  useEffect(load, [kind]);
+  const { refreshKey } = useEditor();
+  useEffect(load, [kind, refreshKey]);
   return (
     <label className="field">
       <span>Dùng lại từ kho</span>

@@ -151,8 +151,9 @@ export function Editor() {
       setParams: (nodeId, patch) =>
         setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, params: { ...n.data.params, ...patch } } } : n))),
       stateOf: (nodeId) => run?.nodes[nodeId],
+      refreshKey: `${workflowId ?? ""}:${run?.id ?? ""}:${run?.status ?? ""}`,
     }),
-    [run, setNodes],
+    [run, setNodes, workflowId],
   );
 
   const readyMuse = muse?.accounts.filter((a) => a.loggedIn).length ?? 0;

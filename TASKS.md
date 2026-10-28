@@ -62,3 +62,9 @@ Prompt gửi nguyên văn (không bọc khuôn `formatVideoPrompt`), kết quả
 Kết luận (mỗi cách mới thử 1 lần): (1) prompt video chỉ tả việc xảy ra sau khung đầu sửa được lỗi "gỗ biến mất/tự tách"; (2) chất nhựa đến từ ảnh khung và từ chat đã chứa ảnh bóng — ảnh khung kiểu ảnh điện thoại, trời âm u, bối cảnh đơn giản bớt nhựa rõ; (3) cảnh không người nên đi chữ→video thẳng; (4) Muse hay thêm đoạn cười vào máy ở cuối → prompt cần "không nhìn vào máy quay". Tổng lượt Muse thử nghiệm: 6.
 
 Kết luận: (1) Muse từ chối 1 lần ảnh chân thực có đính kèm ảnh người — **chưa chắc là chính sách** (chủ dự án chỉ gặp báo lỗi máy chủ video), cần thử lại; (2) tạo ảnh nối tiếp trong cùng đoạn chat giữ mặt rất tốt; (3) tạo video của Muse thất bại trên cả 3 tài khoản tối 27/10 (cả có người lẫn không người, cả từ chữ lẫn từ ảnh) — lúc 21:55 cùng ngày video từ chữ vẫn thành công → nghi lỗi/giới hạn phía Muse, cần thử lại. Tổng lượt Muse tính năng 2: ~12 (5 ảnh thành công).
+
+## Nâng chất lượng video (kế hoạch: `docs/superpowers/plans/2026-10-28-chat-luong-video.md`)
+
+- [x] Task 1–8: cảnh v2 + luật đồ vật, prompt chống nhựa, ghép nén một lần, ảnh mẫu 4 góc + đồ vật, Dựng phim v2, kho tài sản, Muse đọc chữ, Biên kịch
+- [x] Task 9: mẫu Sơn La v2 + Ý tưởng → phim, e2e, tài liệu
+- [ ] Task 10: Muse thật (Sơn La v2 + Biên kịch), soát toàn nhánh, PR

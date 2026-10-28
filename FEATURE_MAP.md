@@ -86,28 +86,21 @@ Kế hoạch: `docs/superpowers/plans/2026-10-27-video-chuoi-canh.md`. Chủ d�
 
 ### 3.2 Bên trong
 
-- **Hồ sơ nhân vật** `src/nodes/character/`: `generateReferenceSet(..., "chat")` (`src/core/reference-set.ts`) — ảnh chính diện mở **chat phụ mới**, các góc sau tạo **nối tiếp trong chat đó** (`inChatPrompt`, không tải ảnh người lên); kết quả giữ `session` (tài khoản + đường dẫn chat phụ) để node Dựng phim dùng tiếp. Hỏng thì mở chat phụ mới, đính kèm ảnh chính diện (`fallback`). Góc: `CHARACTER_VIEWS`.
-- **Hồ sơ không gian** `src/nodes/location/`: `generateReferenceSet(..., "attach")` — ảnh không người, các ảnh sau đính kèm ảnh đầu. Góc: `LOCATION_VIEWS`.
-- **Danh sách cảnh** `src/nodes/shotlist/`: dữ liệu đạo diễn `src/shared/director.ts` — `SHOT_SIZES`, `CAMERA_ANGLES`, `CAMERA_MOVES`; `checkShotList()` chặn cảnh đầu "nối", nối khác chủ thể, nối liền quá `MAX_CHAIN_RUN` (2); cảnh báo luật 30°.
-- **Dựng phim** `src/nodes/film/run.ts`:
-  1. Mỗi cảnh: "cắt" có nhân vật → `characterKeyframe()`: ảnh khung tạo **lần lượt trong chat phụ của nhân vật** (khoá `characterChat`, prompt `composeInChatKeyframePrompt()`, đính kèm ảnh toàn cảnh không người); hỏng → chat phụ mới với `referencesFor()` + `composeKeyframePrompt()`. "Cắt" cảnh phụ → `composeKeyframePrompt()` + 2 ảnh bối cảnh. "Nối" → khung cuối clip trước (`lastFrameOf()`, lùi `LAST_FRAME_FROM_END_SEC`).
-  2. Clip `SHOT_SECONDS` (5) giây từ ảnh khung, prompt `composeMotionPrompt()`.
-  3. Bù sáng `fixBrightness()` (đo độ sáng đầu/cuối, `stabilizeBrightness()`).
-  4. Ghép `concatClips()`: chuẩn 1280×720 24 fps, cắt `CHAIN_TRIM_SEC` ở đầu cảnh nối, làm mềm tiếng ở mối nối.
-  - Song song theo `provider.maxParallel()` (Muse = số hồ sơ đã đăng nhập); cảnh nối chờ cảnh trước.
-  - Mỗi bước con qua `ctx.step()` (cache theo khoá băm): sửa một cảnh chỉ chạy lại cảnh đó; cảnh lỗi không làm mất cảnh đã xong.
-- **Muse** thêm `generateImage()`: đính kèm từng ảnh (`attachFile()`), chú thích vai trò ảnh trong prompt (`formatImagePrompt()`), loại ảnh trùng ảnh đính kèm bằng dấu vân tay (`averageHash()`), chuẩn hoá 1280×720 (`normalizeImage()`); bắt từ chối (`findRefusal()`, `REFUSED`) và báo lỗi của Muse (`findMuseFailure()`, `MUSE_FAILED`) chỉ trong câu trả lời sau prompt (`replyAfterPrompt()`); chờ hồ sơ rảnh (`acquireWait()`, `acquireSpecific()` cho chat của nhân vật).
-- **Luôn dùng chat phụ** (chủ dự án yêu cầu 27/10/2026): `openSideChat()` — nút `hatch-chat-compose` ("+" cạnh "Side chats") hoặc chữ "New side chat" trong menu Chats; không mở được → `SIDE_CHAT_FAILED`, **không** gửi vào chat chính. Đường dẫn chat lấy bằng `waitThreadUrl()` (`isSideChatThread()`).
-- **Chat phụ không tạo được → mở chat phụ mới thử lại** (`runJob()`, `MAX_JOB_ATTEMPTS` = 2, các mã trong `RETRY_IN_NEW_SIDE_CHAT`).
+Từ 28/10/2026 phần bên trong luồng này đổi theo luồng 3 (mục 4.2): ảnh mẫu 4 góc, đồ vật, prompt mới, đường tạo cảnh, bù sáng trong lúc ghép. Các phần không đổi:
+
+- **Danh sách cảnh** `src/nodes/shotlist/`: dữ liệu đạo diễn `src/shared/director.ts` — `SHOT_SIZES`, `CAMERA_ANGLES`, `CAMERA_MOVES`, `SUBJECTS`; `checkShotList()` chặn cảnh đầu "nối", nối khác chủ thể, nối liền quá `MAX_CHAIN_RUN` (2); cảnh báo luật 30°.
+- **Dựng phim**: song song theo `provider.maxParallel()` (Muse = số hồ sơ đã đăng nhập), cảnh nối chờ cảnh trước; mỗi bước con qua `ctx.step()` (cache theo khoá băm): sửa một cảnh chỉ chạy lại cảnh đó; cầu dao dừng khi dịch vụ lỗi `SERVICE_FAILURE_LIMIT` (3) lần.
+- **Muse** `generateImage()`: đính kèm từng ảnh (`attachFile()`), chuẩn hoá 1280×720 (`normalizeImage()`); bắt từ chối (`findRefusal()`, `REFUSED`) và báo lỗi của Muse (`findMuseFailure()`, `MUSE_FAILED`) chỉ trong câu trả lời sau prompt; chờ hồ sơ rảnh (`acquireWait()`, `acquireSpecific()` cho chat của nhân vật).
+- **Luôn dùng chat phụ** (chủ dự án yêu cầu 27/10/2026): `openSideChat()`; không mở được → `SIDE_CHAT_FAILED`, **không** gửi vào chat chính. Chat phụ hỏng → mở chat phụ mới thử lại (`runJob()`, `MAX_JOB_ATTEMPTS` = 2, các mã trong `RETRY_IN_NEW_SIDE_CHAT`).
 
 ### 3.3 Kiểm chứng tự động
 
 | Lệnh | Kiểm gì |
 |---|---|
-| `npx vitest run src/nodes` | 4 node mới: hồ sơ 3/2 ảnh, luật đạo diễn, Dựng phim 4 cảnh (nối dùng khung cuối thật, ra ~20 giây), cảnh lỗi → cảnh nối bị bỏ qua → chạy lại chỉ làm phần lỗi |
-| `npx vitest run src/core/ffmpeg.test.ts` | ảnh→clip, khung cuối, chuẩn hoá ảnh dọc, bù sáng, ghép clip 10 giây cắt về 5, clip không tiếng |
+| `npx vitest run src/nodes` | các node: hồ sơ 4/2 ảnh, đồ vật, luật đạo diễn, Biên kịch, Dựng phim (đường tạo cảnh, nối dùng khung cuối thật, ra ~20 giây), cảnh lỗi → cảnh nối bị bỏ qua → chạy lại chỉ làm phần lỗi |
+| `npx vitest run src/core/ffmpeg.test.ts` | ảnh→clip, khung cuối, chuẩn hoá ảnh dọc, bù sáng ngay trong lúc ghép, ghép clip 10 giây cắt về 5, clip không tiếng |
 | `npx playwright test e2e/muse-driver.spec.ts` | trang Muse giả: tạo ảnh có đính kèm (không nhận nhầm ảnh mình gửi), Muse từ chối → `REFUSED` |
-| `npx playwright test e2e/chuoi-canh.spec.ts` | bấm thật: tạo từ mẫu → đổi sang dịch vụ giả → Chạy → storyboard 12 ô "xong" → phim ~60 giây |
+| `npx playwright test e2e/chuoi-canh.spec.ts` | bấm thật: tạo từ mẫu → đổi sang dịch vụ giả → Chạy → nhân vật 4 ảnh, đồ vật 9 ảnh, storyboard 12 ô "xong" → phim ~60 giây |
 
 ## 4. Luồng 3 — Ảnh mẫu dùng chung, phân cảnh khung đầu/chuyển động, Biên kịch Muse (28/10/2026)
 
@@ -117,5 +110,28 @@ Thiết kế: `docs/superpowers/specs/2026-10-28-chat-luong-video-design.md`. K�
 
 | Bước | Thao tác (phần tử) | Phía giao diện | API | Phía máy chủ | Tốn |
 |---|---|---|---|---|---|
-| 1 | Chọn ảnh mẫu đã tạo `[data-testid=asset-pick-<id>]` (node Nhân vật, Không gian, Đồ vật) | `AssetPicker()` điền lại tham số (Đồ vật: thêm món) | `GET /api/assets` (tham số `?kind=character|location|props`) | `listAssets()` (`src/features/assets/store.ts`) | — |
+| 1 | Chọn ảnh mẫu đã tạo `[data-testid=asset-pick-<id>]` (node Nhân vật, Không gian, Đồ vật) | `AssetPicker()` điền lại tham số (Đồ vật: thêm món) | `GET /api/assets` (tham số `kind`: character, location hoặc props) | `listAssets()` (`src/features/assets/store.ts`) | — |
 | 2 | Đặt tên ảnh mẫu `[data-testid=asset-name-<id>]` | tự lưu | `PUT /api/workflows/:id` | executor gọi `recordAsset()` khi node có `definition.library` chạy xong hoặc lấy cache | — |
+| 3 | Gõ tông ảnh `[data-testid=location-look-<id>]` (node Không gian) | tự lưu | `PUT /api/workflows/:id` | `lookOf()` → câu tông ảnh gắn vào bộ ảnh (`imageset.look`), mọi prompt ảnh/video dùng | — |
+| 4 | Gõ đồ vật: tên `[data-testid=prop-name-<id>-<n>]`, mô tả `[data-testid=prop-desc-<id>-<n>]`, trạng thái `[data-testid=prop-states-<id>-<n>]`, thêm `[data-testid=add-prop-<id>]`; xem ảnh `[data-testid=props-gallery-<id>]` | `PropsView()` | như bước 3 | node `props`: `checkSpec()`, mỗi món một chat phụ, ảnh tĩnh vật (`propStillPrompt()`) rồi từng trạng thái nối tiếp (`propStatePrompt()`) | **Muse**: 1 ảnh mỗi trạng thái mỗi món |
+| 5 | Mỗi cảnh: khung đầu `[data-testid=shot-start-<id>-<n>]`, chuyển động `[data-testid=shot-motion-<id>-<n>]`, đồ vật `[data-testid=shot-props-<id>-<n>]` (dòng `tên: đầu -> cuối`) | `ShotListView()` báo lỗi ngay theo `checkShotList()` | như bước 3 | — | — |
+| 6 | Biên kịch: ý tưởng `[data-testid=writer-idea-<id>]`, số cảnh `[data-testid=writer-count-<id>]`, xem kết quả `[data-testid=writer-result-<id>]` | `WriterView()` | như luồng 1 (Chạy) | node `writer`: `writerPrompt()` → `provider.generateText()` → `parseWriterReply()`; lỗi → `repairPrompt()` trong cùng chat, tối đa `WRITER_MAX_TRIES` (3) | **Muse**: 1–3 lượt chữ |
+| 7 | Tạo từ mẫu `[data-testid=template-<mẫu>]` với mẫu `y-tuong-thanh-phim` | như luồng 2 | `POST /api/workflows/from-template/:templateId` | Nhân vật + Không gian → Biên kịch → Đồ vật (cổng `spec`) → Dựng phim | **Muse** |
+
+### 4.2 Bên trong
+
+- **Prompt**: một file `src/shared/prompts.ts` — `keyframePrompt()`, `motionPrompt()` (chỉ việc sau khung đầu + "Cuối cảnh: …"), `textVideoPrompt()`, `CHARACTER_SHEET()`, `LOCATION_SHEET()`, `propStillPrompt()`, `propStatePrompt()`, `writerPrompt()`, `repairPrompt()`; `DEFAULT_LOOK`. Gửi Muse nguyên văn (`verbatim: true`). Test `src/shared/prompts.test.ts` cấm "cinematic/photorealistic/2K", bắt buộc "không nhìn vào máy quay, không thêm người, không cắt cảnh, khung ngang 16:9".
+- **Cảnh v2** `ShotSchema`: `start`, `motion`, `props`; dữ liệu cũ `action` đọc thành `start = motion = action` (`upgradeLegacyShot()`). `parsePropLines()`, `checkShotList(shots, known?)`: liên tục trạng thái, hệ quả phải có người/tay, tên/trạng thái lạ, cảnh báo > `MAX_PROP_REFS` (2) món.
+- **Dựng phim** `src/nodes/film/run.ts`: kiểm `checkShotList()` với danh sách đồ vật **trước khi gọi dịch vụ**. Đường tạo cảnh: nối → `frameOf(..., "last-frame")`; có người/tay → `keyframeFor()` trong chat phụ nhân vật (khoá `characterChat`), đính kèm ảnh toàn cảnh + `propsInFrame()` (ưu tiên món đổi trạng thái); không người có đồ vật → ảnh mới chat mới; không người không đồ vật → `textVideoPrompt()` chữ→video, ảnh xem trước `frameOf(..., "thumb")`. Bù sáng: `measureBrightness()` → `ConcatPart.brightness` → `concatClips()` áp `eq` trong lần nén duy nhất (`ENCODE_V`: medium, CRF 17).
+- **Cổng vào không bắt buộc** `PortDef.optional`: `planGraph()` bỏ qua khi chưa nối (Dựng phim ← Đồ vật, Đồ vật ← Biên kịch, Biên kịch ← Nhân vật/Không gian).
+- **Kho tài sản**: bảng `assets` (`src/core/db/schema.ts`, migration `0001`), ghi duy nhất `recordAsset()`; Đồ vật lưu danh sách món lấy từ kết quả (`storedParams()`). Ô chọn tải lại theo `EditorApi.refreshKey` (đổi workflow / lượt chạy mới).
+- **Muse chữ** `generateText()`: prompt + "(Mã yêu cầu: …)"; `waitForText()` cắt câu trả lời sau mã (`replyAfterMarker()`), coi là xong khi đứng yên `TEXT_STABLE_CHECKS` (3) lần quét; không có JSON mà khớp lỗi/từ chối → `MUSE_FAILED`/`REFUSED`; hết `TEXT_WAIT_MS` → `NO_TEXT`. Dịch vụ giả: `fakeTextReply()` trả kịch bản hợp lệ.
+
+### 4.3 Kiểm chứng tự động
+
+| Lệnh | Kiểm gì |
+|---|---|
+| `npx vitest run src/shared src/nodes` | prompt chống nhựa, luật đồ vật/trạng thái, cảnh cũ `action`, đường tạo cảnh, đồ vật song song + dùng lại, Biên kịch đọc/sửa JSON |
+| `npx vitest run tests/api.test.ts` | kho: chạy xong vào kho, workflow khác dùng lại không gọi dịch vụ; mọi mẫu qua kiểm đồ thị, mẫu Sơn La không lỗi/cảnh báo |
+| `npx playwright test e2e/muse-driver.spec.ts` | trang Muse giả trả chữ theo 3 đợt: chỉ nhận đợt cuối |
+| `npx playwright test e2e/bien-kich.spec.ts` | bấm thật: mẫu Ý tưởng → phim (giả) ra 8 cảnh, chọn nhân vật từ kho ở workflow khác |

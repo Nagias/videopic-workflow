@@ -113,22 +113,29 @@ describe("API mẫu workflow", () => {
     await s.cleanup();
   });
 
-  it("tạo từ mẫu Sơn La: 4 node, 12 cảnh, có trong danh sách; mẫu lạ trả 404", async () => {
+  it("tạo từ mẫu Sơn La: 5 node (có Đồ vật), 12 cảnh, có trong danh sách; mẫu lạ trả 404", async () => {
     const res = await s.app.inject({ method: "POST", url: "/api/workflows/from-template/sinh-ton-son-la", payload: {} });
     expect(res.statusCode).toBe(201);
     const wf = WorkflowResponseSchema.parse(res.json());
-    expect(wf.graph.nodes.map((n) => n.type)).toEqual(["character", "location", "shotlist", "film"]);
-    expect((wf.graph.nodes[2]!.params.shots as unknown[]).length).toBe(12);
+    expect(wf.graph.nodes.map((n) => n.type)).toEqual(["character", "location", "props", "shotlist", "film"]);
+    expect((wf.graph.nodes[3]!.params.shots as unknown[]).length).toBe(12);
     const list = (await s.app.inject({ method: "GET", url: "/api/workflows" })).json<{ workflows: { id: string }[] }>();
     expect(list.workflows.map((w) => w.id)).toContain(wf.id);
     expect((await s.app.inject({ method: "GET", url: `/api/workflows/${wf.id}` })).statusCode).toBe(200);
     expect((await s.app.inject({ method: "POST", url: "/api/workflows/from-template/khong-co", payload: {} })).statusCode).toBe(404);
   });
 
-  it("mẫu Sơn La đi qua kiểm đồ thị và luật đạo diễn (không lỗi trước khi gọi dịch vụ)", async () => {
+  it("mọi mẫu đi qua kiểm đồ thị; cảnh Sơn La qua luật đạo diễn với đúng danh sách đồ vật, không cảnh báo", async () => {
     const { planGraph } = await import("../src/core/executor");
     const { WORKFLOW_TEMPLATES } = await import("../src/shared/templates");
-    expect(() => planGraph(WORKFLOW_TEMPLATES[0].graph, s.deps.nodes)).not.toThrow();
+    const { checkShotList, ShotSchema } = await import("../src/shared/director");
+    const { rowsToSpec } = await import("../src/nodes/props/definition");
+    for (const t of WORKFLOW_TEMPLATES) expect(() => planGraph(t.graph, s.deps.nodes), t.id).not.toThrow();
+    const sonLa = WORKFLOW_TEMPLATES.find((t) => t.id === "sinh-ton-son-la")!.graph;
+    const items = rowsToSpec(sonLa.nodes.find((n) => n.type === "props")!.params.items as never);
+    const shots = ShotSchema.array().parse(sonLa.nodes.find((n) => n.type === "shotlist")!.params.shots);
+    expect(checkShotList(shots, items.map((i) => ({ name: i.name, states: i.states })))).toEqual({ errors: [], warnings: [] });
+    expect(WORKFLOW_TEMPLATES.map((t) => t.id)).toContain("y-tuong-thanh-phim");
   });
 });
 
