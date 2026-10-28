@@ -68,6 +68,16 @@ describe("prompt Muse chống nhựa", () => {
     expect(keyframePrompt(shot({ subject: "none" }), { ...kctx, inChat: false })).toContain("không có người");
   });
 
+  it("cảnh chỉ thấy tay ghi rõ trang phục nhân vật (đo 28/10: tay mọc tay áo dài khi không ghi)", () => {
+    const p = keyframePrompt(shot({ subject: "hands" }), { ...kctx, character: "cô gái mặc áo bra thể thao màu than, tay trần" });
+    expect(p).toContain("đúng trang phục: cô gái mặc áo bra thể thao màu than, tay trần");
+  });
+
+  it("prompt video dặn chỉ làm đúng việc đã tả (đo 28/10: Muse tự nhóm lửa trước cảnh đánh lửa)", () => {
+    expect(motionPrompt(shot())).toContain("chỉ làm đúng việc đã tả, không làm thêm bước tiếp theo");
+    expect(textVideoPrompt(shot({ subject: "none", props: "" }), { look: DEFAULT_LOOK, location: "suối" })).toContain("chỉ làm đúng việc đã tả");
+  });
+
   it("bộ ảnh mẫu nhân vật 4 góc, bối cảnh 2 ảnh, đồ vật nêu trạng thái và không có tay người", () => {
     expect(CHARACTER_SHEET("x", DEFAULT_LOOK).map((v) => v.view)).toEqual(["face", "front", "side", "back"]);
     expect(LOCATION_SHEET("x", DEFAULT_LOOK).map((v) => v.view)).toEqual(["wide", "close"]);

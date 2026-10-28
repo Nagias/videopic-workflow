@@ -8,7 +8,8 @@ import type { PropSpecItem } from "./ports";
 
 export const DEFAULT_LOOK = "Ảnh chụp bằng điện thoại như khung hình vlog, ánh sáng tự nhiên, trời hơi âm u, màu tự nhiên không chỉnh màu";
 
-const VIDEO_RULES = "Chuyển động thật, có lực, đúng vật lý; không nhìn vào máy quay, không thêm người, không cắt cảnh, không chữ, khung ngang 16:9.";
+const VIDEO_RULES =
+  "Chuyển động thật, có lực, đúng vật lý; chỉ làm đúng việc đã tả, không làm thêm bước tiếp theo; không nhìn vào máy quay, không thêm người, không cắt cảnh, không chữ, khung ngang 16:9.";
 const STILL_RULES = "Bối cảnh đơn giản, không chữ, không logo, khung ngang 16:9.";
 
 export type ReferenceView = { view: string; label: string; prompt: string; inChatPrompt?: string };
@@ -29,7 +30,9 @@ function who(shot: Shot, c: KeyframeCtx): string {
   const person = c.inChat
     ? "chính người trong các ảnh bạn đã tạo ở trên trong đoạn chat này (giữ nguyên mặt, tóc, vóc dáng, quần áo)"
     : `${c.character ?? "nhân vật"} (giữ đúng người trong ảnh đính kèm)`;
-  const hands = shot.subject === "hands" ? " Chỉ thấy bàn tay và cẳng tay của người đó, không thấy mặt." : "";
+  // Khung chỉ có tay thì Muse không thấy quần áo → tự vẽ tay áo; ghi rõ trang phục (đo 28/10/2026).
+  const outfit = c.character ? ` (đúng trang phục: ${c.character})` : "";
+  const hands = shot.subject === "hands" ? ` Chỉ thấy bàn tay và cẳng tay của người đó${outfit}, không thấy mặt.` : "";
   return `Tạo 1 ảnh khung ngang 16:9, khung hình tiếp theo của cùng câu chuyện: ${person}.${hands}`;
 }
 
