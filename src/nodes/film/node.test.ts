@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { media } from "../../core/db/schema";
 import { countingFakeProviders, testNodeCtx } from "../../../tests/helpers/nodes";
 import { createTestEnv, type TestEnv } from "../../../tests/helpers/test-env";
 import type { Shot } from "../../shared/director";
@@ -68,6 +69,8 @@ describe("node film (Dựng phim)", () => {
     const s2Frame = counter.log.firstFrames[counter.log.videoPrompts.findIndex((p) => p.includes("action s2"))];
     expect(env.storage.getMedia(s2Frame!)?.source).toBe("last-frame");
     expect(partials.length).toBeGreaterThan(4);
+    const sources = env.db.select({ source: media.source }).from(media).all().map((m) => m.source);
+    expect(sources).not.toContain("brightness-fix");
   });
 
   it("cảnh 2 lỗi: cảnh 3 (nối) bị bỏ qua, cảnh khác vẫn xong; chạy lại chỉ làm cảnh 2 và 3", async () => {

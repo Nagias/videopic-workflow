@@ -28,7 +28,7 @@ describe("ffmpeg cho chuỗi cảnh", () => {
     expect(await env.ffmpeg.probeImage(last)).toEqual({ width: 1280, height: 720 });
   });
 
-  it("đo độ sáng và bù sáng: clip tối dần được kéo sáng lại gần đầu clip", async () => {
+  it("bù sáng ngay trong bước ghép: clip tối dần được kéo sáng lại gần đầu clip, chỉ một lần nén", async () => {
     const img = await env.storage.tmpPath("jpg");
     await env.ffmpeg.makeTestImage({ out: img, colorHex: "b0b0b0", width: 1280, height: 720 });
     const clip = await env.storage.tmpPath("mp4");
@@ -37,10 +37,18 @@ describe("ffmpeg cho chuỗi cảnh", () => {
     const end = await env.ffmpeg.measureLuma(clip, 4.9);
     expect(end).toBeLessThan(start - 10);
 
-    const fixed = await env.storage.tmpPath("mp4");
-    await env.ffmpeg.stabilizeBrightness(clip, fixed, { startLuma: start, endLuma: end, durationSec: 5 });
-    const fixedEnd = await env.ffmpeg.measureLuma(fixed, 4.9);
-    expect(Math.abs(fixedEnd - start)).toBeLessThan(Math.abs(end - start) / 2);
+    const film = await env.storage.tmpPath("mp4");
+    await env.ffmpeg.concatClips(
+      [
+        { path: clip, trimStartSec: 0, durationSec: 5, hasAudio: true, brightness: { startLuma: start, endLuma: end, clipSec: 5 } },
+        { path: clip, trimStartSec: 0, durationSec: 5, hasAudio: true },
+      ],
+      film,
+    );
+    const fixedEnd = await env.ffmpeg.measureLuma(film, 4.85);
+    expect(Math.abs(fixedEnd - start)).toBeLessThan(6);
+    const plainEnd = await env.ffmpeg.measureLuma(film, 9.85);
+    expect(plainEnd).toBeLessThan(start - 10);
   });
 
   it("brightnessExpr bỏ qua chênh lệch nhỏ", () => {

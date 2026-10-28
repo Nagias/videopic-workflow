@@ -13,7 +13,7 @@ class ServiceBreakerOpen extends Error {
   }
 }
 
-type FinishedShot = { clipId: string; durationSec: number; trimStartSec: number; hasAudio: boolean };
+type FinishedShot = { clipId: string; durationSec: number; trimStartSec: number; hasAudio: boolean; brightness?: Brightness };
 
 function semaphore(max: number) {
   let active = 0;
@@ -49,17 +49,16 @@ async function lastFrameOf(ctx: NodeRunContext, clipId: string): Promise<string>
   return (await ctx.storage.importFile(out, { kind: "image", source: "last-frame", width: 1280, height: 720 })).id;
 }
 
-async function fixBrightness(ctx: NodeRunContext, clipId: string): Promise<string> {
+type Brightness = { startLuma: number; endLuma: number; clipSec: number };
+
+async function measureBrightness(ctx: NodeRunContext, clipId: string): Promise<Brightness> {
   const rec = ctx.storage.getMedia(clipId);
   if (!rec) throw new Error(`Không tìm thấy clip ${clipId}`);
   const src = ctx.storage.absPath(rec);
   const probe = await ctx.ffmpeg.probeVideo(src);
   const startLuma = await ctx.ffmpeg.measureLuma(src, 0.1);
   const endLuma = await ctx.ffmpeg.measureLuma(src, Math.max(0, probe.durationSec - 0.2));
-  const out = await ctx.storage.tmpPath("mp4");
-  await ctx.ffmpeg.stabilizeBrightness(src, out, { startLuma, endLuma, durationSec: probe.durationSec });
-  const fixed = await ctx.storage.importFile(out, { kind: "video", source: "brightness-fix", width: probe.width, height: probe.height, durationSec: probe.durationSec });
-  return fixed.id;
+  return { startLuma, endLuma, clipSec: probe.durationSec };
 }
 
 export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
@@ -156,14 +155,18 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
             const v = await provider.generateVideo({ prompt: motion, durationSec: SHOT_SECONDS, firstFrameMediaId: keyframe.mediaId, verbatim: true }, shotCtx(i));
             return { mediaId: v.mediaId, durationSec: v.durationSec };
           });
-          const finalId = params.fixBrightness
-            ? (await ctx.step(["brightness", clip.mediaId], async () => ({ mediaId: await fixBrightness(ctx, clip.mediaId) }))).mediaId
-            : clip.mediaId;
-          const probe = await ctx.ffmpeg.probeVideo(ctx.storage.absPath(ctx.storage.getMedia(finalId)!));
-          board[i] = { shotId: shot.id, status: "done", keyframeId: keyframe.mediaId, clipId: finalId };
+          const brightness = params.fixBrightness ? await ctx.step(["luma", clip.mediaId], () => measureBrightness(ctx, clip.mediaId)) : undefined;
+          const probe = await ctx.ffmpeg.probeVideo(ctx.storage.absPath(ctx.storage.getMedia(clip.mediaId)!));
+          board[i] = { shotId: shot.id, status: "done", keyframeId: keyframe.mediaId, clipId: clip.mediaId };
           publish();
           const trim = shot.link === "chain" ? CHAIN_TRIM_SEC : 0;
-          return { clipId: finalId, trimStartSec: trim, durationSec: Math.min(probe.durationSec, SHOT_SECONDS) - trim, hasAudio: probe.hasAudio };
+          return {
+            clipId: clip.mediaId,
+            trimStartSec: trim,
+            durationSec: Math.min(probe.durationSec, SHOT_SECONDS) - trim,
+            hasAudio: probe.hasAudio,
+            ...(brightness ? { brightness } : {}),
+          };
         } catch (err) {
           if (err instanceof ProviderError && SERVICE_FAILURE_CODES.has(err.code)) serviceFailures++;
           const tripped = err instanceof ServiceBreakerOpen;
@@ -189,7 +192,13 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
   const film = await ctx.step(["concat", parts], async () => {
     const out = await ctx.storage.tmpPath("mp4");
     await ctx.ffmpeg.concatClips(
-      parts.map((p) => ({ path: ctx.storage.absPath(ctx.storage.getMedia(p.clipId)!), trimStartSec: p.trimStartSec, durationSec: p.durationSec, hasAudio: p.hasAudio })),
+      parts.map((p) => ({
+        path: ctx.storage.absPath(ctx.storage.getMedia(p.clipId)!),
+        trimStartSec: p.trimStartSec,
+        durationSec: p.durationSec,
+        hasAudio: p.hasAudio,
+        ...(p.brightness ? { brightness: p.brightness } : {}),
+      })),
       out,
     );
     const probe = await ctx.ffmpeg.probeVideo(out);
