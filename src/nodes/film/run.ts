@@ -1,9 +1,9 @@
 import { requireInput, type NodeRun, type NodeRunContext } from "../../core/node-runtime";
 import { semaphore } from "../../core/semaphore";
 import { ProviderError, type ChatSessionRef, type ImageReference, type MediaProvider, type ProviderContext } from "../../providers/types";
-import { checkShotList, type Shot } from "../../shared/director";
-import { DEFAULT_LOOK, keyframePrompt, motionPrompt } from "../../shared/prompts";
-import type { ImageSetValue, StoryboardShot } from "../../shared/ports";
+import { checkShotList, MAX_PROP_REFS, parsePropLines, type Shot } from "../../shared/director";
+import type { ImageSetValue, PropSetValue, StoryboardShot } from "../../shared/ports";
+import { DEFAULT_LOOK, keyframePrompt, motionPrompt, textVideoPrompt, type KeyframeCtx } from "../../shared/prompts";
 import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC, SERVICE_FAILURE_LIMIT, SHOT_SECONDS, type FilmParams } from "./definition";
 
 const SERVICE_FAILURE_CODES = new Set(["MUSE_FAILED", "NO_MEDIA"]);
@@ -14,24 +14,38 @@ class ServiceBreakerOpen extends Error {
   }
 }
 
-type FinishedShot = { clipId: string; durationSec: number; trimStartSec: number; hasAudio: boolean; brightness?: Brightness };
-
-export function referencesFor(shot: Shot, character: ImageSetValue, location: ImageSetValue): ImageReference[] {
-  const pick = (set: ImageSetValue, views: string[]) =>
-    views.flatMap((v) => set.images.filter((i) => i.view === v)).map((i) => ({ mediaId: i.mediaId, role: set.role }));
-  const loc = pick(location, ["wide", "close"]);
-  return shot.subject === "character" ? [...pick(character, ["face", "front"]), ...loc.slice(0, 1)] : loc;
-}
-
-async function lastFrameOf(ctx: NodeRunContext, clipId: string): Promise<string> {
-  const rec = ctx.storage.getMedia(clipId);
-  if (!rec) throw new Error(`Không tìm thấy clip ${clipId} để lấy khung cuối`);
-  const out = await ctx.storage.tmpPath("jpg");
-  await ctx.ffmpeg.extractFrame(ctx.storage.absPath(rec), out, { fromEndSec: LAST_FRAME_FROM_END_SEC });
-  return (await ctx.storage.importFile(out, { kind: "image", source: "last-frame", width: 1280, height: 720 })).id;
-}
-
 type Brightness = { startLuma: number; endLuma: number; clipSec: number };
+type FinishedShot = { clipId: string; durationSec: number; trimStartSec: number; hasAudio: boolean; brightness?: Brightness };
+type Refs = { refs: ImageReference[]; captions: string[] };
+
+const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+// Đồ vật trong khung: mô tả cho prompt (mọi món) + ảnh mẫu đúng trạng thái đầu (tối đa MAX_PROP_REFS, ưu tiên món đổi trạng thái).
+function propsInFrame(shot: Shot, props: PropSetValue | undefined): { described: KeyframeCtx["props"]; attached: Refs } {
+  const uses = parsePropLines(shot.props).items;
+  const described = uses.map((u) => ({ name: u.name, state: u.from, description: props?.items.find((p) => same(p.name, u.name))?.description ?? "" }));
+  const ordered = [...uses].sort((a, b) => Number(Boolean(b.to && !same(b.to, b.from))) - Number(Boolean(a.to && !same(a.to, a.from))));
+  const attached: Refs = { refs: [], captions: [] };
+  for (const u of ordered) {
+    if (attached.refs.length >= MAX_PROP_REFS) break;
+    const img = props?.items.find((p) => same(p.name, u.name))?.images.find((x) => same(x.state, u.from));
+    if (!img) continue;
+    attached.refs.push({ mediaId: img.mediaId, role: "prop" });
+    attached.captions.push(`${u.name} (${u.from})`);
+  }
+  return { described, attached };
+}
+
+const pickView = (set: ImageSetValue, view: string): ImageReference[] =>
+  set.images.filter((i) => i.view === view).map((i) => ({ mediaId: i.mediaId, role: set.role }));
+
+async function frameOf(ctx: NodeRunContext, clipId: string, fromEndSec: number, source: string): Promise<string> {
+  const rec = ctx.storage.getMedia(clipId);
+  if (!rec) throw new Error(`Không tìm thấy clip ${clipId} để rút khung`);
+  const out = await ctx.storage.tmpPath("jpg");
+  await ctx.ffmpeg.extractFrame(ctx.storage.absPath(rec), out, { fromEndSec });
+  return (await ctx.storage.importFile(out, { kind: "image", source, width: 1280, height: 720 })).id;
+}
 
 async function measureBrightness(ctx: NodeRunContext, clipId: string): Promise<Brightness> {
   const rec = ctx.storage.getMedia(clipId);
@@ -47,7 +61,9 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
   const character = requireInput(inputs, "character", "imageset");
   const location = requireInput(inputs, "location", "imageset");
   const { shots } = requireInput(inputs, "shots", "shotlist");
-  const check = checkShotList(shots);
+  const props = inputs.props?.kind === "props" ? inputs.props : undefined;
+  const known = props?.items.map((p) => ({ name: p.name, states: p.images.map((x) => x.state) }));
+  const check = checkShotList(shots, known);
   if (check.errors.length) throw new Error(check.errors.join("; "));
 
   const provider: MediaProvider = ctx.providers.get(params.provider);
@@ -65,29 +81,8 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
     if (serviceFailures >= SERVICE_FAILURE_LIMIT) throw new ServiceBreakerOpen();
   };
   let session: ChatSessionRef | undefined = character.session;
-  const kf = { look: location.look ?? DEFAULT_LOOK, location: location.description, props: [], character: character.description };
-  const locationRefs = location.images.filter((x) => x.view === "wide").map((x) => ({ mediaId: x.mediaId, role: location.role }));
-
-  const characterKeyframe = async (i: number, shot: Shot): Promise<{ mediaId: string }> => {
-    const prompt = keyframePrompt(shot, { ...kf, refs: ["bối cảnh"], inChat: true });
-    const fallbackRefs = referencesFor(shot, character, location);
-    const fallbackPrompt = keyframePrompt(shot, { ...kf, refs: [], inChat: false });
-    return ctx.step(["keyframe-chat", provider.id, prompt, character.images.map((x) => x.mediaId), locationRefs.map((x) => x.mediaId)], async () => {
-      ensureServiceUp();
-      await characterChat.acquire();
-      try {
-        ensureServiceUp();
-        const img = await provider.generateImage(
-          { prompt, references: locationRefs, session: session ?? "new", fallback: { prompt: fallbackPrompt, references: fallbackRefs }, verbatim: true },
-          shotCtx(i),
-        );
-        if (img.session) session = img.session;
-        return { mediaId: img.mediaId };
-      } finally {
-        characterChat.release();
-      }
-    });
-  };
+  const look = location.look ?? DEFAULT_LOOK;
+  const locationRef = pickView(location, "wide");
   const shotCtx = (i: number): ProviderContext => ({
     signal: ctx.signal,
     report: (m) => {
@@ -97,6 +92,47 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
     storage: ctx.storage,
     ffmpeg: ctx.ffmpeg,
   });
+
+  const image = async (keyParts: unknown[], make: () => Promise<{ mediaId: string }>) =>
+    ctx.step(["keyframe", provider.id, ...keyParts], async () => {
+      ensureServiceUp();
+      return make();
+    });
+
+  // Ảnh khung: có người → nối tiếp trong chat phụ của nhân vật; không người → chat mới, đính kèm bối cảnh + đồ vật.
+  const keyframeFor = async (i: number, shot: Shot): Promise<{ mediaId: string }> => {
+    const { described, attached } = propsInFrame(shot, props);
+    const base: Omit<KeyframeCtx, "refs" | "inChat"> = { look, location: location.description, props: described, character: character.description };
+    const refs = [...locationRef, ...attached.refs];
+    const captions = [...locationRef.map(() => "bối cảnh"), ...attached.captions];
+    if (shot.subject !== "none" && session) {
+      const prompt = keyframePrompt(shot, { ...base, refs: captions, inChat: true });
+      const fbRefs = [...pickView(character, "face"), ...pickView(character, "front"), ...refs];
+      const fbCaptions = [...pickView(character, "face").map(() => "nhân vật (mặt)"), ...pickView(character, "front").map(() => "nhân vật (toàn thân)"), ...captions];
+      const fallback = { prompt: keyframePrompt(shot, { ...base, refs: fbCaptions, inChat: false }), references: fbRefs };
+      return image(["chat", prompt, character.images.map((x) => x.mediaId), refs.map((r) => r.mediaId)], async () => {
+        await characterChat.acquire();
+        try {
+          ensureServiceUp();
+          const img = await provider.generateImage({ prompt, references: refs, session: session ?? "new", fallback, verbatim: true }, shotCtx(i));
+          if (img.session) session = img.session;
+          return { mediaId: img.mediaId };
+        } finally {
+          characterChat.release();
+        }
+      });
+    }
+    const withPerson = shot.subject !== "none";
+    const allRefs = withPerson ? [...pickView(character, "face"), ...pickView(character, "front"), ...refs] : refs;
+    const allCaptions = withPerson ? [...pickView(character, "face").map(() => "nhân vật (mặt)"), ...pickView(character, "front").map(() => "nhân vật (toàn thân)"), ...captions] : captions;
+    const prompt = keyframePrompt(shot, { ...base, refs: allCaptions, inChat: false });
+    return image(["new", prompt, allRefs.map((r) => r.mediaId)], async () => {
+      const img = await provider.generateImage({ prompt, references: allRefs, session: "new", verbatim: true }, shotCtx(i));
+      return { mediaId: img.mediaId };
+    });
+  };
+
+  const textOnly = (shot: Shot) => shot.link === "cut" && shot.subject === "none" && parsePropLines(shot.props).items.length === 0;
 
   const results: Promise<FinishedShot>[] = [];
   shots.forEach((shot, i) => {
@@ -113,33 +149,34 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
         try {
           board[i] = { shotId: shot.id, status: "running" };
           publish();
-          const keyframe = prev
-            ? await ctx.step(["chain-frame", prev.clipId], async () => ({ mediaId: await lastFrameOf(ctx, prev.clipId) }))
-            : shot.subject === "character" && session
-              ? await characterKeyframe(i, shot)
-              : await ctx.step(
-                ["keyframe", provider.id, keyframePrompt(shot, { ...kf, refs: [], inChat: false }), referencesFor(shot, character, location)],
-                async () => {
-                  ensureServiceUp();
-                  const img = await provider.generateImage(
-                    { prompt: keyframePrompt(shot, { ...kf, refs: [], inChat: false }), references: referencesFor(shot, character, location), verbatim: true },
-                    shotCtx(i),
-                  );
-                  return { mediaId: img.mediaId };
-                },
-              );
-          board[i].keyframeId = keyframe.mediaId;
-          publish();
-
-          const motion = motionPrompt(shot);
-          const clip = await ctx.step(["clip", provider.id, motion, keyframe.mediaId, SHOT_SECONDS], async () => {
-            ensureServiceUp();
-            const v = await provider.generateVideo({ prompt: motion, durationSec: SHOT_SECONDS, firstFrameMediaId: keyframe.mediaId, verbatim: true }, shotCtx(i));
-            return { mediaId: v.mediaId, durationSec: v.durationSec };
-          });
+          let keyframeId: string | undefined;
+          let clip: { mediaId: string };
+          if (textOnly(shot)) {
+            // Cảnh không người, không đồ vật: chữ→video thẳng (đo 28/10: thật nhất), ảnh xem trước rút từ clip.
+            const prompt = textVideoPrompt(shot, { look, location: location.description });
+            clip = await ctx.step(["clip-text", provider.id, prompt, SHOT_SECONDS], async () => {
+              ensureServiceUp();
+              const v = await provider.generateVideo({ prompt, durationSec: SHOT_SECONDS, verbatim: true }, shotCtx(i));
+              return { mediaId: v.mediaId };
+            });
+            keyframeId = (await ctx.step(["thumb", clip.mediaId], async () => ({ mediaId: await frameOf(ctx, clip.mediaId, SHOT_SECONDS - 0.5, "thumb") }))).mediaId;
+          } else {
+            const keyframe = prev
+              ? await ctx.step(["chain-frame", prev.clipId], async () => ({ mediaId: await frameOf(ctx, prev.clipId, LAST_FRAME_FROM_END_SEC, "last-frame") }))
+              : await keyframeFor(i, shot);
+            keyframeId = keyframe.mediaId;
+            board[i] = { ...board[i], keyframeId };
+            publish();
+            const prompt = motionPrompt(shot);
+            clip = await ctx.step(["clip", provider.id, prompt, keyframe.mediaId, SHOT_SECONDS], async () => {
+              ensureServiceUp();
+              const v = await provider.generateVideo({ prompt, durationSec: SHOT_SECONDS, firstFrameMediaId: keyframe.mediaId, verbatim: true }, shotCtx(i));
+              return { mediaId: v.mediaId };
+            });
+          }
           const brightness = params.fixBrightness ? await ctx.step(["luma", clip.mediaId], () => measureBrightness(ctx, clip.mediaId)) : undefined;
           const probe = await ctx.ffmpeg.probeVideo(ctx.storage.absPath(ctx.storage.getMedia(clip.mediaId)!));
-          board[i] = { shotId: shot.id, status: "done", keyframeId: keyframe.mediaId, clipId: clip.mediaId };
+          board[i] = { shotId: shot.id, status: "done", keyframeId, clipId: clip.mediaId };
           publish();
           const trim = shot.link === "chain" ? CHAIN_TRIM_SEC : 0;
           return {

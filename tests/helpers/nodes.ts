@@ -38,7 +38,15 @@ export function testNodeCtx(
   };
 }
 
-export type CallLog = { video: number; image: number; videoPrompts: string[]; firstFrames: (string | undefined)[]; imagePrompts: string[]; imageSessions: string[] };
+export type CallLog = {
+  video: number;
+  image: number;
+  videoPrompts: string[];
+  firstFrames: (string | undefined)[];
+  imagePrompts: string[];
+  imageSessions: string[];
+  imageRefs: { mediaId: string; role: string }[][];
+};
 
 export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string } = {}): {
   providers: ProviderRegistry;
@@ -46,7 +54,7 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
   log: CallLog;
 } {
   const fake = createFakeProvider();
-  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [] };
+  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [], imageRefs: [] };
   const counted: MediaProvider = {
     id: "fake",
     maxParallel: () => 2,
@@ -63,6 +71,7 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
       log.image++;
       log.imagePrompts.push(req.prompt);
       log.imageSessions.push(req.session === undefined ? "none" : req.session === "new" ? "new" : "continue");
+      log.imageRefs.push(req.references.map((r) => ({ mediaId: r.mediaId, role: r.role })));
       return fake.generateImage(req, ctx);
     },
   };
