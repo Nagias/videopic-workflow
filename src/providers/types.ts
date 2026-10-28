@@ -11,9 +11,10 @@ export type ImageRequest = {
   references: ImageReference[];
   session?: ChatSessionRef | "new";
   fallback?: { prompt: string; references: ImageReference[] };
+  verbatim?: boolean;
 };
 
-export type VideoRequest = { prompt: string; durationSec: ClipDuration; firstFrameMediaId?: string };
+export type VideoRequest = { prompt: string; durationSec: ClipDuration; firstFrameMediaId?: string; session?: ChatSessionRef; verbatim?: boolean };
 
 export type ProviderContext = {
   signal: AbortSignal;

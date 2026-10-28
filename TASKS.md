@@ -46,4 +46,19 @@ Tổng lượt Muse đã dùng cho bộ khung: 3 (2 lỗi phía app đã sửa, 
 | 28/10 01:50– | vid_01/03/04 | Chạy lại sau khi thêm cầu dao, sửa cảnh 4 (không rìu, cảnh phụ) | Cache: cảnh 2, 3 và ảnh khung cũ không tốn lượt. Ảnh khung cảnh 4 mới ✅. Video cảnh 1, 4, 5 lần 1 ❌ Muse 502 (Muse tự thử 3 lần bên trong, mỗi lần hỏng ~5–10 phút) |
 | 28/10 06:56–07:03 | vid_01/03/04 | Chạy tiếp lần 3 khi Muse hết lỗi 502 | ✅ 10 cảnh còn lại xong trong 7 phút (mỗi clip 55–76 giây), không lỗi, không thử lại. Cache giữ cảnh 2, 3 và ảnh khung cũ. Gọi thật: 10 video + 1 ảnh khung (cảnh 12; cảnh nối 6, 10 lấy khung cuối clip trước, không gọi Muse). Đã xem đầu/giữa/cuối từng clip: đúng kịch bản, cùng một người, chỗ nối 5→6 và 9→10 khớp tư thế |
 
+### Nhật ký gọi Muse thật — thử nghiệm prompt cảnh bổ củi (28/10/2026, nhánh `thu-nghiem-prompt-muse`, script `scripts/spike-bo-cui.ts`)
+
+Prompt gửi nguyên văn (không bọc khuôn `formatVideoPrompt`), kết quả ở `.data/exports/thu-nghiem-bo-cui/` (`ket-qua.json` có đủ prompt). 6 lượt, cả 6 ✅.
+
+| Cách | Hồ sơ | Kết quả |
+|---|---|---|
+| V1 chữ→video, chat mới, prompt ngắn kiểu vlog điện thoại | vid_03/04 | ✅ 144 giây. Trông thật nhất (màu tự nhiên, trời âm u), gỗ tách đúng lực. Mất nhân vật và lều (lều xanh dương, mặt khác) |
+| V2 chữ→video **trong chat phụ của nhân vật** | vid_01 | ✅ 67 giây (1248x704). Giữ người, bổ gỗ đúng lực, nhưng bối cảnh kế thừa chất "bóng" của các ảnh cũ trong chat (núi đá vôi, rêu rực) |
+| V3a ảnh khung cũ + prompt chỉ tả việc **sau** khung đầu | vid_03/04 | ✅ 81 giây. Rìu bổ trúng khúc gỗ, gỗ tách đôi đổ hai bên (lỗi cũ hết). Vẫn bóng như ảnh khung cũ; cuối clip tự chuyển sang cô gái cười vào máy |
+| V3 ảnh khung mới (trong chat nhân vật, kiểu ảnh điện thoại, trời âm u, bối cảnh đơn giản) | vid_01 | ✅ 38 giây. Giữ mặt, bớt bóng rõ rệt, khúc gỗ dựng trên gốc cây đúng |
+| V3 ảnh khung mới → video, prompt tả việc sau khung đầu | vid_01 | ✅ 73 giây. Bổ trúng, gỗ tách đúng; tự nhiên hơn V3a; cuối clip cũng cười vào máy |
+| V4 cận B-roll chữ→video có bàn tay + lưỡi rìu | vid_03/04 | ✅ 84 giây. Có nguyên nhân (rìu) → gỗ tách hợp lý; tay là tay người lạ, không phải nhân vật |
+
+Kết luận (mỗi cách mới thử 1 lần): (1) prompt video chỉ tả việc xảy ra sau khung đầu sửa được lỗi "gỗ biến mất/tự tách"; (2) chất nhựa đến từ ảnh khung và từ chat đã chứa ảnh bóng — ảnh khung kiểu ảnh điện thoại, trời âm u, bối cảnh đơn giản bớt nhựa rõ; (3) cảnh không người nên đi chữ→video thẳng; (4) Muse hay thêm đoạn cười vào máy ở cuối → prompt cần "không nhìn vào máy quay". Tổng lượt Muse thử nghiệm: 6.
+
 Kết luận: (1) Muse từ chối 1 lần ảnh chân thực có đính kèm ảnh người — **chưa chắc là chính sách** (chủ dự án chỉ gặp báo lỗi máy chủ video), cần thử lại; (2) tạo ảnh nối tiếp trong cùng đoạn chat giữ mặt rất tốt; (3) tạo video của Muse thất bại trên cả 3 tài khoản tối 27/10 (cả có người lẫn không người, cả từ chữ lẫn từ ảnh) — lúc 21:55 cùng ngày video từ chữ vẫn thành công → nghi lỗi/giới hạn phía Muse, cần thử lại. Tổng lượt Muse tính năng 2: ~12 (5 ảnh thành công).

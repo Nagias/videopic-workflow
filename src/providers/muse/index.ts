@@ -421,10 +421,12 @@ export function createMuseProvider(cfg: AppConfig, pool: AccountPool = createAcc
       const r = await runJob(
         {
           kind: "video",
-          text: formatVideoPrompt(req.prompt, req.durationSec, attachments.length > 0),
+          text: req.verbatim ? req.prompt.trim() : formatVideoPrompt(req.prompt, req.durationSec, attachments.length > 0),
           attachments,
           requestedSec: req.durationSec,
           waitMs: videoWaitMs(req.durationSec),
+          threadUrl: req.session?.threadUrl,
+          accountId: req.session?.accountId,
         },
         ctx,
       );
@@ -434,7 +436,7 @@ export function createMuseProvider(cfg: AppConfig, pool: AccountPool = createAcc
     async generateImage(req, ctx): Promise<GeneratedImage> {
       const toJob = (prompt: string, refs: typeof req.references): MuseJob => ({
         kind: "image",
-        text: formatImagePrompt(prompt, refs.map((x) => x.role)),
+        text: req.verbatim ? prompt.trim() : formatImagePrompt(prompt, refs.map((x) => x.role)),
         attachments: refs.map((x) => mediaPath(ctx, x.mediaId)),
         requestedSec: 0,
         waitMs: IMAGE_WAIT_MS,
