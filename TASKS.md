@@ -67,4 +67,17 @@ Kết luận: (1) Muse từ chối 1 lần ảnh chân thực có đính kèm �
 
 - [x] Task 1–8: cảnh v2 + luật đồ vật, prompt chống nhựa, ghép nén một lần, ảnh mẫu 4 góc + đồ vật, Dựng phim v2, kho tài sản, Muse đọc chữ, Biên kịch
 - [x] Task 9: mẫu Sơn La v2 + Ý tưởng → phim, e2e, tài liệu
-- [ ] Task 10: Muse thật (Sơn La v2 + Biên kịch), soát toàn nhánh, PR
+- [x] Soát toàn nhánh (subagent): 1 nghiêm trọng + 3 quan trọng đã sửa (mở workflow cũ, chọn từ kho, Biên kịch/Đồ vật, Đồ vật allSettled); 7 lỗi nhỏ ghi sổ
+- [x] Task 10: Muse thật (Sơn La v2 ✅, Ý tưởng → phim ✅), PR
+
+### Nhật ký gọi Muse thật — nâng chất lượng (28/10/2026, nhánh `nang-cap-chat-luong-video`)
+
+| Giờ | Việc | Kết quả |
+|---|---|---|
+| 16:36–17:03 | Mẫu Sơn La v2 qua API máy chủ dev (workflow `sinh-ton-son-la-mvrx71w5`) | ✅ 24 ảnh (nhân vật 4, không gian 2, đồ vật 9, ảnh khung 9) + 12 video, không lỗi Muse. Phim 59,8 giây, 9,2 Mbps (`.data/exports/Sinh-ton-Son-La-v2-60s.mp4`). Máy chủ dev (tsx watch) tự khởi động lại 2 lần vì agent sửa code giữa lượt → một số việc Muse đang chạy bị bỏ dở (ước 2–4 lượt mất), lượt chạy tự làm tiếp từ cache |
+| xem phim | Đã xem đầu/giữa/cuối 12 cảnh | Hết nhựa rõ: trời âm u, núi đất Tây Bắc (không còn núi đá vôi kiểu Quế Lâm), màu tự nhiên; lều xanh rêu dây cam và bếp đá giữ đúng hình mọi cảnh; cảnh 3 rìu bổ trúng khúc gỗ rồi gỗ tách đôi; cảnh 4 thấy tay rút rìu; cảnh 9 tia lửa → khói, cảnh 10 lửa bén, cảnh 12 toàn cảnh có lều + bếp cháy. Còn lỗi: cảnh 9–10 tay mọc tay áo dài; cảnh 8 lửa tự bén trước khi đánh lửa; cảnh 5–6 Muse thêm đống gỗ lớn, nền cảnh 6 trôi sang rừng rậm; cảnh 10 lửa ám màu cam đậm |
+| 17:05 | Chỉnh prompt vòng 1 (commit `c7e8ce9`): cảnh tay ghi trang phục, video "chỉ làm đúng việc đã tả" | kiểm bằng lượt Biên kịch dưới |
+| 17:07–17:25 | Mẫu Ý tưởng → phim (workflow `y-tuong-thanh-phim-mvrya2he`) | ✅ Biên kịch Muse viết đúng luật **ngay lần 1** (~2 phút, 1 lượt chữ): 8 cảnh, 5 đồ vật có chuỗi trạng thái (nồi rỗng → đầy nước → đang sôi; cốc rỗng → đầy → vơi). Nhân vật lấy lại từ kho/cache (0 lượt). 22 ảnh (không gian 2, đồ vật 12, ảnh khung 8) + 8 video, không lỗi. Phim 40 giây, 8,3 Mbps (`.data/exports/Y-tuong-thac-nuoc-40s.mp4`). Đã xem 8 cảnh: cảnh tay là tay trần đúng trang phục, cảnh xếp bếp chưa có lửa (hết làm quá việc), nồi/cốc giữ hình, rót nước có hơi bốc. Còn: vóc dáng nhân vật hơi đổi giữa cảnh |
+
+Tổng lượt Muse thật đợt nâng chất lượng: thử nghiệm 6 + Sơn La v2 36 (+ ước 2–4 lượt mất do máy chủ khởi động lại) + Ý tưởng → phim 31 (1 chữ + 22 ảnh + 8 video) ≈ 75.
+
