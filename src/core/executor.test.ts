@@ -5,7 +5,7 @@ import { countingFakeProviders, promptToVideoGraph, testNodes } from "../../test
 import { createTestEnv, type TestEnv } from "../../tests/helpers/test-env";
 import type { WorkflowGraph } from "../shared/workflow";
 import { runNodes } from "./db/schema";
-import { executeRun, GraphError, planGraph } from "./executor";
+import { cacheKeyOf, executeRun, GraphError, planGraph } from "./executor";
 
 describe("planGraph — cổng vào không bắt buộc", () => {
   it("cổng optional chưa nối thì không lỗi; cổng bắt buộc chưa nối vẫn lỗi", () => {
@@ -25,6 +25,24 @@ describe("planGraph — cổng vào không bắt buộc", () => {
     const graph: WorkflowGraph = { nodes: [{ id: "n", type: "t", position: { x: 0, y: 0 }, params: {} }], edges: [] };
     expect(planGraph(graph, { t: node([{ name: "a", optional: true }]) })).toHaveLength(1);
     expect(() => planGraph(graph, { t: node([{ name: "a" }]) })).toThrow(GraphError);
+  });
+});
+
+describe("cacheKeyOf — phiên bản prompt trong code", () => {
+  it("cùng tham số nhưng prompt trong code đổi (cacheVersion khác) thì khoá khác; không khai báo thì khoá giữ như cũ", () => {
+    const base = cacheKeyOf("film", { a: 1 }, {});
+    expect(cacheKeyOf("film", { a: 1 }, {}, undefined)).toBe(base);
+    expect(cacheKeyOf("film", { a: 1 }, {}, "v1")).not.toBe(base);
+    expect(cacheKeyOf("film", { a: 1 }, {}, "v1")).not.toBe(cacheKeyOf("film", { a: 1 }, {}, "v2"));
+  });
+
+  it("node dựng phim, biên kịch, ảnh mẫu khai báo phiên bản theo đúng hàm prompt chúng dùng", async () => {
+    const prompts = await import("../shared/prompts");
+    const { serverNodes } = await import("../nodes/registry.server");
+    expect(serverNodes.film?.definition.cacheVersion).toBe(prompts.codeVersion(prompts.keyframePrompt, prompts.motionPrompt, prompts.textVideoPrompt));
+    expect(serverNodes.writer?.definition.cacheVersion).toBe(prompts.codeVersion(prompts.writerPrompt, prompts.repairPrompt));
+    for (const t of ["character", "location", "props"]) expect(serverNodes[t]?.definition.cacheVersion, t).toMatch(/^[0-9a-z]+$/);
+    expect(prompts.codeVersion(prompts.motionPrompt)).not.toBe(prompts.codeVersion(prompts.textVideoPrompt));
   });
 });
 

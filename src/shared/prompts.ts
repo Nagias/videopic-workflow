@@ -159,3 +159,11 @@ export function writerPrompt(w: { idea: string; shotCount: number; character?: s
 export function repairPrompt(errors: string[]): string {
   return [`${WRITER_TAG} vừa rồi chưa dùng được vì các lỗi sau. Hãy sửa và trả lại TOÀN BỘ kịch bản trong một khối \`\`\`json, giữ nguyên các cảnh đã đúng:`, ...errors.map((e) => `- ${e}`)].join("\n");
 }
+
+// Phiên bản prompt tự tính từ mã nguồn các hàm prompt: sửa prompt là khoá cache node đổi theo,
+// bấm Chạy sẽ tạo lại thay vì trả kết quả cũ (gặp 28/10/2026: đổi prompt video nhưng phim vẫn lấy cache).
+export function codeVersion(...fns: ((...args: never[]) => unknown)[]): string {
+  let h = 5381;
+  for (const ch of fns.map((f) => f.toString()).join("\n")) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0;
+  return h.toString(36);
+}
