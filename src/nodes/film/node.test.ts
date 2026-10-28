@@ -15,7 +15,9 @@ const shot = (id: string, over: Partial<Shot> = {}): Shot => ({
   move: "static",
   subject: "character",
   link: "cut",
-  action: `action ${id}`,
+  start: `start ${id}`,
+  motion: `action ${id}`,
+  props: "",
   ...over,
 });
 

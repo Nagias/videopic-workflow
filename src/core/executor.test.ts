@@ -7,6 +7,27 @@ import type { WorkflowGraph } from "../shared/workflow";
 import { runNodes } from "./db/schema";
 import { executeRun, GraphError, planGraph } from "./executor";
 
+describe("planGraph — cổng vào không bắt buộc", () => {
+  it("cổng optional chưa nối thì không lỗi; cổng bắt buộc chưa nối vẫn lỗi", () => {
+    const node = (inputs: { name: string; optional?: boolean }[]) => ({
+      definition: {
+        type: "t",
+        label: "Thử",
+        description: "",
+        inputs: inputs.map((i) => ({ ...i, kind: "text" as const, label: i.name })),
+        outputs: [],
+        params: { parse: (x: unknown) => x } as never,
+        defaults: {},
+      },
+      parseParams: (x: unknown) => x,
+      run: () => Promise.resolve({}),
+    });
+    const graph: WorkflowGraph = { nodes: [{ id: "n", type: "t", position: { x: 0, y: 0 }, params: {} }], edges: [] };
+    expect(planGraph(graph, { t: node([{ name: "a", optional: true }]) })).toHaveLength(1);
+    expect(() => planGraph(graph, { t: node([{ name: "a" }]) })).toThrow(GraphError);
+  });
+});
+
 describe("executeRun", () => {
   let env: TestEnv;
   beforeEach(() => {

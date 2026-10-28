@@ -1,4 +1,4 @@
-import type { Shot } from "./director";
+import { ShotSchema, type Shot } from "./director";
 import type { WorkflowGraph } from "./workflow";
 
 const CHARACTER =
@@ -7,7 +7,7 @@ const CHARACTER =
 const LOCATION =
   "a forested hillside in Son La province in the mountains of northwest Vietnam: a small olive-green dome tent on a flat grassy ledge, a stone campfire ring beside the tent, a clear rocky mountain stream flowing just below the ledge, dense tropical forest and misty limestone mountains behind, soft early-morning light";
 
-const SHOTS: Shot[] = [
+const SHOTS: Shot[] = ShotSchema.array().parse([
   { id: "c01", size: "EWS", angle: "aerial", move: "drone", subject: "none", link: "cut", action: "Early morning mist over the forested hillside, the small tent on the ledge and the stream below" },
   { id: "c02", size: "WS", angle: "eye", move: "handheld", subject: "character", link: "cut", action: "She walks up the slope from the stream toward the tent, carrying a small axe and a bundle of dry branches" },
   { id: "c03", size: "MS", angle: "eye", move: "static", subject: "character", link: "cut", action: "She sets a short log upright on a tree stump next to the tent and raises the axe with both hands" },
@@ -20,7 +20,7 @@ const SHOTS: Shot[] = [
   { id: "c10", size: "INSERT", angle: "eye", move: "push_in", subject: "character", link: "chain", action: "A small flame catches in the dry grass, she cups her hands and gently blows on it" },
   { id: "c11", size: "MCU", angle: "eye", move: "push_in", subject: "character", link: "cut", action: "The fire grows, she carefully adds split wood, warm firelight on her face" },
   { id: "c12", size: "WS", angle: "high", move: "pull_out", subject: "character", link: "cut", action: "She sits beside the crackling campfire next to the tent, looking down at the stream as morning mist drifts" },
-];
+]);
 
 const SON_LA: WorkflowGraph = {
   nodes: [

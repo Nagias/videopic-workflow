@@ -75,7 +75,7 @@ export function planGraph(graph: WorkflowGraph, nodes: Record<string, ServerNode
 
   for (const p of planned.values()) {
     for (const inp of p.impl.definition.inputs) {
-      if (!p.inputs.has(inp.name)) throw new GraphError(`Node "${p.impl.definition.label}" (${p.node.id}) chưa nối cổng vào "${inp.label}"`);
+      if (!p.inputs.has(inp.name) && !inp.optional) throw new GraphError(`Node "${p.impl.definition.label}" (${p.node.id}) chưa nối cổng vào "${inp.label}"`);
     }
   }
 

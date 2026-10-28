@@ -1,4 +1,4 @@
-import { CAMERA_ANGLES, CAMERA_MOVES, checkShotList, SHOT_SIZES, type Shot } from "../../shared/director";
+import { CAMERA_ANGLES, CAMERA_MOVES, checkShotList, SHOT_SIZES, SUBJECTS, type Shot } from "../../shared/director";
 import type { NodeViewProps } from "../../features/editor/ui/node-kit";
 import type { ShotListParams } from "./definition";
 
@@ -16,7 +16,10 @@ export function ShotListView({ id, params, setParams }: NodeViewProps<ShotListPa
   const remove = (i: number) => setParams({ shots: shots.filter((_, j) => j !== i) });
   const add = () =>
     setParams({
-      shots: [...shots, { id: `c${Date.now().toString(36)}`, size: "MS", angle: "eye", move: "static", subject: "character", link: "cut", action: "" }],
+      shots: [
+        ...shots,
+        { id: `c${Date.now().toString(36)}`, size: "MS", angle: "eye", move: "static", subject: "character", link: "cut", start: "", motion: "", props: "" },
+      ],
     });
 
   return (
@@ -35,8 +38,7 @@ export function ShotListView({ id, params, setParams }: NodeViewProps<ShotListPa
               {options(CAMERA_MOVES)}
             </select>
             <select className="nodrag" value={s.subject} onChange={(e) => update(i, { subject: e.target.value as Shot["subject"] })}>
-              <option value="character">Có nhân vật</option>
-              <option value="none">Cảnh phụ (B-roll)</option>
+              {options(SUBJECTS)}
             </select>
             <select className="nodrag" value={s.link} onChange={(e) => update(i, { link: e.target.value as Shot["link"] })} title="Nối: lấy khung cuối cảnh trước làm khung đầu">
               <option value="cut">Cắt cảnh</option>
@@ -46,7 +48,32 @@ export function ShotListView({ id, params, setParams }: NodeViewProps<ShotListPa
               ✕
             </button>
           </div>
-          <textarea className="nodrag" rows={2} value={s.action} placeholder="Hành động trong cảnh" onChange={(e) => update(i, { action: e.target.value })} />
+          {s.link === "cut" && (
+            <textarea
+              className="nodrag"
+              rows={2}
+              value={s.start}
+              data-testid={`shot-start-${id}-${i + 1}`}
+              placeholder="Khung đầu: ảnh đứng yên lúc cảnh bắt đầu (ai ở đâu, quay mặt hướng nào, đồ vật nằm đâu)"
+              onChange={(e) => update(i, { start: e.target.value })}
+            />
+          )}
+          <textarea
+            className="nodrag"
+            rows={2}
+            value={s.motion}
+            data-testid={`shot-motion-${id}-${i + 1}`}
+            placeholder="Chuyển động 5 giây: chỉ việc xảy ra SAU khung đầu, có lực và hệ quả"
+            onChange={(e) => update(i, { motion: e.target.value })}
+          />
+          <textarea
+            className="nodrag"
+            rows={2}
+            value={s.props}
+            data-testid={`shot-props-${id}-${i + 1}`}
+            placeholder={"Đồ vật trong khung, mỗi dòng một món:\nkhúc gỗ: nguyên khúc -> bổ đôi"}
+            onChange={(e) => update(i, { props: e.target.value })}
+          />
         </div>
       ))}
       <button type="button" className="nodrag" data-testid={`add-shot-${id}`} onClick={add}>
