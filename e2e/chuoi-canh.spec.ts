@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("Luồng 2 — tạo từ mẫu Sinh tồn Sơn La, chạy bằng dịch vụ giả, ra phim ~60 giây với storyboard 12 cảnh", async ({ page }) => {
+test("Luồng 2/3 — mẫu Sinh tồn Sơn La (có Đồ vật), chạy bằng dịch vụ giả: nhân vật 4 ảnh, đồ vật 9 ảnh, storyboard 12 cảnh, phim ~60 giây", async ({ page }) => {
   test.setTimeout(240_000);
   await page.goto("/");
   await page.getByTestId("template-sinh-ton-son-la").click();
@@ -8,13 +8,14 @@ test("Luồng 2 — tạo từ mẫu Sinh tồn Sơn La, chạy bằng dịch v�
   await expect(page.getByTestId("shot-row-shotlist-1-12")).toBeVisible();
   await expect(page.getByTestId("workflow-select")).toContainText("Sinh tồn Sơn La");
 
-  for (const id of ["character-1", "location-1", "film-1"]) {
+  for (const id of ["character-1", "location-1", "props-1", "film-1"]) {
     await page.getByTestId(`provider-select-${id}`).selectOption("fake");
   }
   await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
 
   await page.getByTestId("run-button").click();
-  await expect(page.getByTestId("gallery-character-1").locator("img")).toHaveCount(3, { timeout: 60_000 });
+  await expect(page.getByTestId("gallery-character-1").locator("img")).toHaveCount(4, { timeout: 60_000 });
+  await expect(page.getByTestId("props-gallery-props-1").locator("img")).toHaveCount(9, { timeout: 60_000 });
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 200_000 });
 
   const shots = page.getByTestId("storyboard-film-1").locator(".sb-done");

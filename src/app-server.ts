@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import type { AppDeps } from "./core/app-deps";
+import { registerAssetRoutes } from "./features/assets/routes";
 import { registerMediaRoutes } from "./features/media/routes";
 import { registerMuseAccountRoutes } from "./features/muse-accounts/routes";
 import { registerRunRoutes } from "./features/runs/routes";
@@ -44,6 +45,7 @@ export async function buildServer(deps: AppDeps, opts: { logger?: boolean } = {}
   registerRunRoutes(app, deps);
   registerMediaRoutes(app, deps);
   registerMuseAccountRoutes(app, deps);
+  registerAssetRoutes(app, deps);
 
   if (deps.cfg.serveWeb) {
     if (!existsSync(deps.cfg.webDistDir)) throw new Error(`Chưa build giao diện (${deps.cfg.webDistDir}). Chạy npm run build.`);

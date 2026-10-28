@@ -1,4 +1,8 @@
-import { mediaUrl } from "../../../shared/api";
+import { useEffect, useState } from "react";
+import { api } from "../../../app/api-client";
+import { mediaUrl, type AssetSummary } from "../../../shared/api";
+import type { AssetKind } from "../../../shared/node-definition";
+import { useEditor } from "./node-kit";
 import type { ImageSetValue, StoryboardShot } from "../../../shared/ports";
 import { PROVIDERS, type ProviderId } from "../../../shared/providers";
 
@@ -18,7 +22,10 @@ export function ProviderSelect({ id, value, onChange }: { id: string; value: Pro
 }
 
 const VIEW_LABEL: Record<string, string> = {
+  face: "Mặt cận",
   front: "Chính diện",
+  side: "Nghiêng",
+  back: "Sau lưng",
   "three-quarter": "Nghiêng 3/4",
   "full-body": "Toàn thân",
   wide: "Toàn cảnh",
@@ -62,5 +69,45 @@ export function StoryboardStrip({ id, shots }: { id: string; shots: StoryboardSh
         </div>
       ))}
     </div>
+  );
+}
+
+// Chọn lại ảnh mẫu đã tạo ở workflow trước: điền lại đúng tham số → máy chủ dùng lại kết quả, không tốn lượt.
+export function AssetPicker({ id, kind, onPick }: { id: string; kind: AssetKind; onPick: (params: Record<string, unknown>) => void }) {
+  const [list, setList] = useState<AssetSummary[]>([]);
+  const [problem, setProblem] = useState<string | null>(null);
+  const load = () => {
+    api.listAssets(kind).then(
+      (r) => {
+        setList(r.assets);
+        setProblem(null);
+      },
+      (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)),
+    );
+  };
+  const { refreshKey } = useEditor();
+  useEffect(load, [kind, refreshKey]);
+  return (
+    <label className="field">
+      <span>Dùng lại từ kho</span>
+      <select
+        className="nodrag"
+        data-testid={`asset-pick-${id}`}
+        value=""
+        onFocus={load}
+        onChange={(e) => {
+          const a = list.find((x) => x.id === e.target.value);
+          if (a) onPick(a.params);
+        }}
+      >
+        <option value="">{list.length ? `— ${list.length} mục đã tạo —` : "— kho chưa có mục nào —"}</option>
+        {list.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
+      </select>
+      {problem && <em className="node-error inline">Không tải được kho: {problem}</em>}
+    </label>
   );
 }

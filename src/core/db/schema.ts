@@ -54,3 +54,17 @@ export const media = sqliteTable("media", {
   source: text("source").notNull(),
   createdAt: integer("created_at").notNull(),
 });
+
+// Kho tài sản dùng chung giữa các workflow (ghi duy nhất ở src/features/assets/store.ts).
+export const assets = sqliteTable(
+  "assets",
+  {
+    cacheKey: text("cache_key").primaryKey(),
+    kind: text("kind", { enum: ["character", "location", "props"] }).notNull(),
+    name: text("name").notNull(),
+    paramsJson: text("params_json").notNull(),
+    outputJson: text("output_json").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [index("assets_kind_idx").on(t.kind, t.updatedAt)],
+);

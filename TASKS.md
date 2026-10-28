@@ -46,4 +46,38 @@ Tổng lượt Muse đã dùng cho bộ khung: 3 (2 lỗi phía app đã sửa, 
 | 28/10 01:50– | vid_01/03/04 | Chạy lại sau khi thêm cầu dao, sửa cảnh 4 (không rìu, cảnh phụ) | Cache: cảnh 2, 3 và ảnh khung cũ không tốn lượt. Ảnh khung cảnh 4 mới ✅. Video cảnh 1, 4, 5 lần 1 ❌ Muse 502 (Muse tự thử 3 lần bên trong, mỗi lần hỏng ~5–10 phút) |
 | 28/10 06:56–07:03 | vid_01/03/04 | Chạy tiếp lần 3 khi Muse hết lỗi 502 | ✅ 10 cảnh còn lại xong trong 7 phút (mỗi clip 55–76 giây), không lỗi, không thử lại. Cache giữ cảnh 2, 3 và ảnh khung cũ. Gọi thật: 10 video + 1 ảnh khung (cảnh 12; cảnh nối 6, 10 lấy khung cuối clip trước, không gọi Muse). Đã xem đầu/giữa/cuối từng clip: đúng kịch bản, cùng một người, chỗ nối 5→6 và 9→10 khớp tư thế |
 
+### Nhật ký gọi Muse thật — thử nghiệm prompt cảnh bổ củi (28/10/2026, nhánh `thu-nghiem-prompt-muse`, script `scripts/spike-bo-cui.ts`)
+
+Prompt gửi nguyên văn (không bọc khuôn `formatVideoPrompt`), kết quả ở `.data/exports/thu-nghiem-bo-cui/` (`ket-qua.json` có đủ prompt). 6 lượt, cả 6 ✅.
+
+| Cách | Hồ sơ | Kết quả |
+|---|---|---|
+| V1 chữ→video, chat mới, prompt ngắn kiểu vlog điện thoại | vid_03/04 | ✅ 144 giây. Trông thật nhất (màu tự nhiên, trời âm u), gỗ tách đúng lực. Mất nhân vật và lều (lều xanh dương, mặt khác) |
+| V2 chữ→video **trong chat phụ của nhân vật** | vid_01 | ✅ 67 giây (1248x704). Giữ người, bổ gỗ đúng lực, nhưng bối cảnh kế thừa chất "bóng" của các ảnh cũ trong chat (núi đá vôi, rêu rực) |
+| V3a ảnh khung cũ + prompt chỉ tả việc **sau** khung đầu | vid_03/04 | ✅ 81 giây. Rìu bổ trúng khúc gỗ, gỗ tách đôi đổ hai bên (lỗi cũ hết). Vẫn bóng như ảnh khung cũ; cuối clip tự chuyển sang cô gái cười vào máy |
+| V3 ảnh khung mới (trong chat nhân vật, kiểu ảnh điện thoại, trời âm u, bối cảnh đơn giản) | vid_01 | ✅ 38 giây. Giữ mặt, bớt bóng rõ rệt, khúc gỗ dựng trên gốc cây đúng |
+| V3 ảnh khung mới → video, prompt tả việc sau khung đầu | vid_01 | ✅ 73 giây. Bổ trúng, gỗ tách đúng; tự nhiên hơn V3a; cuối clip cũng cười vào máy |
+| V4 cận B-roll chữ→video có bàn tay + lưỡi rìu | vid_03/04 | ✅ 84 giây. Có nguyên nhân (rìu) → gỗ tách hợp lý; tay là tay người lạ, không phải nhân vật |
+
+Kết luận (mỗi cách mới thử 1 lần): (1) prompt video chỉ tả việc xảy ra sau khung đầu sửa được lỗi "gỗ biến mất/tự tách"; (2) chất nhựa đến từ ảnh khung và từ chat đã chứa ảnh bóng — ảnh khung kiểu ảnh điện thoại, trời âm u, bối cảnh đơn giản bớt nhựa rõ; (3) cảnh không người nên đi chữ→video thẳng; (4) Muse hay thêm đoạn cười vào máy ở cuối → prompt cần "không nhìn vào máy quay". Tổng lượt Muse thử nghiệm: 6.
+
 Kết luận: (1) Muse từ chối 1 lần ảnh chân thực có đính kèm ảnh người — **chưa chắc là chính sách** (chủ dự án chỉ gặp báo lỗi máy chủ video), cần thử lại; (2) tạo ảnh nối tiếp trong cùng đoạn chat giữ mặt rất tốt; (3) tạo video của Muse thất bại trên cả 3 tài khoản tối 27/10 (cả có người lẫn không người, cả từ chữ lẫn từ ảnh) — lúc 21:55 cùng ngày video từ chữ vẫn thành công → nghi lỗi/giới hạn phía Muse, cần thử lại. Tổng lượt Muse tính năng 2: ~12 (5 ảnh thành công).
+
+## Nâng chất lượng video (kế hoạch: `docs/superpowers/plans/2026-10-28-chat-luong-video.md`)
+
+- [x] Task 1–8: cảnh v2 + luật đồ vật, prompt chống nhựa, ghép nén một lần, ảnh mẫu 4 góc + đồ vật, Dựng phim v2, kho tài sản, Muse đọc chữ, Biên kịch
+- [x] Task 9: mẫu Sơn La v2 + Ý tưởng → phim, e2e, tài liệu
+- [x] Soát toàn nhánh (subagent): 1 nghiêm trọng + 3 quan trọng đã sửa (mở workflow cũ, chọn từ kho, Biên kịch/Đồ vật, Đồ vật allSettled); 7 lỗi nhỏ ghi sổ
+- [x] Task 10: Muse thật (Sơn La v2 ✅, Ý tưởng → phim ✅), PR
+
+### Nhật ký gọi Muse thật — nâng chất lượng (28/10/2026, nhánh `nang-cap-chat-luong-video`)
+
+| Giờ | Việc | Kết quả |
+|---|---|---|
+| 16:36–17:03 | Mẫu Sơn La v2 qua API máy chủ dev (workflow `sinh-ton-son-la-mvrx71w5`) | ✅ 24 ảnh (nhân vật 4, không gian 2, đồ vật 9, ảnh khung 9) + 12 video, không lỗi Muse. Phim 59,8 giây, 9,2 Mbps (`.data/exports/Sinh-ton-Son-La-v2-60s.mp4`). Máy chủ dev (tsx watch) tự khởi động lại 2 lần vì agent sửa code giữa lượt → một số việc Muse đang chạy bị bỏ dở (ước 2–4 lượt mất), lượt chạy tự làm tiếp từ cache |
+| xem phim | Đã xem đầu/giữa/cuối 12 cảnh | Hết nhựa rõ: trời âm u, núi đất Tây Bắc (không còn núi đá vôi kiểu Quế Lâm), màu tự nhiên; lều xanh rêu dây cam và bếp đá giữ đúng hình mọi cảnh; cảnh 3 rìu bổ trúng khúc gỗ rồi gỗ tách đôi; cảnh 4 thấy tay rút rìu; cảnh 9 tia lửa → khói, cảnh 10 lửa bén, cảnh 12 toàn cảnh có lều + bếp cháy. Còn lỗi: cảnh 9–10 tay mọc tay áo dài; cảnh 8 lửa tự bén trước khi đánh lửa; cảnh 5–6 Muse thêm đống gỗ lớn, nền cảnh 6 trôi sang rừng rậm; cảnh 10 lửa ám màu cam đậm |
+| 17:05 | Chỉnh prompt vòng 1 (commit `c7e8ce9`): cảnh tay ghi trang phục, video "chỉ làm đúng việc đã tả" | kiểm bằng lượt Biên kịch dưới |
+| 17:07–17:25 | Mẫu Ý tưởng → phim (workflow `y-tuong-thanh-phim-mvrya2he`) | ✅ Biên kịch Muse viết đúng luật **ngay lần 1** (~2 phút, 1 lượt chữ): 8 cảnh, 5 đồ vật có chuỗi trạng thái (nồi rỗng → đầy nước → đang sôi; cốc rỗng → đầy → vơi). Nhân vật lấy lại từ kho/cache (0 lượt). 22 ảnh (không gian 2, đồ vật 12, ảnh khung 8) + 8 video, không lỗi. Phim 40 giây, 8,3 Mbps (`.data/exports/Y-tuong-thac-nuoc-40s.mp4`). Đã xem 8 cảnh: cảnh tay là tay trần đúng trang phục, cảnh xếp bếp chưa có lửa (hết làm quá việc), nồi/cốc giữ hình, rót nước có hơi bốc. Còn: vóc dáng nhân vật hơi đổi giữa cảnh |
+
+Tổng lượt Muse thật đợt nâng chất lượng: thử nghiệm 6 + Sơn La v2 36 (+ ước 2–4 lượt mất do máy chủ khởi động lại) + Ý tưởng → phim 31 (1 chữ + 22 ảnh + 8 video) ≈ 75.
+

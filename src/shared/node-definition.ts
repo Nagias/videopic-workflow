@@ -9,7 +9,12 @@ export type NodeDefinition<P> = {
   outputs: PortDef[];
   params: z.ZodType<P>;
   defaults: P;
+  // Node tạo ảnh mẫu: chạy xong thì kết quả vào kho tài sản dùng chung (chọn lại ở workflow khác không tốn lượt).
+  library?: AssetKind;
 };
+
+export const ASSET_KINDS = ["character", "location", "props"] as const;
+export type AssetKind = (typeof ASSET_KINDS)[number];
 
 export type AnyNodeDefinition = NodeDefinition<unknown>;
 

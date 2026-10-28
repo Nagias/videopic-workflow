@@ -38,15 +38,26 @@ export function testNodeCtx(
   };
 }
 
-export type CallLog = { video: number; image: number; videoPrompts: string[]; firstFrames: (string | undefined)[]; imagePrompts: string[]; imageSessions: string[] };
+export type CallLog = {
+  video: number;
+  image: number;
+  videoPrompts: string[];
+  firstFrames: (string | undefined)[];
+  imagePrompts: string[];
+  imageSessions: string[];
+  imageRefs: { mediaId: string; role: string }[][];
+  text: number;
+  textPrompts: string[];
+  textSessions: string[];
+};
 
-export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string } = {}): {
+export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string; textReply?: (prompt: string, call: number) => string; failImageWhen?: (prompt: string) => boolean } = {}): {
   providers: ProviderRegistry;
   calls: () => number;
   log: CallLog;
 } {
   const fake = createFakeProvider();
-  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [] };
+  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [], imageRefs: [], text: 0, textPrompts: [], textSessions: [] };
   const counted: MediaProvider = {
     id: "fake",
     maxParallel: () => 2,
@@ -59,10 +70,18 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
       }
       return fake.generateVideo(req, ctx);
     },
+    generateText: (req, ctx) => {
+      log.text++;
+      log.textPrompts.push(req.prompt);
+      log.textSessions.push(req.session ? "continue" : "new");
+      return (opts.textReply ? Promise.resolve({ text: opts.textReply(req.prompt, log.text), session: req.session ?? { accountId: "fake", threadUrl: "fake://thread/text" } }) : fake.generateText(req, ctx));
+    },
     generateImage: (req, ctx) => {
       log.image++;
       log.imagePrompts.push(req.prompt);
       log.imageSessions.push(req.session === undefined ? "none" : req.session === "new" ? "new" : "continue");
+      log.imageRefs.push(req.references.map((r) => ({ mediaId: r.mediaId, role: r.role })));
+      if (opts.failImageWhen?.(req.prompt)) return Promise.reject(new Error("Lỗi ảnh giả lập"));
       return fake.generateImage(req, ctx);
     },
   };

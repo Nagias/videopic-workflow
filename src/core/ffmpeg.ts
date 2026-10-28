@@ -4,7 +4,14 @@ import { z } from "zod";
 export type VideoProbe = { width: number; height: number; durationSec: number; hasAudio: boolean };
 export type ImageProbe = { width: number; height: number };
 
-export type ConcatPart = { path: string; trimStartSec: number; durationSec: number; hasAudio: boolean };
+// brightness: Muse hay làm cuối clip tối dần — kéo sáng lại ngay trong lần nén duy nhất lúc ghép.
+export type ConcatPart = {
+  path: string;
+  trimStartSec: number;
+  durationSec: number;
+  hasAudio: boolean;
+  brightness?: { startLuma: number; endLuma: number; clipSec: number };
+};
 
 export const FRAME_W = 1280;
 export const FRAME_H = 720;
@@ -19,7 +26,6 @@ export type Ffmpeg = {
   normalizeImage(input: string, out: string): Promise<void>;
   extractFrame(video: string, out: string, opts: { fromEndSec: number }): Promise<void>;
   measureLuma(video: string, atSec: number): Promise<number>;
-  stabilizeBrightness(input: string, out: string, opts: { startLuma: number; endLuma: number; durationSec: number }): Promise<void>;
   concatClips(parts: ConcatPart[], out: string): Promise<void>;
 };
 
@@ -53,7 +59,7 @@ const ProbeSchema = z.object({
   format: z.object({ duration: z.coerce.number().optional() }),
 });
 
-const ENCODE_V = ["-c:v", "libx264", "-preset", "veryfast", "-threads", "2", "-pix_fmt", "yuv420p", "-r", String(FPS)];
+const ENCODE_V = ["-c:v", "libx264", "-preset", "medium", "-crf", "17", "-threads", "2", "-pix_fmt", "yuv420p", "-r", String(FPS)];
 const ENCODE_A = ["-c:a", "aac", "-ar", "44100", "-ac", "2"];
 
 function checkHex(hex: string) {
@@ -145,12 +151,6 @@ export function createFfmpeg(paths: { ffmpegPath: string; ffprobePath: string })
       return Number(m[1]);
     },
 
-    async stabilizeBrightness(input, out, { startLuma, endLuma, durationSec }) {
-      const expr = brightnessExpr(startLuma, endLuma, durationSec);
-      const vf = expr ?? "null";
-      await ff(["-i", input, "-vf", vf, ...ENCODE_V, "-c:a", "copy", "-movflags", "+faststart", out]);
-    },
-
     async concatClips(parts, out) {
       if (parts.length === 0) throw new Error("Không có clip nào để ghép");
       const inputs: string[] = [];
@@ -159,8 +159,10 @@ export function createFfmpeg(paths: { ffmpegPath: string; ffprobePath: string })
       parts.forEach((p, i) => {
         inputs.push("-i", p.path);
         const d = p.durationSec.toFixed(3);
+        const eq = p.brightness ? brightnessExpr(p.brightness.startLuma, p.brightness.endLuma, p.brightness.clipSec) : null;
         filters.push(
           `[${i}:v]trim=start=${p.trimStartSec.toFixed(3)}:duration=${d},setpts=PTS-STARTPTS,` +
+            (eq ? `${eq},` : "") +
             `scale=${FRAME_W}:${FRAME_H}:force_original_aspect_ratio=decrease,pad=${FRAME_W}:${FRAME_H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${FPS},format=yuv420p[v${i}]`,
         );
         const fadeOut = Math.max(0, p.durationSec - 0.08).toFixed(3);

@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { BrowserContext, ElementHandle, Page } from "playwright";
 import type { AppConfig } from "../../core/config";
-import { ProviderError, type GeneratedImage, type GeneratedVideo, type MediaProvider, type ProviderContext } from "../types";
+import { ProviderError, type GeneratedImage, type GeneratedText, type GeneratedVideo, type MediaProvider, type ProviderContext } from "../types";
 import { createAccountPool, type AccountPool, type MuseAccount } from "./accounts";
 import { launchProfile } from "./browser";
 import {
@@ -38,6 +39,9 @@ export function videoWaitMs(durationSec: number): number {
   return (durationSec > 5 ? 720 : 600) * 1000;
 }
 export const IMAGE_WAIT_MS = 180_000;
+export const TEXT_WAIT_MS = 240_000;
+const TEXT_STABLE_CHECKS = 3;
+const MIN_TEXT_CHARS = 20;
 
 export function assertMuseAllowed(cfg: Pick<AppConfig, "appEnv" | "museLive">): void {
   if (cfg.appEnv === "test" && !cfg.museLive) {
@@ -67,19 +71,28 @@ export function replyAfterPrompt(logText: string, prompt: string, preText: strin
 }
 
 type MuseJob = {
-  kind: "image" | "video";
+  kind: "image" | "video" | "text";
   text: string;
   attachments: string[];
   requestedSec: number;
   waitMs: number;
   threadUrl?: string;
   accountId?: string;
+  // Chữ: câu đánh dấu cuối prompt; câu trả lời = phần chữ sau lần xuất hiện đầu tiên của nó trong chat.
+  replyMarker?: string;
 };
 
-type Accepted = { mediaId: string; width: number; height: number; durationSec: number; threadUrl: string; accountId: string };
+type MediaAccepted = { kind: "media"; mediaId: string; width: number; height: number; durationSec: number; threadUrl: string; accountId: string };
+type TextAccepted = { kind: "text"; text: string; threadUrl: string; accountId: string };
+type Accepted = MediaAccepted | TextAccepted;
+
+function expectMedia(r: Accepted): MediaAccepted {
+  if (r.kind !== "media") throw new ProviderError("WRONG_RESULT", "Muse trả chữ trong khi cần ảnh/video");
+  return r;
+}
 
 export const MAX_JOB_ATTEMPTS = 2;
-const RETRY_IN_NEW_SIDE_CHAT = new Set(["REFUSED", "MUSE_FAILED", "NO_MEDIA", "SIDE_CHAT_FAILED", "THREAD_NOT_FOUND"]);
+const RETRY_IN_NEW_SIDE_CHAT = new Set(["REFUSED", "MUSE_FAILED", "NO_MEDIA", "NO_TEXT", "SIDE_CHAT_FAILED", "THREAD_NOT_FOUND"]);
 
 export function isSideChatThread(url: string): boolean {
   return /\/thread\/(?!new(?:[/?#]|$))[^/?#]+/.test(url);
@@ -212,7 +225,7 @@ async function acceptCandidate(
   ctx: ProviderContext,
   accId: string,
   reasons: string[],
-): Promise<Omit<Accepted, "threadUrl" | "accountId"> | null> {
+): Promise<Omit<MediaAccepted, "kind" | "threadUrl" | "accountId"> | null> {
   const tmp = await ctx.storage.writeTemp(bytes, job.kind === "video" ? "mp4" : "img");
   const sha = await ctx.storage.sha256File(tmp);
   if (ctx.storage.hasSha256(sha)) {
@@ -242,6 +255,41 @@ async function acceptCandidate(
   await ctx.storage.removeTemp(tmp);
   const rec = await ctx.storage.importFile(norm, { kind: "image", source: `muse:${accId}`, width: 1280, height: 720 });
   return { mediaId: rec.id, width: 1280, height: 720, durationSec: 0 };
+}
+
+export function replyAfterMarker(logText: string, marker: string, preText: string): string {
+  const fresh = logText.startsWith(preText) ? logText.slice(preText.length) : logText;
+  const at = fresh.indexOf(marker);
+  return at >= 0 ? fresh.slice(at + marker.length).trim() : "";
+}
+
+async function waitForText(page: Page, job: MuseJob, preText: string, accId: string, ctx: ProviderContext): Promise<string> {
+  const marker = job.replyMarker ?? job.text.slice(-40);
+  const started = Date.now();
+  let last = "";
+  let stable = 0;
+  while (Date.now() - started < job.waitMs) {
+    if (page.isClosed()) throw new ProviderError("PAGE_CLOSED", "Trang Muse bị đóng giữa chừng");
+    ctx.report(`Muse đang viết… ${Math.round((Date.now() - started) / 1000)} giây (${accId})`);
+    const reply = replyAfterMarker(await page.evaluate<string>(callJs(LOG_TEXT_JS)), marker, preText);
+    if (reply.length >= MIN_TEXT_CHARS && reply === last) {
+      stable++;
+      if (stable >= TEXT_STABLE_CHECKS) {
+        if (!reply.includes("{")) {
+          const failure = findMuseFailure(reply);
+          if (failure) throw new ProviderError("MUSE_FAILED", `Muse báo lỗi khi viết: "${failure}". Thường là lỗi tạm phía Muse — chạy lại sau.`);
+          const refusal = findRefusal(reply);
+          if (refusal) throw new ProviderError("REFUSED", `Muse từ chối viết: "${refusal}".`);
+        }
+        return reply;
+      }
+    } else {
+      stable = 0;
+      last = reply;
+    }
+    await sleep(SCAN_INTERVAL_MS, ctx.signal);
+  }
+  throw new ProviderError("NO_TEXT", `Muse chưa trả lời xong sau ${Math.round(job.waitMs / 1000)} giây${last ? ` (đang có ${last.length} ký tự)` : ""}.`);
 }
 
 async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: ProviderContext, context: BrowserContext, page: Page): Promise<Accepted> {
@@ -297,6 +345,7 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
   await sleep(OWN_BUBBLE_SETTLE_MS, ctx.signal);
   preSrcs.push(...(await page.evaluate<string[]>(callJs(MARK_EXISTING_MEDIA_JS))));
   const threadUrl = job.threadUrl ?? (await waitThreadUrl(page, ctx.signal));
+  if (job.kind === "text") return { kind: "text", text: await waitForText(page, job, preText, acc.id, ctx), threadUrl, accountId: acc.id };
 
   const started = Date.now();
   const deadline = started + job.waitMs;
@@ -347,7 +396,7 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
       if (ok) {
         const info = job.kind === "video" ? `${ok.width}x${ok.height} ${ok.durationSec.toFixed(1)}s` : `${ok.width}x${ok.height}`;
         ctx.report(`Đã nhận ${label} ${info} sau ${Math.round((Date.now() - started) / 1000)} giây`);
-        return { ...ok, threadUrl, accountId: acc.id };
+        return { kind: "media", ...ok, threadUrl, accountId: acc.id };
       }
     }
     await sleep(SCAN_INTERVAL_MS, ctx.signal);
@@ -418,23 +467,25 @@ export function createMuseProvider(cfg: AppConfig, pool: AccountPool = createAcc
 
     async generateVideo(req, ctx): Promise<GeneratedVideo> {
       const attachments = req.firstFrameMediaId ? [mediaPath(ctx, req.firstFrameMediaId)] : [];
-      const r = await runJob(
+      const r = expectMedia(await runJob(
         {
           kind: "video",
-          text: formatVideoPrompt(req.prompt, req.durationSec, attachments.length > 0),
+          text: req.verbatim ? req.prompt.trim() : formatVideoPrompt(req.prompt, req.durationSec, attachments.length > 0),
           attachments,
           requestedSec: req.durationSec,
           waitMs: videoWaitMs(req.durationSec),
+          threadUrl: req.session?.threadUrl,
+          accountId: req.session?.accountId,
         },
         ctx,
-      );
+      ));
       return { mediaId: r.mediaId, durationSec: r.durationSec, width: r.width, height: r.height };
     },
 
     async generateImage(req, ctx): Promise<GeneratedImage> {
       const toJob = (prompt: string, refs: typeof req.references): MuseJob => ({
         kind: "image",
-        text: formatImagePrompt(prompt, refs.map((x) => x.role)),
+        text: req.verbatim ? prompt.trim() : formatImagePrompt(prompt, refs.map((x) => x.role)),
         attachments: refs.map((x) => mediaPath(ctx, x.mediaId)),
         requestedSec: 0,
         waitMs: IMAGE_WAIT_MS,
@@ -442,8 +493,22 @@ export function createMuseProvider(cfg: AppConfig, pool: AccountPool = createAcc
       const session = req.session && req.session !== "new" ? req.session : undefined;
       const job = { ...toJob(req.prompt, req.references), threadUrl: session?.threadUrl, accountId: session?.accountId };
       const retry = req.fallback ? toJob(req.fallback.prompt, req.fallback.references) : undefined;
-      const r = await runJob(job, ctx, retry);
+      const r = expectMedia(await runJob(job, ctx, retry));
       return { mediaId: r.mediaId, width: r.width, height: r.height, session: { accountId: r.accountId, threadUrl: r.threadUrl } };
+    },
+
+    async generateText(req, ctx): Promise<GeneratedText> {
+      const toJob = (prompt: string): MuseJob => {
+        const replyMarker = `(Mã yêu cầu: ${randomUUID().slice(0, 8)})`;
+        return { kind: "text", text: `${prompt.trim()}
+
+${replyMarker}`, attachments: [], requestedSec: 0, waitMs: TEXT_WAIT_MS, replyMarker };
+      };
+      if (!req.prompt.trim()) throw new Error("Prompt đang trống");
+      const job = { ...toJob(req.prompt), threadUrl: req.session?.threadUrl, accountId: req.session?.accountId };
+      const r = await runJob(job, ctx, req.fallbackPrompt ? toJob(req.fallbackPrompt) : undefined);
+      if (r.kind !== "text") throw new ProviderError("WRONG_RESULT", "Muse trả ảnh/video trong khi cần chữ");
+      return { text: r.text, session: { accountId: r.accountId, threadUrl: r.threadUrl } };
     },
   };
 }

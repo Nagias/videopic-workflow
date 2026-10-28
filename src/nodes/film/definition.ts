@@ -21,6 +21,7 @@ export const definition = defineNode<FilmParams>({
     { name: "character", kind: "imageset", label: "Nhân vật" },
     { name: "location", kind: "imageset", label: "Không gian" },
     { name: "shots", kind: "shotlist", label: "Danh sách cảnh" },
+    { name: "props", kind: "props", label: "Đồ vật", optional: true },
   ],
   outputs: [
     { name: "video", kind: "video", label: "Phim" },

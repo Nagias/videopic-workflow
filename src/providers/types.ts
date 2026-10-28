@@ -11,9 +11,14 @@ export type ImageRequest = {
   references: ImageReference[];
   session?: ChatSessionRef | "new";
   fallback?: { prompt: string; references: ImageReference[] };
+  verbatim?: boolean;
 };
 
-export type VideoRequest = { prompt: string; durationSec: ClipDuration; firstFrameMediaId?: string };
+export type VideoRequest = { prompt: string; durationSec: ClipDuration; firstFrameMediaId?: string; session?: ChatSessionRef; verbatim?: boolean };
+
+// Câu trả lời chữ (Biên kịch). fallbackPrompt: khi chat cũ hỏng thì gửi câu này vào chat mới (phải tự đủ ý).
+export type TextRequest = { prompt: string; session?: ChatSessionRef; fallbackPrompt?: string };
+export type GeneratedText = { text: string; session: ChatSessionRef };
 
 export type ProviderContext = {
   signal: AbortSignal;
@@ -29,6 +34,7 @@ export interface MediaProvider {
   id: ProviderId;
   generateVideo(req: VideoRequest, ctx: ProviderContext): Promise<GeneratedVideo>;
   generateImage(req: ImageRequest, ctx: ProviderContext): Promise<GeneratedImage>;
+  generateText(req: TextRequest, ctx: ProviderContext): Promise<GeneratedText>;
   maxParallel(): number;
 }
 

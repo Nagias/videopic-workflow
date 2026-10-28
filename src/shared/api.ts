@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ASSET_KINDS } from "./node-definition";
 import { NodeOutputsSchema } from "./ports";
 import { WorkflowGraphSchema } from "./workflow";
 
@@ -46,6 +47,18 @@ export const MuseAccountsResponseSchema = z.object({
   accounts: z.array(z.object({ id: z.string(), state: z.enum(["ready", "busy", "needs_login", "cooldown"]), loggedIn: z.boolean() })),
 });
 export type MuseAccountsResponse = z.infer<typeof MuseAccountsResponseSchema>;
+
+export const AssetSummarySchema = z.object({
+  id: z.string(),
+  kind: z.enum(ASSET_KINDS),
+  name: z.string(),
+  params: z.record(z.string(), z.unknown()),
+  thumbnailMediaId: z.string().nullable(),
+  updatedAt: z.number(),
+});
+export type AssetSummary = z.infer<typeof AssetSummarySchema>;
+export const AssetListResponseSchema = z.object({ assets: z.array(AssetSummarySchema) });
+export type AssetListResponse = z.infer<typeof AssetListResponseSchema>;
 
 export const ApiErrorSchema = z.object({ error: z.string() });
 

@@ -1,6 +1,7 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { webNodes } from "../../../nodes/registry.web";
 import { PORT_KIND_LABEL } from "../../../shared/ports";
+import { NodeErrorBoundary } from "./NodeErrorBoundary";
 import { STATUS_LABEL, useEditor } from "./node-kit";
 
 export type FlowNodeData = { params: Record<string, unknown> };
@@ -31,7 +32,9 @@ export function GraphNode({ id, type, data, selected }: NodeProps<FlowNode>) {
         </div>
       ))}
       <div className="gnode-body">
-        <View id={id} params={data.params} setParams={(patch) => editor.setParams(id, patch)} state={state} />
+        <NodeErrorBoundary>
+          <View id={id} params={data.params} setParams={(patch) => editor.setParams(id, patch)} replaceParams={(params) => editor.replaceParams(id, params)} state={state} />
+        </NodeErrorBoundary>
       </div>
       {state?.message && status !== "failed" ? (
         <div className="node-message" data-testid={`node-message-${id}`}>

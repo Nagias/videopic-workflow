@@ -9,6 +9,8 @@ import type { Db } from "./db/client";
 import { nodeCache, runNodes } from "./db/schema";
 import type { Ffmpeg } from "./ffmpeg";
 import type { NodeInputs, ServerNode, StepValue } from "./node-runtime";
+import { recordAsset } from "../features/assets/store";
+import { collectMediaIds } from "./media-ids";
 import type { Storage } from "./storage";
 
 export class GraphError extends Error {
@@ -75,7 +77,7 @@ export function planGraph(graph: WorkflowGraph, nodes: Record<string, ServerNode
 
   for (const p of planned.values()) {
     for (const inp of p.impl.definition.inputs) {
-      if (!p.inputs.has(inp.name)) throw new GraphError(`Node "${p.impl.definition.label}" (${p.node.id}) chưa nối cổng vào "${inp.label}"`);
+      if (!p.inputs.has(inp.name) && !inp.optional) throw new GraphError(`Node "${p.impl.definition.label}" (${p.node.id}) chưa nối cổng vào "${inp.label}"`);
     }
   }
 
@@ -106,19 +108,6 @@ function stableStringify(value: unknown): string {
 
 export function cacheKeyOf(type: string, params: unknown, upstream: Record<string, string>): string {
   return createHash("sha256").update(stableStringify({ type, params, upstream })).digest("hex");
-}
-
-const MEDIA_KEYS = new Set(["mediaId", "keyframeId", "clipId"]);
-
-export function collectMediaIds(value: unknown, out: string[] = []): string[] {
-  if (Array.isArray(value)) for (const v of value) collectMediaIds(v, out);
-  else if (value && typeof value === "object") {
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (MEDIA_KEYS.has(k) && typeof v === "string") out.push(v);
-      else collectMediaIds(v, out);
-    }
-  }
-  return out;
 }
 
 function mediaStillValid(value: unknown, storage: Storage): boolean {
@@ -155,6 +144,10 @@ export async function executeRun(deps: ExecuteDeps, runId: string, graph: Workfl
 
   const outputs = new Map<string, NodeOutputs>();
   const keys = new Map<string, string>();
+  const remember = (p: PlannedNode, key: string, out: NodeOutputs) => {
+    const kind = p.impl.definition.library;
+    if (kind) recordAsset(db, { cacheKey: key, kind, params: p.params, outputs: out });
+  };
 
   for (let i = 0; i < order.length; i++) {
     const p = order[i]!;
@@ -177,6 +170,7 @@ export async function executeRun(deps: ExecuteDeps, runId: string, graph: Workfl
       const parsed = NodeOutputsSchema.parse(JSON.parse(cached.outputJson));
       if (outputsStillValid(parsed, deps.storage)) {
         outputs.set(id, parsed);
+        remember(p, key, parsed);
         setNode(id, { status: "cached", cacheKey: key, outputJson: cached.outputJson, message: "Dùng lại kết quả trước", error: null });
         continue;
       }
@@ -212,6 +206,7 @@ export async function executeRun(deps: ExecuteDeps, runId: string, graph: Workfl
       const json = JSON.stringify(NodeOutputsSchema.parse(result));
       db.insert(nodeCache).values({ cacheKey: key, outputJson: json, createdAt: now() }).onConflictDoNothing().run();
       outputs.set(id, result);
+      remember(p, key, result);
       setNode(id, { status: "succeeded", outputJson: json, message: "Xong" });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

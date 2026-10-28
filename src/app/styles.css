@@ -407,3 +407,20 @@ button.icon {
 .sb-skipped {
   border-color: var(--err);
 }
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.writer-result ol {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+}
+.writer-result li {
+  margin-bottom: 6px;
+}

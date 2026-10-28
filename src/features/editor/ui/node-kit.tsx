@@ -6,6 +6,8 @@ export type NodeViewProps<P> = {
   id: string;
   params: P;
   setParams: (patch: Partial<P>) => void;
+  // Thay toàn bộ tham số (chọn từ kho): giữ đúng tham số cũ để máy chủ trúng lại kết quả đã có.
+  replaceParams: (params: Record<string, unknown>) => void;
   state: RunNodeState | undefined;
 };
 
@@ -20,7 +22,10 @@ export function webNode<P>(definition: NodeDefinition<P>, View: ComponentType<No
 
 export type EditorApi = {
   setParams(nodeId: string, patch: Record<string, unknown>): void;
+  replaceParams(nodeId: string, params: Record<string, unknown>): void;
   stateOf(nodeId: string): RunNodeState | undefined;
+  // Đổi khi chuyển workflow hoặc có lượt chạy mới: ô dữ liệu lấy từ máy chủ (kho tài sản) tải lại theo khoá này.
+  refreshKey: string;
 };
 
 export const EditorContext = createContext<EditorApi | null>(null);

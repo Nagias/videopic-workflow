@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { MediaProvider } from "../types";
+import { fakeTextReply } from "./text";
 
 const colorOf = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 6);
 
@@ -16,6 +17,12 @@ export function createFakeProvider(): MediaProvider {
       const rec = await ctx.storage.importFile(out, { kind: "image", source: "fake", width: 1280, height: 720 });
       const session = req.session === "new" ? { accountId: "fake", threadUrl: `fake://thread/${key.length}-${rec.id.slice(0, 8)}` } : req.session;
       return { mediaId: rec.id, width: 1280, height: 720, ...(session ? { session } : {}) };
+    },
+
+    generateText(req, ctx) {
+      ctx.report("Đang viết chữ giả…");
+      const session = req.session ?? { accountId: "fake", threadUrl: `fake://thread/text-${createHash("sha256").update(req.prompt).digest("hex").slice(0, 8)}` };
+      return Promise.resolve({ text: fakeTextReply(req.prompt), session });
     },
 
     async generateVideo(req, ctx) {
