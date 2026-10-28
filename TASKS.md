@@ -79,5 +79,8 @@ Kết luận: (1) Muse từ chối 1 lần ảnh chân thực có đính kèm �
 | 17:05 | Chỉnh prompt vòng 1 (commit `c7e8ce9`): cảnh tay ghi trang phục, video "chỉ làm đúng việc đã tả" | kiểm bằng lượt Biên kịch dưới |
 | 17:07–17:25 | Mẫu Ý tưởng → phim (workflow `y-tuong-thanh-phim-mvrya2he`) | ✅ Biên kịch Muse viết đúng luật **ngay lần 1** (~2 phút, 1 lượt chữ): 8 cảnh, 5 đồ vật có chuỗi trạng thái (nồi rỗng → đầy nước → đang sôi; cốc rỗng → đầy → vơi). Nhân vật lấy lại từ kho/cache (0 lượt). 22 ảnh (không gian 2, đồ vật 12, ảnh khung 8) + 8 video, không lỗi. Phim 40 giây, 8,3 Mbps (`.data/exports/Y-tuong-thac-nuoc-40s.mp4`). Đã xem 8 cảnh: cảnh tay là tay trần đúng trang phục, cảnh xếp bếp chưa có lửa (hết làm quá việc), nồi/cốc giữ hình, rót nước có hơi bốc. Còn: vóc dáng nhân vật hơi đổi giữa cảnh |
 
-Tổng lượt Muse thật đợt nâng chất lượng: thử nghiệm 6 + Sơn La v2 36 (+ ước 2–4 lượt mất do máy chủ khởi động lại) + Ý tưởng → phim 31 (1 chữ + 22 ảnh + 8 video) ≈ 75.
+| 17:34 | Bấm chạy lại Sơn La v2 sau khi chỉnh prompt | ⚠️ Lỗi app: node Dựng phim trả nguyên phim cũ từ cache vì khoá cache chỉ gồm tham số, không gồm prompt trong code. Đã sửa (commit `ca60895`): khoá node gồm `codeVersion()` của các hàm prompt. 0 lượt |
+| 17:38–17:47 | Chạy lại Sơn La v2 (run `79d76e3e`) | ✅ 2 ảnh khung (cảnh tay 4, 9) + 12 video, không lỗi; nhân vật/không gian/đồ vật lấy lại cache (0 lượt). Phim 59,8 giây, 10 Mbps (`.data/exports/Sinh-ton-Son-La-v2b-60s.mp4`). Đã xem 12 cảnh: cảnh 4 và 9 tay trần đúng trang phục ✅, cảnh 8 chỉ xếp mồi chưa có lửa ✅. Còn: cảnh 10 (nối từ cảnh 9) vẫn mọc tay áo dài trong lúc chuyển động; cảnh 10–11 ánh lửa ám đỏ, da mặt loang; cảnh 5–6 vẫn có đống gỗ lớn (ảnh khung cũ dùng lại) |
+
+Tổng lượt Muse thật đợt nâng chất lượng: thử nghiệm 6 + Sơn La v2 36 (+ ước 2–4 lượt mất do máy chủ khởi động lại) + Ý tưởng → phim 31 (1 chữ + 22 ảnh + 8 video) ≈ 75; chạy lại Sơn La thêm 14 → ≈ 89.
 
