@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineNode } from "../../shared/node-definition";
+import { CHARACTER_SHEET, codeVersion } from "../../shared/prompts";
 import { PROVIDER_IDS } from "../../shared/providers";
 
 export const params = z.object({
@@ -16,6 +17,7 @@ export const definition = defineNode<CharacterParams>({
   inputs: [],
   outputs: [{ name: "character", kind: "imageset", label: "Nhân vật" }],
   library: "character",
+  cacheVersion: codeVersion(CHARACTER_SHEET),
   params,
   defaults: { name: "", description: "", provider: "fake" },
 });

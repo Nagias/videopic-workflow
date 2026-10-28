@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { defineNode } from "../../shared/node-definition";
 import { propSpecProblems, PropSpecItemSchema, type PropSpecItem } from "../../shared/ports";
+import { codeVersion, propStatePrompt, propStillPrompt } from "../../shared/prompts";
 import { PROVIDER_IDS } from "../../shared/providers";
 
 // Một dòng gõ tay trong node: trạng thái viết cách nhau bằng dấu phẩy, trạng thái đầu là trạng thái gốc.
@@ -38,6 +39,7 @@ export const definition = defineNode<PropsParams>({
   inputs: [{ name: "spec", kind: "propspec", label: "Từ Biên kịch", optional: true }],
   outputs: [{ name: "props", kind: "props", label: "Đồ vật" }],
   library: "props",
+  cacheVersion: codeVersion(propStillPrompt, propStatePrompt),
   params,
   defaults: { name: "", items: [], provider: "fake" },
 });

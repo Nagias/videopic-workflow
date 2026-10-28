@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineNode } from "../../shared/node-definition";
+import { codeVersion, keyframePrompt, motionPrompt, textVideoPrompt } from "../../shared/prompts";
 import { PROVIDER_IDS } from "../../shared/providers";
 
 export const SHOT_SECONDS = 5;
@@ -27,6 +28,7 @@ export const definition = defineNode<FilmParams>({
     { name: "video", kind: "video", label: "Phim" },
     { name: "storyboard", kind: "storyboard", label: "Storyboard" },
   ],
+  cacheVersion: codeVersion(keyframePrompt, motionPrompt, textVideoPrompt),
   params,
   defaults: { provider: "fake", fixBrightness: true },
 });
