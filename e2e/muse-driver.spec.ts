@@ -58,6 +58,11 @@ const OLD_VIDEO = `<div class="message"><video src="/old.mp4" width="640" muted 
 const videoPage = (menu: string, extra: string) => shell(menu, OLD_VIDEO, `${extra} say('<video src="/new.mp4" width="640" muted preload="metadata"></video>', 3500);`);
 const imageOk = `say('<img src="/gen.jpg" width="640">', 3500);`;
 const imageRefuse = `say('<p>Xin lỗi, mình không thể tạo hình ảnh này vì vi phạm nguyên tắc.</p>', 3500);`;
+// Trả lời chữ theo 3 đợt (giống Muse gõ dần): đợt 1 lúc 3 giây, đợt 2 lúc 7 giây, đợt cuối lúc 11 giây.
+const textReply = `const d = document.createElement("div"); d.className = "message"; document.getElementById("log").appendChild(d);
+  setTimeout(() => { d.innerText = "Đây là kịch bản"; }, 3000);
+  setTimeout(() => { d.innerText = "Đây là kịch bản\\n\`\`\`json\\n{\\"shots\\": ["; }, 7000);
+  setTimeout(() => { d.innerText = "Đây là kịch bản\\n\`\`\`json\\n{\\"shots\\": [1, 2]}\\n\`\`\`"; }, 11000);`;
 const imageFail = `say('<p>Mình đã thử nhưng dịch vụ tạo ảnh đang tạm lỗi nên không tạo được lúc này.</p>', 3500);`;
 
 test.describe("Muse provider trên trang Muse giả (không tốn lượt thật)", () => {
@@ -107,6 +112,7 @@ test.describe("Muse provider trên trang Muse giả (không tốn lượt thật
       else if (url.startsWith("/image")) res.end(shell(sideChatMenu(true), "", imageOk));
       else if (url.startsWith("/refuse")) res.end(shell(sideChatMenu(true), "", imageRefuse));
       else if (url.startsWith("/flaky")) res.end(shell(sideChatMenu(true), "", ++flakyVisits === 1 ? imageFail : imageOk));
+      else if (url.startsWith("/text")) res.end(shell(sideChatMenu(true), "", textReply));
       else if (url.startsWith("/plusmenu")) res.end(shell(plusMenu, "<div class='message'><p>chat chính cũ</p></div>", imageOk));
       else if (url.startsWith("/nosidechat")) res.end(videoPage("", ""));
       else if (url.startsWith("/keeplog")) res.end(videoPage(sideChatMenu(false), "say('<video src=\"/old-copy.mp4\" width=\"640\" muted></video>', 500);"));
@@ -188,6 +194,15 @@ test.describe("Muse provider trên trang Muse giả (không tốn lượt thật
     expect(result.width).toBe(1280);
     expect(messages.some((m) => m.includes("MUSE_FAILED") && m.includes("thử lại lần 2/2"))).toBe(true);
     expect(messages).toContain("Đính kèm ảnh 1/1…");
+  });
+
+  test("chữ: chờ câu trả lời đứng yên mới nhận (không đọc đợt gõ dở), trả đường dẫn chat phụ", async () => {
+    test.setTimeout(120_000);
+    const messages: string[] = [];
+    const result = await provider("/text").generateText({ prompt: "Viết kịch bản 2 cảnh" }, ctx(messages));
+    expect(result.text).toContain("\"shots\": [1, 2]}");
+    expect(result.text).not.toContain("Viết kịch bản 2 cảnh");
+    expect(result.session.threadUrl).toMatch(/\/thread\/t-/);
   });
 
   test("Muse từ chối cả 2 lần: dừng, báo REFUSED, không lặp", async () => {

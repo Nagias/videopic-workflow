@@ -46,15 +46,18 @@ export type CallLog = {
   imagePrompts: string[];
   imageSessions: string[];
   imageRefs: { mediaId: string; role: string }[][];
+  text: number;
+  textPrompts: string[];
+  textSessions: string[];
 };
 
-export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string } = {}): {
+export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string; textReply?: (prompt: string, call: number) => string } = {}): {
   providers: ProviderRegistry;
   calls: () => number;
   log: CallLog;
 } {
   const fake = createFakeProvider();
-  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [], imageRefs: [] };
+  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [], imageRefs: [], text: 0, textPrompts: [], textSessions: [] };
   const counted: MediaProvider = {
     id: "fake",
     maxParallel: () => 2,
@@ -66,6 +69,12 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
         return Promise.reject(opts.failCode ? new ProviderError(opts.failCode, "Lỗi máy chủ giả lập") : new Error("Lỗi giả lập của dịch vụ"));
       }
       return fake.generateVideo(req, ctx);
+    },
+    generateText: (req, ctx) => {
+      log.text++;
+      log.textPrompts.push(req.prompt);
+      log.textSessions.push(req.session ? "continue" : "new");
+      return (opts.textReply ? Promise.resolve({ text: opts.textReply(req.prompt, log.text), session: req.session ?? { accountId: "fake", threadUrl: "fake://thread/text" } }) : fake.generateText(req, ctx));
     },
     generateImage: (req, ctx) => {
       log.image++;
