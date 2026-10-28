@@ -3,6 +3,7 @@ import type { AssetKind } from "../shared/node-definition";
 import {
   ApiErrorSchema,
   AssetListResponseSchema,
+  LatestRunResponseSchema,
   MuseAccountsResponseSchema,
   RunResponseSchema,
   StartRunResponseSchema,
@@ -32,6 +33,7 @@ export const api = {
   startRun: (workflowId: string) =>
     call(StartRunResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/runs`, { method: "POST", body: "{}" }),
   getRun: (runId: string) => call(RunResponseSchema, `/api/runs/${encodeURIComponent(runId)}`),
+  getLatestRun: (workflowId: string) => call(LatestRunResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/runs/latest`),
   getMuseAccounts: () => call(MuseAccountsResponseSchema, "/api/muse/accounts"),
   listAssets: (kind: AssetKind) => call(AssetListResponseSchema, `/api/assets?kind=${encodeURIComponent(kind)}`),
 };

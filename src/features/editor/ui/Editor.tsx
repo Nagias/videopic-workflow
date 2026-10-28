@@ -8,14 +8,17 @@ import {
   type Connection,
   type Edge,
   type IsValidConnection,
+  type OnConnectEnd,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../app/api-client";
 import { webNodes } from "../../../nodes/registry.web";
 import type { MuseAccountsResponse, RunResponse, WorkflowListResponse, WorkflowResponse } from "../../../shared/api";
 import { WORKFLOW_TEMPLATES } from "../../../shared/templates";
-import { connectionProblem, fromFlow, toFlow } from "./graph-convert";
+import { connectionProblem, droppedConnectionProblem, edgeKindClass, fromFlow, toFlow } from "./graph-convert";
 import { GraphNode, type FlowNode } from "./GraphNode";
+import { inheritProvider, placeNewNode } from "./new-node";
 import { EditorContext, type EditorApi } from "./node-kit";
 
 const nodeTypes = Object.fromEntries(Object.keys(webNodes).map((t) => [t, GraphNode]));
@@ -36,6 +39,14 @@ export function Editor() {
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [run, setRun] = useState<RunResponse | null>(null);
+  // true khi `run` là lần chạy cũ tải lại lúc mở workflow (chưa xem trực tiếp trong phiên này).
+  const [runFromHistory, setRunFromHistory] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const flow = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const shownWorkflow = useRef<string | null>(null);
+  const currentRun = useRef<RunResponse | null>(null);
+  currentRun.current = run;
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [problem, setProblem] = useState<string | null>(null);
   const [muse, setMuse] = useState<MuseAccountsResponse | null>(null);
@@ -54,12 +65,23 @@ export function Editor() {
       setEdges(flow.edges);
       setWorkflowId(wf.id);
       setRun(null);
+      setRunFromHistory(false);
+      shownWorkflow.current = wf.id;
       setSaveState("idle");
       const url = new URL(window.location.href);
       url.searchParams.set("wf", wf.id);
       window.history.replaceState(null, "", url);
       loaded.current = true;
       api.listWorkflows().then((l) => setWorkflowList(l.workflows), () => setWorkflowList([]));
+      api.getLatestRun(wf.id).then(
+        ({ run: last }) => {
+          // Đã đổi sang workflow khác, hoặc đã bấm Chạy trong lúc chờ: bỏ kết quả cũ.
+          if (shownWorkflow.current !== wf.id || !last || currentRun.current) return;
+          setRun(last);
+          setRunFromHistory(true);
+        },
+        (e: unknown) => setProblem(`Không tải được kết quả lần chạy trước: ${e instanceof Error ? e.message : String(e)}`),
+      );
     },
     [setNodes, setEdges],
   );
@@ -103,7 +125,10 @@ export function Editor() {
     const t = setInterval(() => {
       api
         .getRun(run.id)
-        .then(setRun)
+        .then((r) => {
+          setRun(r);
+          setRunFromHistory(false);
+        })
         .catch((e: unknown) => setProblem(`Mất kết nối khi theo dõi lần chạy: ${e instanceof Error ? e.message : String(e)}`));
     }, POLL_MS);
     return () => clearInterval(t);
@@ -112,38 +137,64 @@ export function Editor() {
   const runNow = useCallback(async () => {
     if (!workflowId) return;
     setProblem(null);
+    setStarting(true);
     try {
       await save();
       const { runId } = await api.startRun(workflowId);
       setRun({ id: runId, status: "queued", error: null, nodes: {} });
+      setRunFromHistory(false);
     } catch (e) {
       setProblem(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStarting(false);
     }
   }, [workflowId, save]);
 
   const isValidConnection: IsValidConnection<Edge> = useCallback(
-    (conn) => connectionProblem(conn, latest.current.nodes, latest.current.edges) === null,
+    (conn) => connectionProblem(conn, latest.current.nodes) === null,
     [],
   );
 
   const onConnect = useCallback(
     (conn: Connection) => {
-      const why = connectionProblem(conn, latest.current.nodes, latest.current.edges);
+      const why = connectionProblem(conn, latest.current.nodes);
       if (why) {
         setProblem(why);
         return;
       }
-      setEdges((eds) => addEdge({ ...conn, id: `e-${conn.source}-${conn.sourceHandle}-${conn.target}-${conn.targetHandle}` }, eds));
+      setProblem(null);
+      const edge: Edge = {
+        ...conn,
+        id: `e-${conn.source}-${conn.sourceHandle}-${conn.target}-${conn.targetHandle}`,
+        className: edgeKindClass(conn, latest.current.nodes),
+      };
+      // Cổng vào chỉ nhận một dây: nối mới thì thay dây cũ.
+      setEdges((eds) => addEdge(edge, eds.filter((e) => !(e.target === conn.target && e.targetHandle === conn.targetHandle))));
     },
     [setEdges],
   );
 
+  // Thả dây lên cổng không hợp: React Flow im lặng bỏ qua, ở đây nói rõ vì sao.
+  const onConnectEnd: OnConnectEnd = useCallback((_event, state) => {
+    if (state.isValid !== false || !state.fromHandle || !state.toHandle) return;
+    setProblem(droppedConnectionProblem(state.fromHandle, state.toHandle, latest.current.nodes));
+  }, []);
+
   const addNode = (type: string) => {
     const impl = webNodes[type];
     if (!impl) return;
-    const n = latest.current.nodes.length;
+    const existing = latest.current.nodes;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const center =
+      flow.current && rect
+        ? flow.current.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+        : { x: 240 + existing.length * 40, y: 240 + existing.length * 30 };
     const id = `${type}-${Date.now().toString(36)}`;
-    setNodes((ns) => [...ns, { id, type, position: { x: 80 + n * 40, y: 360 + n * 30 }, data: { params: { ...(impl.definition.defaults as Record<string, unknown>) } } }]);
+    const params = inheritProvider(impl.definition.defaults as Record<string, unknown>, existing);
+    setNodes((ns) => [
+      ...ns.map((n) => (n.selected ? { ...n, selected: false } : n)),
+      { id, type, position: placeNewNode(center, ns), selected: true, data: { params } },
+    ]);
   };
 
   const editorApi: EditorApi = useMemo(
@@ -156,6 +207,9 @@ export function Editor() {
     }),
     [run, setNodes, workflowId],
   );
+
+  const runLabel = run ? (runFromHistory && !active ? `Lần trước: ${RUN_LABEL[run.status]}` : RUN_LABEL[run.status]) : "";
+  const runError = run?.error ? (runFromHistory && !active ? `Lần chạy trước lỗi: ${run.error}` : run.error) : null;
 
   const readyMuse = muse?.accounts.filter((a) => a.loggedIn).length ?? 0;
 
@@ -210,29 +264,33 @@ export function Editor() {
           <span className={`save-state ${saveState}`} data-testid="save-status">
             {saveState === "saving" ? "Đang lưu…" : saveState === "saved" ? "Đã lưu" : saveState === "error" ? "Lưu lỗi" : ""}
           </span>
-          <span className={`run-state ${run?.status ?? ""}`} data-testid="run-status">
-            {run ? RUN_LABEL[run.status] : ""}
+          <span className={`run-state ${starting ? "queued" : (run?.status ?? "")}`} data-testid="run-status">
+            {starting ? RUN_LABEL.queued : runLabel}
           </span>
-          <button type="button" className="primary" data-testid="run-button" disabled={!workflowId || active} onClick={() => void runNow()}>
-            {active ? "Đang chạy…" : "▶ Chạy"}
+          <button type="button" className="primary" data-testid="run-button" disabled={!workflowId || active || starting} onClick={() => void runNow()}>
+            {active || starting ? "Đang chạy…" : "▶ Chạy"}
           </button>
         </div>
-        {problem || run?.error ? (
+        {problem || runError ? (
           <div className="banner" data-testid="problem-banner">
-            {problem ?? run?.error}
+            {problem ?? runError}
             <button type="button" onClick={() => setProblem(null)}>
               Đóng
             </button>
           </div>
         ) : null}
-        <div className="canvas">
+        <div className="canvas" ref={canvasRef}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            onInit={(inst) => {
+              flow.current = inst;
+            }}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
             isValidConnection={isValidConnection}
             fitView
             fitViewOptions={{ padding: 0.3 }}

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runs } from "../src/core/db/schema";
 import { createQueue } from "../src/core/queue";
-import { AssetListResponseSchema, RunResponseSchema, WorkflowResponseSchema } from "../src/shared/api";
+import { AssetListResponseSchema, LatestRunResponseSchema, RunResponseSchema, WorkflowResponseSchema } from "../src/shared/api";
 import { promptToVideoGraph } from "./helpers/nodes";
 import { createTestServer, type TestServer } from "./helpers/server";
 
@@ -60,6 +60,20 @@ describe("API luồng 1: lưu → chạy → xem clip", () => {
     expect(run.status).toBe("failed");
     expect(run.error).toMatch(/Prompt đang trống/);
     expect(s.calls()).toBe(0);
+  });
+
+  it("kết quả lần chạy gần nhất: chưa chạy thì rỗng, chạy rồi trả đúng lần mới nhất kèm output; workflow lạ 404", async () => {
+    await s.app.inject({ method: "GET", url: "/api/workflows/default" });
+    const latest = async () => LatestRunResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/workflows/default/runs/latest" })).json()).run;
+    expect(await latest()).toBeNull();
+
+    await startAndFinish();
+    const second = await startAndFinish();
+    const got = await latest();
+    expect(got?.id).toBe(second.id);
+    expect(got?.nodes["video-1"]?.output?.video?.kind).toBe("video");
+
+    expect((await s.app.inject({ method: "GET", url: "/api/workflows/khong-co/runs/latest" })).statusCode).toBe(404);
   });
 
   it("media và run không tồn tại trả 404", async () => {

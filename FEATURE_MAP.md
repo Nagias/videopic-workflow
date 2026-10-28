@@ -43,7 +43,9 @@ Tính năng mẫu (khuôn cho mọi tính năng sau). Kế hoạch: `docs/superp
 | 5 | Chờ; trạng thái chung `[data-testid=run-status]`, từng node `[data-testid=node-status-<id>]`, tiến độ `[data-testid=node-message-<id>]` | hỏi lại mỗi 1 giây (nợ N-001) | `GET /api/runs/:id` | worker `createQueue().processNext()` → `executeRun()`: `planGraph()` kiểm đồ thị → chạy theo thứ tự → `cacheKeyOf()` → có cache thì `cached`, không thì `run()` của node | **Muse** nếu dịch vụ là Muse; **ffmpeg** nếu dịch vụ giả |
 | 6 | Xem clip `[data-testid=video-preview-<id>]` | `<video src=mediaUrl(id)>` | `GET /api/media/:id` (hỗ trợ tua, trả 206) | `reply.sendFile()` từ `.data/media` | — |
 | 7 | Lỗi | thanh `[data-testid=problem-banner]` + `[data-testid=node-error-<id>]` | — | lỗi tiếng Việt từ `planGraph()` / provider | — |
-| — | Thêm node: ô chọn `[data-testid=add-node]` | `addNode()` | — | — | — |
+| — | Mở workflow (lúc tải trang hoặc đổi workflow) | `showWorkflow()` gọi `api.getLatestRun()`; có lần chạy thì hiện lại output từng node, `[data-testid=run-status]` ghi "Lần trước: …"; lần đó đang chạy dở thì tiếp tục hỏi tiến độ như bước 5 | `GET /api/workflows/:id/runs/latest` | `registerRunRoutes()`: lần chạy mới nhất theo `createdAt`, chưa chạy lần nào thì `{ run: null }` | — |
+| — | Thêm node: ô chọn `[data-testid=add-node]` | `addNode()`: đặt giữa vùng đang nhìn (`placeNewNode()`), chọn sẵn, lấy dịch vụ của node đang có (`inheritProvider()`) — `src/features/editor/ui/new-node.ts` | — | — | — |
+| — | Nối dây | `onConnect()`: cổng vào đã có dây thì thay dây cũ. Thả sai cổng → `onConnectEnd()` + `droppedConnectionProblem()` hiện lý do và chỗ cắm đúng (`acceptersOf()`) ở `[data-testid=problem-banner]`. Màu cổng/dây theo loại dữ liệu (`edgeKindClass()`, CSS `.kind-*`) — `src/features/editor/ui/graph-convert.ts` | — | — | — |
 | — | Xem tài khoản Muse `[data-testid=muse-accounts]` | khi mở app | `GET /api/muse/accounts` | `musePool.snapshot()` | — |
 
 ### 2.2 Bên trong node Tạo video khi chọn Muse (`src/providers/muse/index.ts`)
@@ -66,6 +68,8 @@ Tính năng mẫu (khuôn cho mọi tính năng sau). Kế hoạch: `docs/superp
 | `npx vitest run src/providers` | khuôn prompt Muse, kiểm clip, xoay vòng hồ sơ, chặn Muse trong test |
 | `npx vitest run tests/api.test.ts` | API lưu → chạy → xem clip (206), lỗi 400/404, chạy tiếp sau khi tắt máy giữa chừng |
 | `npx vitest run tests/local-only.test.ts` | trang web lạ không bấm Chạy hộ được (403) |
+| `npx vitest run src/features/editor` | lý do nối sai và gợi ý chỗ cắm, màu dây, chỗ đặt node mới, dịch vụ node mới |
+| `npx playwright test e2e/giao-dien-nhanh.spec.ts` | bấm thật: mở lại workflow đã chạy thấy clip cũ; kéo dây sai thấy lý do; cắm vào cổng đã có dây thì thay dây; node mới hiện giữa màn hình, cùng dịch vụ |
 | `npm run test:e2e` | Playwright bấm thật: gõ prompt → Chạy → clip 5 giây 1280×720 trong node → Chạy lại = "Dùng lại kết quả"; prompt trống; chọn Muse khi chưa đăng nhập. Thêm `e2e/muse-driver.spec.ts`: Muse provider chạy trên **trang Muse giả** (menu Chats → New side chat, video cũ vẽ lại dưới link mới) — không tốn lượt |
 | `npm run smoke:muse` | **Muse** thật, 1 clip 5 giây (chạy tay) |
 

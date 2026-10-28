@@ -43,6 +43,9 @@ export const RunResponseSchema = z.object({
 });
 export type RunResponse = z.infer<typeof RunResponseSchema>;
 
+export const LatestRunResponseSchema = z.object({ run: RunResponseSchema.nullable() });
+export type LatestRunResponse = z.infer<typeof LatestRunResponseSchema>;
+
 export const MuseAccountsResponseSchema = z.object({
   accounts: z.array(z.object({ id: z.string(), state: z.enum(["ready", "busy", "needs_login", "cooldown"]), loggedIn: z.boolean() })),
 });

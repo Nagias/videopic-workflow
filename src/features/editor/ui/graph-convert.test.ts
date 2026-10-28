@@ -1,0 +1,51 @@
+import { describe, expect, it } from "vitest";
+import { acceptersOf, connectionProblem, droppedConnectionProblem, edgeKindClass, toFlow } from "./graph-convert";
+import type { FlowNode } from "./GraphNode";
+
+const node = (id: string, type: string): FlowNode => ({ id, type, position: { x: 0, y: 0 }, data: { params: {} } });
+const nodes = [node("p", "prompt"), node("v", "generate-video"), node("c", "character"), node("f", "film"), node("w", "writer")];
+
+describe("nối dây giữa các node", () => {
+  it("cùng loại thì nối được, kể cả cổng vào đã có dây (dây mới thay dây cũ)", () => {
+    expect(connectionProblem({ source: "p", sourceHandle: "text", target: "v", targetHandle: "prompt" }, nodes)).toBeNull();
+    expect(connectionProblem({ source: "c", sourceHandle: "character", target: "f", targetHandle: "character" }, nodes)).toBeNull();
+  });
+
+  it("khác loại: nói bằng tên cổng tiếng Việt và gợi ý chỗ cắm đúng", () => {
+    const why = connectionProblem({ source: "c", sourceHandle: "character", target: "v", targetHandle: "prompt" }, nodes);
+    expect(why).toContain("«Nhân vật» của Hồ sơ nhân vật là Bộ ảnh");
+    expect(why).toContain("«Prompt» của Tạo video cần Chữ");
+    expect(why).toContain("Bộ ảnh cắm được vào: ");
+    expect(why).toContain("Dựng phim (Nhân vật, Không gian)");
+    expect(why).toContain("Biên kịch (AI) (Nhân vật, Không gian)");
+  });
+
+  it("đầu ra chưa node nào nhận thì nói thẳng là chưa có", () => {
+    const why = connectionProblem({ source: "v", sourceHandle: "video", target: "f", targetHandle: "shots" }, nodes);
+    expect(why).toContain("Hiện chưa có node nào nhận Video");
+    expect(acceptersOf("video")).toEqual([]);
+  });
+
+  it("thả dây: tự đổi chiều khi kéo từ cổng vào; hai cổng cùng phía hoặc cùng node thì báo cách kéo", () => {
+    const fromInput = droppedConnectionProblem({ nodeId: "v", id: "prompt", type: "target" }, { nodeId: "c", id: "character", type: "source" }, nodes);
+    expect(fromInput).toContain("cần Chữ");
+    expect(droppedConnectionProblem({ nodeId: "p", id: "text", type: "source" }, { nodeId: "c", id: "character", type: "source" }, nodes)).toContain(
+      "Hai đầu đều là cổng ra",
+    );
+    expect(droppedConnectionProblem({ nodeId: "f", id: "video", type: "source" }, { nodeId: "f", id: "shots", type: "target" }, nodes)).toBe(
+      "Không nối node vào chính nó",
+    );
+  });
+
+  it("dây mang màu theo loại ở cổng ra, cả khi mở workflow đã lưu", () => {
+    expect(edgeKindClass({ source: "c", sourceHandle: "character" }, nodes)).toBe("kind-imageset");
+    const flow = toFlow({
+      nodes: [
+        { id: "p", type: "prompt", position: { x: 0, y: 0 }, params: {} },
+        { id: "v", type: "generate-video", position: { x: 0, y: 0 }, params: {} },
+      ],
+      edges: [{ id: "e", source: "p", sourceHandle: "text", target: "v", targetHandle: "prompt" }],
+    });
+    expect(flow.edges[0]?.className).toBe("kind-text");
+  });
+});
