@@ -24,7 +24,7 @@ export function GraphNode({ id, type, data, selected }: NodeProps<FlowNode>) {
         </span>
       </header>
       {definition.inputs.map((p) => (
-        <div className="port in" key={p.name}>
+        <div className={`port in kind-${p.kind}`} key={p.name}>
           <Handle type="target" position={Position.Left} id={p.name} className={`handle kind-${p.kind}`} />
           <span>
             {p.label} <em>{PORT_KIND_LABEL[p.kind]}</em>
@@ -47,7 +47,7 @@ export function GraphNode({ id, type, data, selected }: NodeProps<FlowNode>) {
         </div>
       ) : null}
       {definition.outputs.map((p) => (
-        <div className="port out" key={p.name}>
+        <div className={`port out kind-${p.kind}`} key={p.name}>
           <span>
             {p.label} <em>{PORT_KIND_LABEL[p.kind]}</em>
           </span>
