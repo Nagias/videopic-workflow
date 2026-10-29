@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../app/api-client";
 import type { ExpandScenesBody, RunNodeState, RunResponse, RunScope } from "../../../shared/api";
-import { writersFinished } from "./run-sync";
+import { paramsSnapshot, staleResultIds, withoutResults, writersFinished } from "./run-sync";
 import { isActive, runView } from "./run-view";
 import { errText, type WorkflowApi } from "./use-workflow";
 
@@ -13,7 +13,7 @@ const NO_IDS: readonly string[] = [];
 // Lượt chạy của workflow đang mở: bắt đầu, hỏi tiến độ, gộp kết quả vào các node, tải lại đồ thị giữa và cuối lượt chạy, huỷ,
 // và trả lời hộp hỏi Thay/Giữ của Biên kịch.
 export function useRun(wf: WorkflowApi) {
-  const { workflowId, shownWorkflow, groups, onShown, save, flushEdits, applyGraph, reloadGraph, setProblem } = wf;
+  const { workflowId, shownWorkflow, groups, latest, onShown, save, flushEdits, applyGraph, reloadGraph, setProblem } = wf;
   const [run, setRun] = useState<RunResponse | null>(null);
   // true khi `run` là lần chạy cũ tải lại lúc mở workflow (chưa xem trực tiếp trong phiên này).
   const [runFromHistory, setRunFromHistory] = useState(false);
@@ -89,9 +89,20 @@ export function useRun(wf: WorkflowApi) {
       setSyncing(true);
       try {
         await flushEdits();
+        // Tham số các thẻ ngay trước khi đổi: kết quả đang hiện là của những tham số này.
+        const before = paramsSnapshot(latest.current.nodes.map((n) => ({ id: n.id, params: n.data.params })));
         const next = await api.expandScenes(id, writerId, choice);
         if (shownWorkflow.current !== id) return false;
         applyGraph(next);
+        // Thẻ nào tham số khác (hoặc mới) thì kết quả cũ không còn đúng: hiện "Chưa chạy" tới lần chạy sau. Thẻ giữ nguyên thì giữ kết quả.
+        const shown = currentRun.current;
+        if (shown) {
+          const nodes = withoutResults(shown.nodes, staleResultIds(before, next.graph.nodes));
+          if (nodes !== shown.nodes) {
+            currentRun.current = { ...shown, nodes };
+            setRun(currentRun.current);
+          }
+        }
         return true;
       } catch (e) {
         setProblem(errText(e));
@@ -100,7 +111,7 @@ export function useRun(wf: WorkflowApi) {
         setSyncing(false);
       }
     },
-    [flushEdits, applyGraph, shownWorkflow, setProblem],
+    [flushEdits, applyGraph, latest, shownWorkflow, setProblem],
   );
 
   const active = isActive(run);

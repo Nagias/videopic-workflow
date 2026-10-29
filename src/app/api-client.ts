@@ -52,6 +52,9 @@ async function call<S extends z.ZodType>(schema: S, url: string, init?: RequestI
   return schema.parse(body);
 }
 
+export const ESTIMATE_TIMEOUT_MS = 20_000;
+export const ESTIMATE_TIMEOUT_MESSAGE = "Ước tính quá lâu, thử lại";
+
 const runBody = (scope?: RunScope): RunRequestBody => (scope ? { scope } : {});
 
 export const api = {
@@ -73,8 +76,23 @@ export const api = {
   // Không truyền scope: chạy cả workflow.
   startRun: (workflowId: string, scope?: RunScope) =>
     call(StartRunResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/runs`, { method: "POST", body: JSON.stringify(runBody(scope)) }),
-  estimate: (workflowId: string, scope?: RunScope) =>
-    call(EstimateResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/estimate`, { method: "POST", body: JSON.stringify(runBody(scope)) }),
+  // Quá hạn (timeoutMs) thì huỷ yêu cầu và báo lỗi: giao diện bị khoá trong lúc ước tính nên không được chờ mãi.
+  estimate: async (workflowId: string, scope?: RunScope, timeoutMs = ESTIMATE_TIMEOUT_MS) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await call(EstimateResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/estimate`, {
+        method: "POST",
+        body: JSON.stringify(runBody(scope)),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      if (controller.signal.aborted) throw new Error(ESTIMATE_TIMEOUT_MESSAGE, { cause: e });
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
   cancelRun: (runId: string) => call(CancelRunResponseSchema, `/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST", body: "{}" }),
   expandScenes: (workflowId: string, writerId: string, choice?: ExpandScenesBody["choice"]) =>
     call(WorkflowResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/scenes`, {

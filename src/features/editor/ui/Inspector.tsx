@@ -9,7 +9,7 @@ import type { PortValue } from "../../../shared/ports";
 import type { FlowNode } from "./GraphNode";
 import { iconOf } from "./NodeCard";
 import { NodeErrorBoundary } from "./NodeErrorBoundary";
-import { STATUS_LABEL, useEditor } from "./node-kit";
+import { STATUS_LABEL, useEditor, type IncomingWire } from "./node-kit";
 import { promptPreview } from "./prompt-preview";
 
 type Tab = "params" | "result" | "prompt";
@@ -140,6 +140,7 @@ function InspectorBody({ node, sources }: { node: FlowNode; sources: InspectorSo
   const state = editor.stateOf(node.id);
   if (!impl) return <div className="inspector" data-testid="inspector">Loại node lạ: {node.type}</div>;
   const { definition, View } = impl;
+  const incoming = incomingWires(node.id, sources, (n) => editor.titleOf(n.id, webNodes[n.type ?? ""]?.definition.label ?? n.id, n.data.params));
   const tabs: { id: Tab; label: string; testid: string }[] = [
     { id: "params", label: "Thông số", testid: "inspector-tab-params" },
     { id: "result", label: "Kết quả", testid: "inspector-tab-result" },
@@ -165,6 +166,7 @@ function InspectorBody({ node, sources }: { node: FlowNode; sources: InspectorSo
             <View
               id={node.id}
               params={node.data.params}
+              incoming={incoming}
               setParams={(patch) => editor.setParams(node.id, patch)}
               replaceParams={(params) => editor.replaceParams(node.id, params)}
               state={state}
@@ -185,6 +187,15 @@ export function sourcesOf(nodeId: string, nodes: FlowNode[], edges: Edge[]): Ins
   const feeding = edges.filter((e) => e.target === nodeId);
   const ids = new Set(feeding.map((e) => e.source));
   return { nodes: nodes.filter((n) => ids.has(n.id)), edges: feeding };
+}
+
+// Các dây cắm vào node đang chọn, cho View của nó (mỗi dây một dòng, theo thứ tự dây trong đồ thị).
+export function incomingWires(nodeId: string, sources: InspectorSources, labelOf: (node: FlowNode) => string): IncomingWire[] {
+  const byId = new Map(sources.nodes.map((n) => [n.id, n]));
+  return sources.edges.flatMap((e) => {
+    const source = byId.get(e.source);
+    return e.target === nodeId && source && e.targetHandle ? [{ source: source.id, port: e.targetHandle, label: labelOf(source), position: source.position }] : [];
+  });
 }
 
 type InspectorProps = { node: FlowNode | null; sources: InspectorSources };

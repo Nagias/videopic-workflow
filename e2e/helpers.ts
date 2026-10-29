@@ -30,3 +30,19 @@ export async function runAllConfirmed(page: Page): Promise<void> {
   await expect(page.getByTestId("run-confirm")).toBeVisible();
   await page.getByTestId("run-confirm-ok").click();
 }
+
+// Bấm vào một chỗ trống của nền canvas. Tìm điểm trống thật (ngoài thẻ, khung nhóm, nút điều khiển và minimap, tức là chỗ
+// elementFromPoint trả về chính nền) từ góc trên trái trở đi, thay cho toạ độ cố định có thể rơi vào nút điều khiển ở góc dưới phải.
+export async function clickEmptyPane(page: Page): Promise<void> {
+  const spot = await page.evaluate(() => {
+    const canvas = document.querySelector(".canvas")!.getBoundingClientRect();
+    for (let y = canvas.top + 40; y < canvas.bottom - 40; y += 40) {
+      for (let x = canvas.left + 40; x < canvas.right - 40; x += 40) {
+        if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
+      }
+    }
+    return null;
+  });
+  if (!spot) throw new Error("clickEmptyPane: không tìm được chỗ trống trên nền canvas");
+  await page.mouse.click(spot.x, spot.y);
+}

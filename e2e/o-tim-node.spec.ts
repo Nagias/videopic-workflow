@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { clickEmptyPane } from "./helpers";
 
 type SavedGraph = { graph: { nodes: { id: string; type: string }[]; edges: { source: string; sourceHandle: string; target: string; targetHandle: string }[] } };
 const readGraph = async (page: Page, id: string) => ((await (await page.request.get(`/api/workflows/${id}`)).json()) as SavedGraph).graph;
@@ -67,7 +68,7 @@ test("Space và nút + mở ô tìm; ↑↓ chọn, Esc đóng; đang gõ trong 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("spotlight")).toHaveCount(0);
 
-  await page.locator(".react-flow__pane").click({ position: { x: 600, y: 500 } });
+  await clickEmptyPane(page);
   await page.keyboard.press("Space");
   await expect(page.getByTestId("spotlight")).toBeVisible();
   // Chưa chọn gì lần nào: mặc định nhóm Cơ bản, chưa có nhóm Gần đây. Sang nhóm Tạo video: ↓ rồi Enter chọn mục thứ hai (Cảnh).

@@ -2,9 +2,14 @@ import { createContext, useContext, type ComponentType } from "react";
 import type { RunNodeState } from "../../../shared/api";
 import type { AnyNodeDefinition, NodeDefinition } from "../../../shared/node-definition";
 
+// Một dây đang cắm vào node: node nguồn (mã, tên người đọc, toạ độ trên canvas) và cổng của node này mà dây cắm vào.
+// View cần biết nguồn của mình (dải thứ tự clip của Ghép phim) thì đọc ở `incoming`; kết quả của nguồn lấy qua useEditor().stateOf().
+export type IncomingWire = { source: string; port: string; label: string; position: { x: number; y: number } };
+
 export type NodeViewProps<P> = {
   id: string;
   params: P;
+  incoming: readonly IncomingWire[];
   setParams: (patch: Partial<P>) => void;
   // Thay toàn bộ tham số (chọn từ kho): giữ đúng tham số cũ để máy chủ trúng lại kết quả đã có.
   replaceParams: (params: Record<string, unknown>) => void;

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { runAllConfirmed, useFakeSonLa } from "./helpers";
+import { clickEmptyPane, runAllConfirmed, useFakeSonLa } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const at = (x: number, y: number) => ({ x, y });
@@ -95,7 +95,7 @@ test("bấm Chạy cả workflow → hộp xác nhận (tiêu điểm ở Huỷ)
   await expect(box).toHaveCount(0);
 
   // Ctrl+Enter cũng qua hộp; bấm ra ngoài lớp phủ là Huỷ.
-  await page.locator(".react-flow__pane").click({ position: { x: 700, y: 520 } });
+  await clickEmptyPane(page);
   await page.keyboard.press("Control+Enter");
   await expect(box).toBeVisible();
   await expect(page.getByTestId("run-confirm-ok")).toBeEnabled();

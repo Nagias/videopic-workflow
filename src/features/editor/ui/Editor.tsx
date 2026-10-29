@@ -294,10 +294,12 @@ export function Editor() {
       let waiting = false;
       try {
         edit?.apply();
+        // Đồ thị lấy chữ ngay trước khi lưu: đúng bản được ước tính (lưu và ước tính là chuyện sau).
+        const key = graphKey();
         await save();
         const estimate = await api.estimate(workflowId, scope);
         if (needsConfirm(scope, estimate)) {
-          setPending({ scope, estimate, edit, graphKey: graphKey() });
+          setPending({ scope, estimate, edit, graphKey: key });
           waiting = true;
           return;
         }
@@ -325,9 +327,10 @@ export function Editor() {
       } else if (workflowId && graphKey() !== p.graphKey) {
         // Đồ thị đã khác bản đã ước tính: không chạy theo con số cũ, ước tính lại rồi hỏi lại.
         try {
+          const key = graphKey();
           await save();
           const estimate = await api.estimate(workflowId, p.scope);
-          setPending({ ...p, estimate, graphKey: graphKey() });
+          setPending({ ...p, estimate, graphKey: key });
           waiting = true;
         } catch (e) {
           setProblem(errText(e));

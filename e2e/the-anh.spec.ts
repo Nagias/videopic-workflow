@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { runAllConfirmed } from "./helpers";
+import { clickEmptyPane, runAllConfirmed } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -76,7 +76,7 @@ test("chọn thẻ Cảnh → khung phải có ô chuyển động; sửa → Đ
     .poll(async () => ((await (await page.request.get(`/api/workflows/${id}`)).json()) as { graph: { nodes: { params: { motion: string } }[] } }).graph.nodes[0]!.params.motion)
     .toBe("cô đi chậm về phía lều");
 
-  await page.locator(".react-flow__pane").click({ position: { x: 8, y: 8 } });
+  await clickEmptyPane(page);
   await expect(page.getByTestId("inspector")).toHaveCount(0);
 
   await page.getByTestId("card-s").click();
