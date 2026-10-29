@@ -21,23 +21,27 @@ export type NodeDefinition<P> = {
   hidden?: boolean;
   // Tên vùng khoá cache bước con (ctx.step); mặc định là type. Node cùng vùng dùng chung kết quả bước con.
   stepScope?: string;
-  // Ước tính số lần gọi dịch vụ ngoài; connected = tên các cổng vào đã nối. Có `known` (mọi node phía trước đã có kết quả)
-  // thì đếm đúng các bước con còn thiếu cache; không có thì ước theo tham số (thà dư còn hơn thiếu). src/core/estimate.ts gọi.
-  // (Khai báo kiểu phương thức để NodeDefinition<P> gán được cho AnyNodeDefinition.)
-  estimate?(params: P, connected: ReadonlySet<string>, known?: EstimateKnown): Calls;
-  // Kết quả node sẽ ra khi mọi bước con đã có (0 lượt), để ước tính node phía sau theo đúng đầu vào;
-  // undefined khi còn thiếu bước con. Chỉ dùng cho ước tính, không lưu, không hiện.
-  predict?(params: P, known: EstimateKnown): NodeOutputs | undefined;
+  // Ước tính số lần gọi dịch vụ ngoài; connected = tên các cổng vào đã nối. Có `known` thì đếm đúng các bước con còn thiếu
+  // cache với đầu vào đã biết; cổng chưa biết thì ước theo tham số (thà dư còn hơn thiếu). undefined: không ước được (đầu vào
+  // quyết định số lượt chưa có) → "unknown". Node có tham số provider bắt buộc khai báo (tests/architecture.test.ts).
+  // src/core/estimate.ts gọi. (Khai báo kiểu phương thức để NodeDefinition<P> gán được cho AnyNodeDefinition.)
+  estimate?(params: P, connected: ReadonlySet<string>, known?: EstimateKnown): Calls | undefined;
+  // Kết quả node sẽ ra khi mọi bước con đã có (0 lượt), để ước tính node phía sau theo đúng đầu vào; undefined khi còn thiếu
+  // bước con. Chỉ đúng các trường node phía sau dùng để ước tính (mã media, kích thước); không lưu, không hiện.
+  predict?(params: P, connected: ReadonlySet<string>, known: EstimateKnown): NodeOutputs | undefined;
   // Kiểm luật trên cả đồ thị trước khi lần chạy khởi chạy node đầu tiên (chưa tốn lượt nào); trả danh sách lỗi.
   // Có lỗi thì cả lần chạy dừng (src/core/preflight.ts).
   preflight?(ctx: PreflightCtx): string[];
 };
 
-// Điều đã biết trước khi chạy một node: giá trị đầu vào (từ cache của node phía trước) và cache bước con.
+// Điều đã biết trước khi chạy một node: giá trị đầu vào, cache bước con, thông tin file media đã lưu.
 export type EstimateKnown = {
+  // Chỉ các cổng mà mọi node nguồn đã có kết quả (cache, hoặc predict()); cổng vắng là chưa biết.
   inputs: Readonly<NodeInputs>;
   // Giá trị đã lưu của bước con ctx.step(keyParts) của chính node này (đúng vùng stepScope và lần tạo take); chưa có thì undefined.
   step(keyParts: unknown): unknown;
+  // Kích thước/thời lượng thật của file (bảng media); không có file thì undefined.
+  media(mediaId: string): { width: number | null; height: number | null; durationSec: number | null } | undefined;
 };
 
 // Node đã lập kế hoạch nhìn từ file dùng chung: PlannedNode (src/core/executor.ts) khớp kiểu này.

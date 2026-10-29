@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { CAMERA_ANGLES, CAMERA_MOVES, SHOT_SIZES, SUBJECTS, type Shot } from "../../shared/director";
-import { defineNode } from "../../shared/node-definition";
-import { pickInput } from "../../shared/ports";
-import { shotCalls } from "../../shared/shot-plan";
+import { defineNode, type EstimateKnown } from "../../shared/node-definition";
+import { mediaIdOf, pickInput, type NodeOutputs } from "../../shared/ports";
+import { chainFrameKey, shotFromCache, type ShotCacheInputs } from "../../shared/shot-plan";
 import { PROVIDER_IDS, type ProviderId } from "../../shared/providers";
 import { SHOT_CACHE_VERSION } from "../film/definition";
 
@@ -37,6 +37,18 @@ export const sceneShot = (p: SceneParams, follows: boolean): Shot => ({
   props: p.props,
 });
 
+// Đầu vào đã biết của cảnh, dạng shotFromCache() cần (cổng chưa biết thì vắng).
+const cacheInputs = (p: SceneParams, known: EstimateKnown | undefined): ShotCacheInputs => {
+  const inputs = known?.inputs ?? {};
+  return {
+    providerId: p.provider,
+    character: pickInput(inputs, "character", "imageset"),
+    location: pickInput(inputs, "location", "imageset"),
+    props: pickInput(inputs, "props", "props"),
+    prevClipId: pickInput(inputs, "follow", "video")?.mediaId,
+  };
+};
+
 export const definition = defineNode<SceneParams>({
   type: "scene",
   label: "Cảnh",
@@ -59,18 +71,22 @@ export const definition = defineNode<SceneParams>({
   defaults: { size: "MS", angle: "eye", move: "static", subject: "character", start: "", motion: "", props: "", provider: "fake" },
   // Theo đúng khoá bước con của makeShot(): biết đầu vào thì chỉ đếm bước còn thiếu cache; chưa biết thì cảnh nối hoặc
   // chữ→video 1 video, còn lại 1 ảnh + 1 video.
-  estimate(p, connected, known) {
-    const inputs = known?.inputs ?? {};
-    return shotCalls(
-      sceneShot(p, connected.has("follow")),
-      {
-        providerId: p.provider,
-        character: pickInput(inputs, "character", "imageset"),
-        location: pickInput(inputs, "location", "imageset"),
-        props: pickInput(inputs, "props", "props"),
-        prevClipId: pickInput(inputs, "follow", "video")?.mediaId,
-      },
-      (keyParts) => known?.step(keyParts),
-    );
+  estimate: (p, connected, known) => shotFromCache(sceneShot(p, connected.has("follow")), cacheInputs(p, known), (k) => known?.step(k)).calls,
+  // Clip (và khung đầu, khung cuối nếu đã rút) lấy từ cache bước con, kích thước/thời lượng từ bảng media: cảnh nối phía sau
+  // biết đúng clip cảnh trước. Không có meta ghép (`clip.clip`): cần ffprobe, không node nào ước tính dùng tới.
+  predict(p, connected, known) {
+    const r = shotFromCache(sceneShot(p, connected.has("follow")), cacheInputs(p, known), (k) => known.step(k));
+    const clip = r.clipId === undefined ? undefined : known.media(r.clipId);
+    if (r.clipId === undefined || !clip || clip.width === null || clip.height === null || clip.durationSec === null) return undefined;
+    const out: NodeOutputs = { clip: { kind: "video", mediaId: r.clipId, durationSec: clip.durationSec, width: clip.width, height: clip.height } };
+    const image = (mediaId: string | undefined) => {
+      const m = mediaId === undefined ? undefined : known.media(mediaId);
+      return mediaId === undefined || !m || m.width === null || m.height === null ? undefined : { kind: "image" as const, mediaId, width: m.width, height: m.height };
+    };
+    const frame = image(r.keyframeId);
+    const last = image(mediaIdOf(known.step(chainFrameKey(r.clipId))));
+    if (frame) out.frame = frame;
+    if (last) out.last = last;
+    return out;
   },
 });

@@ -45,9 +45,10 @@ function labelOf(p: PlannedNode, graph: WorkflowGraph): string {
 // Ước tính lượt của một lần chạy (spec mục 6.5): không gọi dịch vụ, không ghi gì. Đi đúng đường executeRun():
 // planGraph() → scopeNodes(), khoá node computeKeys(), khoá bước con stepKeyOf().
 // - Node có cache (hoặc trùng khoá với node chạy trước nó trong lần chạy) → "cached", 0 lượt.
-// - Node chạy → estimate() của node; mọi node phía trước đã có kết quả (cache, hoặc predict() của node chạy mà 0 lượt)
-//   thì truyền đầu vào thật để node đếm đúng bước con còn thiếu cache. Chưa có thì node ước theo tham số (ước dư).
-// - Node chờ một node viết chữ sẽ chạy lại (Biên kịch: nhóm cảnh, Đồ vật nối từ nó) hoặc chờ node "unknown" → "unknown".
+// - Node chạy → "run", estimate() của node với đầu vào đã biết (node phía trước có cache, hoặc chạy mà 0 lượt và có predict())
+//   để node đếm đúng bước con còn thiếu cache; cổng chưa biết thì node ước theo tham số (ước dư).
+// - "unknown": node chờ một node viết chữ sẽ chạy (Biên kịch: nhóm cảnh, Đồ vật nối từ nó), chờ node "unknown", estimate()
+//   trả undefined, hoặc node có tham số provider mà không có estimate() — không bao giờ coi là 0 lượt.
 export function estimateRun(deps: EstimateDeps, graph: WorkflowGraph, scope: RunScope): EstimateResponse {
   const cachedOutputs = (key: string): NodeOutputs | undefined => {
     const row = deps.db.select().from(nodeCache).where(eq(nodeCache.cacheKey, key)).get();
@@ -94,8 +95,10 @@ export function estimateRun(deps: EstimateDeps, graph: WorkflowGraph, scope: Run
   const outputs = new Map<string, NodeOutputs>();
   const firstOfKey = new Map<string, string>();
   const status = new Map<string, EstimateNode["status"]>();
-  // Node viết chữ sẽ chạy: chưa biết nó viết gì, nên chưa biết các node phụ thuộc nó tốn bao nhiêu.
+  // Node viết chữ sẽ chạy: chưa biết nó viết gì, nên chưa biết các node phụ thuộc nó tốn bao nhiêu (fromWriter).
   const writing = new Set<string>();
+  const fromWriter = new Set<string>();
+  const media = (mediaId: string) => deps.storage.getMedia(mediaId);
   const nodes: EstimateNode[] = [];
   for (const p of order) {
     const id = p.node.id;
@@ -113,16 +116,21 @@ export function estimateRun(deps: EstimateDeps, graph: WorkflowGraph, scope: Run
       outputs.set(id, hit);
     } else {
       const connected = new Set(p.inputs.keys());
-      if (sourcesOf(p).some((s) => writing.has(s) || status.get(s) === "unknown")) {
+      const afterWriter = sourcesOf(p).some((s) => writing.has(s) || fromWriter.has(s));
+      let estimated: Calls | undefined;
+      if (!afterWriter && !sourcesOf(p).some((s) => status.get(s) === "unknown")) {
+        const known: EstimateKnown = { inputs: gatherInputs(p, current, (nodeId) => outputs.get(nodeId)).inputs, step: stepOf(p), media };
+        estimated = def.estimate ? def.estimate(p.params, connected, known) : providerOf(p.params) === null ? ZERO : undefined;
+        const predicted = estimated && isZero(estimated) ? def.predict?.(p.params, connected, known) : undefined;
+        if (predicted) outputs.set(id, predicted);
+      }
+      if (estimated) {
+        state = "run";
+        calls = estimated;
+      } else {
         state = "unknown";
         calls = def.estimate?.(p.params, connected) ?? ZERO;
-      } else {
-        state = "run";
-        const gathered = gatherInputs(p, current, (nodeId) => outputs.get(nodeId));
-        const known: EstimateKnown | undefined = "inputs" in gathered ? { inputs: gathered.inputs, step: stepOf(p) } : undefined;
-        calls = def.estimate?.(p.params, connected, known) ?? ZERO;
-        const predicted = known && isZero(calls) ? def.predict?.(p.params, known) : undefined;
-        if (predicted) outputs.set(id, predicted);
+        if (afterWriter) fromWriter.add(id);
       }
       if (calls.text > 0) writing.add(id);
     }
@@ -133,6 +141,6 @@ export function estimateRun(deps: EstimateDeps, graph: WorkflowGraph, scope: Run
 
   const total = nodes.reduce((sum, n) => add(sum, n.calls), ZERO);
   const museTotal = nodes.filter((n) => n.provider === "muse").reduce((sum, n) => add(sum, n.calls), ZERO);
-  const waitsOnWriter = [...writing].some((id) => writerGroups(current, id).length > 0) || nodes.some((n) => n.status === "unknown");
+  const waitsOnWriter = [...writing].some((id) => writerGroups(current, id).length > 0) || fromWriter.size > 0;
   return { nodes, total, museTotal, waitsOnWriter };
 }

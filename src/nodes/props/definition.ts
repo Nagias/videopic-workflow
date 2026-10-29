@@ -62,14 +62,15 @@ export const definition = defineNode<PropsParams>({
   cacheVersion: codeVersion(propStillPrompt, propStatePrompt),
   params,
   defaults: { name: "", items: [], provider: "fake" },
-  // 1 ảnh mỗi trạng thái mỗi món, trừ ảnh đã có trong cache bước con.
+  // 1 ảnh mỗi trạng thái mỗi món, trừ ảnh đã có trong cache bước con. Nối Biên kịch mà chưa biết danh sách: không ước được.
   estimate(p, connected, known) {
-    const spec = knownSpec(p, connected, known) ?? [];
+    const spec = knownSpec(p, connected, known);
+    if (!spec) return undefined;
     const image = spec.reduce((n, item) => n + item.states.filter((_, idx) => known?.step(propStepKey(p.provider, item, idx)) === undefined).length, 0);
     return { image, video: 0, text: 0 };
   },
-  predict(p, known) {
-    const spec = knownSpec(p, new Set(Object.keys(known.inputs)), known);
+  predict(p, connected, known) {
+    const spec = knownSpec(p, connected, known);
     if (!spec) return undefined;
     const items: PropItem[] = [];
     for (const item of spec) {

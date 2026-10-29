@@ -22,10 +22,9 @@ Trả nợ xong: chuyển dòng xuống mục "Đã trả", ghi ngày và commit
 | N-013 | Kho tài sản chưa có nút xoá/đổi tên mục; trùng tên thì hiện hai mục | Ít mục, một người dùng | Kho dài, khó chọn | Khi kho > 30 mục | 28/10/2026 |
 | N-014 | Biên kịch không có ô sửa tay riêng (muốn sửa phải chép sang node Danh sách cảnh) | Giữ một nơi sửa cảnh duy nhất | Sửa 1 cảnh của Biên kịch phải chép cả danh sách | Khi chủ dự án dùng Biên kịch thường xuyên: thêm nút "Chép sang Danh sách cảnh" | 28/10/2026 |
 | N-015 | Khi danh sách đồ vật đến từ Biên kịch, tên/trạng thái đồ vật lạ chỉ bị chặn trong từng Cảnh (trước khi Cảnh đó gọi Muse, `src/nodes/scene/run.ts`), không chặn cả lượt chạy ở bước kiểm luật trước khi chạy (`scenesFeeding()` chưa biết món nào trước khi Đồ vật chạy) | Các cảnh khác chạy song song không mất lượt vì kết quả được cache và dùng lại | Một lượt chạy kết thúc với cảnh lỗi trong khi cảnh khác đã chạy | Khi chủ dự án muốn chặn cả lượt chạy, hoặc khi Biên kịch → thẻ cảnh (Task 5) cho thấy lỗi này hay gặp | 29/10/2026 |
-| N-016 | Ước tính lượt (`src/core/estimate.ts`): Cảnh nối tiếp sau một Cảnh sẽ chạy lại luôn tính 1 video, vì chưa dự đoán clip của cảnh trước (Cảnh chưa có `predict()`, chỉ Đồ vật có) | Dự đoán đủ kết quả Cảnh cần thời lượng/âm thanh thật của clip (ffprobe); spec mục 6.5 cho ước dư, cấm ước thiếu | Workflow cũ vừa chuyển sang Cảnh (Sơn La) hiện 2 video dù chạy thật 0 lượt, hộp xác nhận hỏi thừa | Khi chủ dự án thấy hộp xác nhận hỏi thừa vì ước dư này: thêm `predict()` cho Cảnh (clip lấy từ cache bước con) | 29/10/2026 |
 
 ## Đã trả
 
 | Mã | Nợ gì | Ngày trả | Commit |
 |---|---|---|---|
-| N-005 | Không có nút huỷ run đang chạy — trả bằng `POST /api/runs/:id/cancel` (`queue.cancel()`: huỷ tín hiệu riêng của run, không gửi việc mới cho dịch vụ); nút trên giao diện làm ở Task 8 | 29/10/2026 | `api: chạy theo phạm vi, ước tính lượt, huỷ lượt chạy, kết quả gộp theo node` |
+| N-005 | Không có nút huỷ run đang chạy — trả bằng `POST /api/runs/:id/cancel` (`queue.cancel()`: huỷ tín hiệu riêng của run, không gửi việc mới cho dịch vụ); nút trên giao diện làm ở Task 8 | 29/10/2026 | `f46a0b7` |

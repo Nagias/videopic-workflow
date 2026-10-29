@@ -176,21 +176,22 @@ export function computeKeys(order: PlannedNode[], graph: WorkflowGraph): Map<str
   return keys;
 }
 
-// Giá trị đầu vào của node từ kết quả các node nguồn; thiếu thì trả dây đầu tiên chưa có giá trị.
-export function gatherInputs(p: PlannedNode, graph: WorkflowGraph, outputOf: (nodeId: string) => NodeOutputs | undefined): { inputs: NodeInputs } | { missing: SourceRef } {
+// Giá trị đầu vào của node từ kết quả các node nguồn. Cổng có dây chưa có giá trị thì vắng trong inputs, dây đó vào missing.
+export function gatherInputs(p: PlannedNode, graph: WorkflowGraph, outputOf: (nodeId: string) => NodeOutputs | undefined): { inputs: NodeInputs; missing: SourceRef[] } {
   const inputs: NodeInputs = {};
+  const missing: SourceRef[] = [];
   for (const port of p.impl.definition.inputs) {
     if (!p.inputs.has(port.name)) continue;
     const wires = port.multiple ? orderSources(p, port.name, graph) : p.inputs.get(port.name)!;
     const values: PortValue[] = [];
     for (const src of wires) {
       const value = outputOf(src.source)?.[src.sourceHandle];
-      if (!value) return { missing: src };
-      values.push(value);
+      if (value) values.push(value);
+      else missing.push(src);
     }
-    inputs[port.name] = port.multiple ? values : values[0]!;
+    if (values.length === wires.length) inputs[port.name] = port.multiple ? values : values[0]!;
   }
-  return { inputs };
+  return { inputs, missing };
 }
 
 // Khoá cache của bước con ctx.step: theo vùng (stepScope) và lần tạo (take > 1), không theo node.
@@ -314,9 +315,8 @@ export async function executeRun(
 
   const runNode = async (p: PlannedNode): Promise<void> => {
     const id = p.node.id;
-    const gathered = gatherInputs(p, current, (nodeId) => outputs.get(nodeId));
-    if ("missing" in gathered) throw new Error(`Node nguồn "${gathered.missing.source}" không trả cổng "${gathered.missing.sourceHandle}"`);
-    const { inputs } = gathered;
+    const { inputs, missing } = gatherInputs(p, current, (nodeId) => outputs.get(nodeId));
+    if (missing[0]) throw new Error(`Node nguồn "${missing[0].source}" không trả cổng "${missing[0].sourceHandle}"`);
     const take = takeOf(p.params);
     const stepScope = p.impl.definition.stepScope ?? p.node.type;
     const key = nodeKeyOf(p, current, (nodeId) => keys.get(nodeId));

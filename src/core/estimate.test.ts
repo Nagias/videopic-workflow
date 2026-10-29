@@ -87,16 +87,21 @@ describe("ước tính lượt trước khi chạy (POST /api/workflows/:id/esti
     expect(await run()).toEqual(ZERO);
   });
 
-  it("Sơn La cũ (Dựng phim) đã chuyển khi mở: ước tính 0 ảnh, chỉ 2 cảnh nối ước dư 1 video; chạy lại rồi total 0", async () => {
+  it("Sơn La cũ (Dựng phim) chưa chạy: Dựng phim ước theo từng cảnh (9 ảnh khung, 12 video), không tính là miễn phí", async () => {
+    await save(legacySonLaGraph());
+    const e = await estimate();
+    expect(e.nodes.find((n) => n.id === "film-1")).toMatchObject({ status: "run", calls: { image: 9, video: 12, text: 0 } });
+    expect(e.total).toEqual({ image: 24, video: 12, text: 0 });
+    expect(await run()).toEqual(e.total);
+    expect((await estimate()).total).toEqual(ZERO);
+  });
+
+  it("Sơn La cũ (Dựng phim) đã chuyển khi mở: ước tính 0 (bước con của Dựng phim dùng chung với Cảnh, cảnh nối biết clip cảnh trước qua predict); chạy lại 0 lượt", async () => {
     await save(legacySonLaGraph());
     await run();
-    const graph = (await open()).graph;
+    await open();
     const e = await estimate();
-    // Bước con của Dựng phim dùng chung với Cảnh: mọi ảnh khung và clip có sẵn. Cảnh nối chưa biết clip của cảnh trước
-    // (cảnh trước có khoá node mới) nên ước 1 video — ước dư, không ước thiếu.
-    expect(e.total).toEqual({ image: 0, video: 2, text: 0 });
-    const ids = sceneIds(graph);
-    expect(e.nodes.filter((n) => n.calls.video > 0).map((n) => n.id)).toEqual([ids[5], ids[9]]);
+    expect(e.total).toEqual(ZERO);
     expect(await run()).toEqual(ZERO);
     expect((await estimate()).total).toEqual(ZERO);
   });

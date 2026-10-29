@@ -86,17 +86,19 @@ export function textClipStep(shot: Shot, providerId: string, location: ImageSetV
 // Khung cuối của clip: cùng khoá với khung đầu của cảnh nối phía sau (ffmpeg, không gọi dịch vụ).
 export const chainFrameKey = (clipId: string): unknown[] => ["chain-frame", clipId];
 
-// Số lần gọi dịch vụ của một cảnh khi chạy, theo đúng khoá bước con makeShot() sẽ dùng. `step` trả giá trị đã lưu (undefined: chưa có).
-// Thiếu Nhân vật/Không gian (node phía trước sẽ chạy) hoặc chưa biết khung đầu thì coi như phải tạo: ước dư, không ước thiếu.
-export function shotCalls(
-  shot: Shot,
-  a: { providerId: string; character?: ImageSetValue; location?: ImageSetValue; props?: PropSetValue; prevClipId?: string },
-  step: (keyParts: unknown) => unknown,
-): Calls {
-  const missing = (keyParts: unknown[]) => step(keyParts) === undefined;
+// Ảnh xem trước của cảnh chữ→video: rút từ clip (ffmpeg, không gọi dịch vụ).
+export const thumbKey = (clipId: string): unknown[] => ["thumb", clipId];
+
+export type ShotCacheInputs = { providerId: string; character?: ImageSetValue; location?: ImageSetValue; props?: PropSetValue; prevClipId?: string };
+
+// Một cảnh nhìn từ cache bước con, đi đúng đường makeShot() sẽ đi. `step` trả giá trị đã lưu (undefined: chưa có).
+// calls: số lần gọi dịch vụ còn thiếu; thiếu Nhân vật/Không gian (node phía trước sẽ chạy) hoặc chưa biết khung đầu thì coi
+// như phải tạo (ước dư, không ước thiếu). keyframeId/clipId: ảnh khung (cảnh chữ→video: ảnh xem trước) và clip khi đã có sẵn.
+export function shotFromCache(shot: Shot, a: ShotCacheInputs, step: (keyParts: unknown) => unknown): { calls: Calls; keyframeId?: string; clipId?: string } {
   if (textOnly(shot)) {
-    const video = a.location ? Number(missing(textClipStep(shot, a.providerId, a.location).keyParts)) : 1;
-    return { image: 0, video, text: 0 };
+    const clipId = a.location ? mediaIdOf(step(textClipStep(shot, a.providerId, a.location).keyParts)) : undefined;
+    const keyframeId = clipId === undefined ? undefined : mediaIdOf(step(thumbKey(clipId)));
+    return { calls: { image: 0, video: clipId === undefined ? 1 : 0, text: 0 }, keyframeId, clipId };
   }
   let image = 0;
   let keyframeId: string | undefined;
@@ -106,6 +108,19 @@ export function shotCalls(
     keyframeId = a.character && a.location ? mediaIdOf(step(keyframeStep({ shot, providerId: a.providerId, character: a.character, location: a.location, props: a.props }).keyParts)) : undefined;
     if (keyframeId === undefined) image = 1;
   }
-  const video = keyframeId !== undefined && a.character && !missing(clipStep(shot, a.providerId, a.character, keyframeId).keyParts) ? 0 : 1;
-  return { image, video, text: 0 };
+  const clipId = keyframeId !== undefined && a.character ? mediaIdOf(step(clipStep(shot, a.providerId, a.character, keyframeId).keyParts)) : undefined;
+  return { calls: { image, video: clipId === undefined ? 1 : 0, text: 0 }, keyframeId, clipId };
+}
+
+// Cả chuỗi cảnh (Dựng phim): cảnh nối lấy clip cảnh trước nếu đã có sẵn, chưa có thì 1 video.
+export function shotListCalls(shots: Shot[], a: Omit<ShotCacheInputs, "prevClipId">, step: (keyParts: unknown) => unknown): Calls {
+  let prevClipId: string | undefined;
+  const total: Calls = { image: 0, video: 0, text: 0 };
+  for (const shot of shots) {
+    const r = shotFromCache(shot, { ...a, prevClipId }, step);
+    total.image += r.calls.image;
+    total.video += r.calls.video;
+    prevClipId = r.clipId;
+  }
+  return total;
 }

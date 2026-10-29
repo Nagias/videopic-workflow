@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { defineNode } from "../../shared/node-definition";
+import { pickInput } from "../../shared/ports";
 import { codeVersion, keyframePrompt, motionPrompt, textVideoPrompt } from "../../shared/prompts";
 import { PROVIDER_IDS } from "../../shared/providers";
+import { shotListCalls } from "../../shared/shot-plan";
 
 export { SHOT_SECONDS } from "../../shared/director";
 export const CHAIN_TRIM_SEC = 2 / 24;
@@ -34,4 +36,13 @@ export const definition = defineNode<FilmParams>({
   hidden: true,
   params,
   defaults: { provider: "fake", fixBrightness: true },
+  // Tổng các cảnh theo đúng khoá bước con của makeShot() (cảnh nối: clip cảnh trước có sẵn thì biết, không thì 1 video).
+  // Chưa biết danh sách cảnh (node Danh sách cảnh/Biên kịch sẽ chạy) thì không ước được.
+  estimate(p, _connected, known) {
+    const inputs = known?.inputs ?? {};
+    const shots = pickInput(inputs, "shots", "shotlist")?.shots;
+    if (!shots) return undefined;
+    const refs = { character: pickInput(inputs, "character", "imageset"), location: pickInput(inputs, "location", "imageset"), props: pickInput(inputs, "props", "props") };
+    return shotListCalls(shots, { providerId: p.provider, ...refs }, (k) => known?.step(k));
+  },
 });
