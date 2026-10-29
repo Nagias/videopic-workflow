@@ -16,8 +16,15 @@ test("Luồng 3/4 — mẫu Ý tưởng → phim: Biên kịch (giả) viết 8 
   }
   await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
 
-  // Lần 1: Biên kịch viết xong thì máy chủ tạo 8 thẻ cảnh trong lúc chạy; giao diện tải lại đồ thị sau khi chạy xong.
+  // Lần 1: Biên kịch viết xong thì máy chủ tạo 8 thẻ cảnh trong lúc chạy; giao diện tải lại đồ thị ngay lúc đó (chưa hết
+  // lần chạy), không chờ chạy xong — trạng thái lần chạy đọc cùng lúc thẻ cảnh xuất hiện, trong trang.
   await page.getByTestId("run-button").click();
+  const statusWhenCardsAppear = await page.waitForFunction(
+    () => (document.querySelector('[data-testid="node-scene-g1-8"]') ? (document.querySelector('[data-testid="run-status"]')?.textContent ?? "") : false),
+    undefined,
+    { timeout: 120_000 },
+  );
+  expect(await statusWhenCardsAppear.jsonValue()).toBe("Đang chạy…");
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 240_000 });
   await expect(page.getByTestId("writer-result-writer-1").locator("li")).toHaveCount(8);
   await expect(page.getByTestId("props-gallery-props-1").locator("img")).toHaveCount(2);

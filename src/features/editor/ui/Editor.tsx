@@ -20,6 +20,7 @@ import type { WorkflowGroup } from "../../../shared/workflow";
 import { connectionProblem, droppedConnectionProblem, edgeKindClass, fromFlow, replaceTargetEdges, targetAcceptsMany, toFlow } from "./graph-convert";
 import { GraphNode, type FlowNode } from "./GraphNode";
 import { inheritProvider, placeNewNode } from "./new-node";
+import { writersFinished } from "./run-sync";
 import { EditorContext, type EditorApi } from "./node-kit";
 
 const nodeTypes = Object.fromEntries(Object.keys(webNodes).map((t) => [t, GraphNode]));
@@ -69,6 +70,8 @@ export function Editor() {
   // Đồ thị (dạng JSON như gửi lên) lần cuối tải về hoặc lưu xong. Canvas đổi mà đồ thị không đổi (đo kích thước node khi
   // ảnh hiện ra, chọn node) thì không lưu: tránh gửi bản cũ đè nhóm thẻ cảnh máy chủ vừa tạo lại trong lúc chạy.
   const savedGraph = useRef("");
+  // Biên kịch đã tải lại đồ thị giữa lần chạy (mỗi Biên kịch một lần mỗi lần chạy).
+  const reloadedWriters = useRef<{ runId: string | null; ids: Set<string> }>({ runId: null, ids: new Set() });
   const latest = useRef({ nodes, edges });
   latest.current = { nodes, edges };
   // Nhóm (Phân cảnh) của workflow đang mở: canvas chưa sửa nhóm, nhưng lưu phải giữ nguyên để Biên kịch còn tạo lại được.
@@ -95,6 +98,8 @@ export function Editor() {
     (wf: WorkflowResponse) => {
       applyGraph(wf);
       setWorkflowId(wf.id);
+      // Xoá ngay (không chờ render): lần hỏi tiến độ về muộn của workflow trước không được gộp vào workflow này.
+      currentRun.current = null;
       setRun(null);
       setRunFromHistory(false);
       setInfo(null);
@@ -137,11 +142,15 @@ export function Editor() {
     const graph = fromFlow(latest.current.nodes, latest.current.edges, groups.current);
     const pending = api.saveWorkflow(workflowId, { graph });
     saving.current = pending;
+    // Ghi nhận ngay lúc gửi: sửa rồi sửa ngược về đúng bản đang gửi trong lúc chờ thì không cần lưu thêm lần nữa.
+    const before = savedGraph.current;
+    const sent = JSON.stringify(graph);
+    savedGraph.current = sent;
     try {
       await pending;
-      savedGraph.current = JSON.stringify(graph);
       setSaveState("saved");
     } catch (e) {
+      if (savedGraph.current === sent) savedGraph.current = before;
       setSaveState("error");
       throw e;
     } finally {
@@ -155,32 +164,51 @@ export function Editor() {
     else if (saving.current) await saving.current;
   }, [save]);
 
-  // Lần chạy vừa xong: máy chủ có thể đã tạo lại nhóm thẻ cảnh trong lúc chạy, nên tải lại đồ thị và kết quả mới nhất
-  // (canvas không giữ bản cũ để lần lưu sau ghi đè). Sửa đổi của người dùng trong lúc chạy được lưu trước rồi mới tải.
+  // Máy chủ có thể đã tạo lại nhóm thẻ cảnh: lưu sửa đổi đang chờ rồi tải đồ thị máy chủ (canvas không giữ bản cũ để lần
+  // lưu sau ghi đè). Có sửa thêm trong lúc tải thì lưu rồi tải lại (không đè sửa đổi bằng bản máy chủ). withResults: tải cả
+  // kết quả mới nhất của từng node (sau khi chạy xong). Không tải được vì vẫn đang sửa thì ném lỗi.
+  const reloadGraph = useCallback(
+    async (id: string, runId: string, withResults: boolean) => {
+      for (let i = 0; i < SYNC_TRIES; i++) {
+        await flushEdits();
+        const [wf, last] = await Promise.all([api.getWorkflow(id), withResults ? api.getLatestRun(id) : Promise.resolve(null)]);
+        if (shownWorkflow.current !== id) return;
+        if (saveTimer.current !== null || saving.current !== null) continue;
+        applyGraph(wf);
+        if (last) setRun((cur) => (cur?.id === runId ? { ...cur, nodes: last.nodes } : cur));
+        return;
+      }
+      throw new Error("đồ thị trên máy chủ đã đổi nhưng bạn vẫn đang sửa nên chưa tải lại được: chọn lại workflow này để thấy thẻ cảnh mới");
+    },
+    [flushEdits, applyGraph],
+  );
+
+  // Lần chạy vừa xong (xong hoặc lỗi): tải lại đồ thị và kết quả mới nhất. Trong lúc tải nút Chạy bị khoá.
   const syncAfterRun = useCallback(
     async (runId: string) => {
       const id = shownWorkflow.current;
       if (!id) return;
       setSyncing(true);
       try {
-        for (let i = 0; i < SYNC_TRIES; i++) {
-          await flushEdits();
-          const [wf, last] = await Promise.all([api.getWorkflow(id), api.getLatestRun(id)]);
-          if (shownWorkflow.current !== id) return;
-          // Lại có sửa đổi trong lúc tải: lưu nó trước, tải lại lần nữa (không đè sửa đổi bằng bản máy chủ).
-          if (saveTimer.current !== null || saving.current !== null) continue;
-          applyGraph(wf);
-          setRun((cur) => (cur?.id === runId ? { ...cur, nodes: last.nodes } : cur));
-          return;
-        }
-        setProblem("Đồ thị trên máy chủ đã đổi sau lần chạy nhưng bạn vẫn đang sửa nên chưa tải lại được: chọn lại workflow này để thấy thẻ cảnh mới.");
+        await reloadGraph(id, runId, true);
       } catch (e) {
         setProblem(`Không tải lại được workflow sau lần chạy: ${errText(e)}`);
       } finally {
         setSyncing(false);
       }
     },
-    [flushEdits, applyGraph],
+    [reloadGraph],
+  );
+
+  // Biên kịch xong giữa lần chạy: máy chủ ghi nhóm tạo lại vào db ngay lúc đó, nên tải lại đồ thị ngay (không chờ hết lần
+  // chạy, có khi vài phút với Muse) để lần tự lưu sau không gửi nhóm cũ đè lên. Trạng thái lần chạy giữ nguyên.
+  const syncMidRun = useCallback(
+    (runId: string) => {
+      const id = shownWorkflow.current;
+      if (!id) return;
+      reloadGraph(id, runId, false).catch((e: unknown) => setProblem(`Không tải lại được thẻ cảnh mới trong lúc chạy: ${errText(e)}`));
+    },
+    [reloadGraph],
   );
 
   // Tạo/thay nhóm thẻ cảnh của Biên kịch (nút Tạo thẻ cảnh, hộp hỏi Thay/Giữ). Trả true khi máy chủ đã đổi đồ thị.
@@ -232,12 +260,20 @@ export function Editor() {
           currentRun.current = merged;
           setRun(merged);
           setRunFromHistory(false);
-          if (!isActive(merged)) void syncAfterRun(merged.id);
+          if (!isActive(merged)) {
+            void syncAfterRun(merged.id);
+            return;
+          }
+          if (reloadedWriters.current.runId !== r.id) reloadedWriters.current = { runId: r.id, ids: new Set() };
+          const done = writersFinished(groups.current, r.nodes, reloadedWriters.current.ids);
+          if (done.length === 0) return;
+          for (const w of done) reloadedWriters.current.ids.add(w);
+          syncMidRun(r.id);
         })
         .catch((e: unknown) => setProblem(`Mất kết nối khi theo dõi lần chạy: ${errText(e)}`));
     }, POLL_MS);
     return () => clearInterval(t);
-  }, [activeRunId, syncAfterRun]);
+  }, [activeRunId, syncAfterRun, syncMidRun]);
 
   const runNow = useCallback(async () => {
     if (!workflowId) return;
@@ -345,7 +381,16 @@ export function Editor() {
   const pendingDecision = run?.decision?.kind === "scenes-edited" && !runFromHistory && !active ? run.decision : null;
 
   const runLabel = run ? (runFromHistory && !active ? `Lần trước: ${RUN_LABEL[run.status]}` : RUN_LABEL[run.status]) : "";
-  const runError = run?.error ? (runFromHistory && !active ? `Lần chạy trước lỗi: ${run.error}` : run.error) : null;
+  const fromHistory = runFromHistory && !active;
+  // Lần chạy cũ dừng để hỏi Thay/Giữ: hộp hỏi chỉ hiện cho lần chạy xem trong phiên (lần cũ có thể đã được trả lời),
+  // nên chỉ dặn bấm Chạy — Biên kịch vẫn ra bộ cảnh khác thì lần chạy mới sẽ hỏi lại.
+  const runError = !run?.error
+    ? null
+    : fromHistory && run.decision?.kind === "scenes-edited"
+      ? "Lần chạy trước dừng vì Biên kịch ra bộ cảnh mới mà thẻ cảnh đã được sửa tay. Bấm ▶ Chạy để chọn Thay hoặc Giữ."
+      : fromHistory
+        ? `Lần chạy trước lỗi: ${run.error}`
+        : run.error;
 
   const readyMuse = muse?.accounts.filter((a) => a.loggedIn).length ?? 0;
 
