@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runNodes, runs } from "../src/core/db/schema";
+import { runNodes, runs, workflows } from "../src/core/db/schema";
 import type { ServerNode } from "../src/core/node-runtime";
 import { createQueue } from "../src/core/queue";
 import { fakeTextReply } from "../src/providers/fake/text";
@@ -749,5 +749,67 @@ describe("API chuyển workflow cũ (Dựng phim → Cảnh + Ghép phim) khi m�
 
     const def = await open("default");
     expect(await open("default")).toEqual(def);
+  });
+
+  it("lần chạy cũ có output_json hỏng: vẫn chuyển, node đó không hiện kết quả cũ", async () => {
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    const old = await runOf("son-la");
+    expect(old.status, old.error ?? "").toBe("succeeded");
+    s.db.update(runNodes).set({ outputJson: "{hỏng" }).where(and(eq(runNodes.runId, old.id), eq(runNodes.nodeId, "character-1"))).run();
+
+    const wf = await open("son-la");
+    expect(wf.notice).toBeUndefined();
+    expect(wf.graph.nodes.some((n) => n.type === "film")).toBe(false);
+    const shown = await latest("son-la");
+    expect(shown?.nodes["character-1"]).toBeUndefined();
+    expect(shown?.nodes["location-1"]?.output).toEqual(old.nodes["location-1"]?.output);
+    for (const id of wf.graph.groups[0]!.nodeIds) expect(shown?.nodes[id]?.status, id).toBe("cached");
+  });
+
+  it("chuyển lỗi (dịch vụ không hợp lệ): GET 200 trả workflow chưa chuyển kèm thông báo, không ghi gì; /default vẫn mở được", async () => {
+    const bad = legacySonLaGraph();
+    bad.nodes = bad.nodes.map((n) => (n.id === "film-1" ? { ...n, params: { ...n.params, provider: "khong-co" } } : n));
+    await putLegacy("son-la", bad, "Sinh tồn Sơn La");
+    await putLegacy("default", bad, "Workflow đầu tiên");
+    const rowsBefore = s.db.select().from(workflows).all();
+
+    for (const id of ["son-la", "default"]) {
+      const wf = await open(id);
+      expect(wf.graph).toEqual(WorkflowResponseSchema.shape.graph.parse(bad));
+      expect(wf.notice, id).toContain("Không chuyển được workflow cũ");
+      expect(wf.notice).toContain("chưa bị đổi");
+      expect(wf.notice).toContain("khong-co");
+    }
+    expect(s.db.select().from(workflows).all()).toEqual(rowsBefore);
+    expect((await s.app.inject({ method: "GET", url: "/api/workflows/son-la-ban-cu" })).statusCode).toBe(404);
+    expect(runCount()).toBe(0);
+  });
+
+  it("Ý tưởng → phim đã chuyển, đổi ý tưởng rồi chạy: nhóm tạo lại theo kết quả Biên kịch mới, không hỏi", async () => {
+    await putLegacy("y-tuong", legacyIdeaGraph("fake", 4), "Ý tưởng → phim");
+    const old = await runOf("y-tuong");
+    expect(old.status, old.error ?? "").toBe("succeeded");
+    const wf = await open("y-tuong");
+    const oldKey = wf.graph.groups[0]!.source!.resultKey;
+    const textBefore = s.log.text;
+
+    const changed: WorkflowGraph = {
+      ...wf.graph,
+      nodes: wf.graph.nodes.map((n) => (n.id === "writer-1" ? { ...n, params: { ...n.params, idea: "Cô gái leo lên đỉnh đồi ngắm mây rồi dựng lều." } } : n)),
+    };
+    expect((await s.app.inject({ method: "PUT", url: "/api/workflows/y-tuong", payload: { graph: changed } })).statusCode).toBe(200);
+    const rerun = await runOf("y-tuong");
+    expect(rerun.status, rerun.error ?? "").toBe("succeeded");
+    expect(rerun.decision).toBeNull();
+    expect(rerun.nodes["writer-1"]?.status).toBe("succeeded");
+    expect(s.log.text).toBe(textBefore + 1);
+
+    const after = await open("y-tuong");
+    const newKey = s.db.select().from(runNodes).where(eq(runNodes.runId, rerun.id)).all().find((r) => r.nodeId === "writer-1")!.cacheKey;
+    expect(newKey).not.toBe(oldKey);
+    const group = after.graph.groups[0]!;
+    expect(group.source).toMatchObject({ writerId: "writer-1", resultKey: newKey });
+    expect(group.nodeIds).toHaveLength(4);
+    for (const id of group.nodeIds) expect(rerun.nodes[id]?.status, id).toMatch(/succeeded|cached/);
   });
 });

@@ -76,7 +76,7 @@ export function upgradeLegacyGraph(
       handles.set(port, e.sourceHandle);
     }
     const provider = PROVIDER_IDS.find((p) => p === film.params.provider);
-    if (!provider) throw new Error(`Dựng phim "${film.id}" chưa chọn dịch vụ hợp lệ — không chuyển được sang node Cảnh`);
+    if (!provider) throw new Error(`Dựng phim "${film.id}" có dịch vụ không hợp lệ (${JSON.stringify(film.params.provider ?? null)}) — không chuyển được sang node Cảnh`);
 
     const expanded = expandScenes(graph, { ...writer, shots, refs, provider, origin: film.position });
     const group = expanded.graph.groups?.find((g) => g.id === expanded.groupId);
@@ -113,7 +113,22 @@ export function upgradeLegacyGraph(
   return { graph, changed: true, films };
 }
 
-type FilmRun = { runId: string; createdAt: number; graph: WorkflowGraph; output: NodeOutputs };
+// graph/output vắng khi dữ liệu cũ không đọc được (parseStored).
+type FilmRun = { runId: string; createdAt: number; graph?: WorkflowGraph; output?: NodeOutputs };
+
+// Dữ liệu cũ trong db (đồ thị của run, đầu ra node) đọc theo schema hiện tại; không đọc được thì là "không có kết quả cũ"
+// cho riêng phần đó: lần chạy hiển thị bỏ qua nó, việc chuyển vẫn làm tiếp (kết quả thật vẫn nằm ở cache bước con).
+function parseStored<T>(schema: { safeParse: (v: unknown) => { success: true; data: T } | { success: false } }, text: string | null): T | undefined {
+  if (text === null) return undefined;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const parsed = schema.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
+}
 
 // Lần chạy mới nhất của workflow mà Dựng phim này ra phim (chạy hoặc dùng lại).
 function lastFilmRun(db: Db, workflowId: string, filmId: string): FilmRun | undefined {
@@ -125,10 +140,10 @@ function lastFilmRun(db: Db, workflowId: string, filmId: string): FilmRun | unde
     .orderBy(desc(runs.createdAt))
     .limit(1)
     .get();
-  if (!row?.outputJson) return undefined;
-  const output = NodeOutputsSchema.parse(JSON.parse(row.outputJson));
-  if (output.video?.kind !== "video") return undefined;
-  return { runId: row.runId, createdAt: row.createdAt, graph: WorkflowGraphSchema.parse(JSON.parse(row.graphJson)), output };
+  if (!row) return undefined;
+  const output = parseStored(NodeOutputsSchema, row.outputJson);
+  const graph = parseStored(WorkflowGraphSchema, row.graphJson);
+  return { runId: row.runId, createdAt: row.createdAt, ...(graph ? { graph } : {}), ...(output?.video?.kind === "video" ? { output } : {}) };
 }
 
 const doneRow = (db: Db, runId: string, nodeId: string) =>
@@ -140,8 +155,8 @@ const doneRow = (db: Db, runId: string, nodeId: string) =>
 
 function writerResult(db: Db, runId: string, writerId: string): WriterResult | undefined {
   const row = doneRow(db, runId, writerId);
-  if (!row?.cacheKey || !row.outputJson) return undefined;
-  const shots = NodeOutputsSchema.parse(JSON.parse(row.outputJson)).shots;
+  if (!row?.cacheKey) return undefined;
+  const shots = parseStored(NodeOutputsSchema, row.outputJson)?.shots;
   return shots?.kind === "shotlist" ? { key: row.cacheKey, shots: shots.shots } : undefined;
 }
 
@@ -161,7 +176,9 @@ function sceneOutput(db: Db, keyframeId: string | undefined, clipId: string | un
 // Một lần chạy chỉ để hiển thị (trạng thái succeeded nên hàng chờ không bao giờ lấy): cảnh mới hiện ảnh khung và clip cũ,
 // Ghép phim hiện phim cũ, node giữ mã (Nhân vật/Không gian/Đồ vật/Biên kịch…) hiện kết quả của lần chạy cũ.
 // Chỉ hiện kết quả cũ cho cảnh có chữ đúng như lúc chạy cũ; phim cũ chỉ hiện khi mọi cảnh đều đúng.
-function writeDisplayRun(db: Db, workflowId: string, graph: WorkflowGraph, films: { film: ConvertedFilm; run: FilmRun }[]): void {
+function writeDisplayRun(db: Db, workflowId: string, graph: WorkflowGraph, filmRuns: { film: ConvertedFilm; run: FilmRun }[]): void {
+  // Chỉ lần chạy có phim đọc được mới có gì để hiện.
+  const films = filmRuns.filter((f) => f.run.output !== undefined);
   if (films.length === 0) return;
   const now = Date.now();
   const runId = randomUUID();
@@ -172,15 +189,17 @@ function writeDisplayRun(db: Db, workflowId: string, graph: WorkflowGraph, films
   const newest = films.reduce((a, b) => (b.run.createdAt > a.run.createdAt ? b : a)).run;
   const ids = new Set(graph.nodes.map((n) => n.id));
   for (const r of db.select().from(runNodes).where(and(eq(runNodes.runId, newest.runId), inArray(runNodes.status, [...DONE]))).all()) {
-    if (!ids.has(r.nodeId) || !r.outputJson) continue;
-    put(r.nodeId, NodeOutputsSchema.parse(JSON.parse(r.outputJson)), { status: r.status, cacheKey: r.cacheKey, message: r.message });
+    const output = ids.has(r.nodeId) ? parseStored(NodeOutputsSchema, r.outputJson) : undefined;
+    if (output) put(r.nodeId, output, { status: r.status, cacheKey: r.cacheKey, message: r.message });
   }
 
   for (const { film, run } of films) {
-    const board = run.output.storyboard?.kind === "storyboard" ? run.output.storyboard.shots : [];
+    const out = run.output ?? {};
+    const board = out.storyboard?.kind === "storyboard" ? out.storyboard.shots : [];
+    // Danh sách cảnh lúc chạy cũ: đồ thị của run không đọc được thì không so được, không hiện cảnh nào.
     const ranShots =
       film.shotsFrom?.type === "shotlist"
-        ? normalizeShots(run.graph.nodes.find((n) => n.id === film.shotsFrom!.id && n.type === "shotlist")?.params.shots)
+        ? normalizeShots(run.graph?.nodes.find((n) => n.id === film.shotsFrom!.id && n.type === "shotlist")?.params.shots)
         : film.shots;
     let all = film.shots.length > 0 && ranShots.length === film.shots.length;
     film.sceneIds.forEach((sceneId, i) => {
@@ -190,7 +209,7 @@ function writeDisplayRun(db: Db, workflowId: string, graph: WorkflowGraph, films
       if (Object.keys(output).length > 0) put(sceneId, output);
       if (!output.clip) all = false;
     });
-    if (all && run.output.video) put(film.combineId, { video: run.output.video });
+    if (all && out.video) put(film.combineId, { video: out.video });
   }
   if (rows.size === 0) return;
 
@@ -212,7 +231,8 @@ function writeDisplayRun(db: Db, workflowId: string, graph: WorkflowGraph, films
 // Mở workflow: workflow cũ thì chuyển (một giao dịch: bản sao lưu "<id>-ban-cu" nếu chưa có, đồ thị mới, lần chạy hiển thị).
 // Không chuyển: bản sao lưu (giữ nguyên để quay lại được), workflow không có Dựng phim, và workflow đang có lần chạy
 // xếp hàng/đang chạy (lần đó chạy đồ thị cũ; mở lại sau khi xong thì chuyển). Không chuyển thì không ghi gì.
-export function upgradeWorkflowOnOpen(db: Db, row: WorkflowRow): WorkflowResponse {
+// Chuyển lỗi: giao dịch huỷ hết, trả workflow nguyên như cũ kèm `notice` nêu lỗi (vẫn mở được), ghi lỗi vào log máy chủ.
+export function upgradeWorkflowOnOpen(db: Db, row: WorkflowRow, logError: (err: unknown) => void): WorkflowResponse {
   const graph = WorkflowGraphSchema.parse(JSON.parse(row.graphJson));
   if (row.id.endsWith(BACKUP_SUFFIX) || !graph.nodes.some((n) => n.type === "film")) return toWorkflowResponse(row);
   const pending = db
@@ -223,6 +243,16 @@ export function upgradeWorkflowOnOpen(db: Db, row: WorkflowRow): WorkflowRespons
     .get();
   if (pending) return toWorkflowResponse(row);
 
+  try {
+    return convert(db, row, graph);
+  } catch (err) {
+    logError(err);
+    const message = err instanceof Error ? err.message : String(err);
+    return { ...toWorkflowResponse(row), notice: `Không chuyển được workflow cũ sang node Cảnh/Ghép phim: workflow chưa bị đổi, chưa tạo bản cũ. Lỗi: ${message}` };
+  }
+}
+
+function convert(db: Db, row: WorkflowRow, graph: WorkflowGraph): WorkflowResponse {
   return db.transaction(() => {
     const filmRuns = new Map<string, FilmRun>();
     const writers = new Map<string, WriterResult>();

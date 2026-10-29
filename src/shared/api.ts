@@ -8,6 +8,8 @@ export const WorkflowResponseSchema = z.object({
   name: z.string(),
   graph: WorkflowGraphSchema,
   updatedAt: z.number(),
+  // Mở workflow cũ mà chuyển sang Cảnh/Ghép phim bị lỗi: workflow trả về nguyên như cũ, đây là lời báo kèm lỗi.
+  notice: z.string().optional(),
 });
 export type WorkflowResponse = z.infer<typeof WorkflowResponseSchema>;
 

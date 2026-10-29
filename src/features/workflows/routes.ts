@@ -45,7 +45,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: AppDeps): voi
 
   app.get("/api/workflows/default", () => {
     const row = get(DEFAULT_WORKFLOW_ID);
-    return row ? upgradeWorkflowOnOpen(deps.db, row) : toWorkflowResponse(saveWorkflowGraph(deps.db, DEFAULT_WORKFLOW_ID, DEFAULT_GRAPH, "Workflow đầu tiên"));
+    return row ? upgradeWorkflowOnOpen(deps.db, row, (err) => app.log.error(err)) : toWorkflowResponse(saveWorkflowGraph(deps.db, DEFAULT_WORKFLOW_ID, DEFAULT_GRAPH, "Workflow đầu tiên"));
   });
 
   app.get("/api/workflows", () => {
@@ -58,7 +58,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: AppDeps): voi
     const row = get(req.params.id);
     if (!row) return reply.code(404).send({ error: "Không tìm thấy workflow" });
     // Workflow cũ (có Dựng phim) chuyển sang Cảnh + Ghép phim ngay lúc mở, một lần, không tốn lượt (upgrade.ts).
-    return upgradeWorkflowOnOpen(deps.db, row);
+    return upgradeWorkflowOnOpen(deps.db, row, (err) => app.log.error(err));
   });
 
   app.post<{ Params: { templateId: string } }>("/api/workflows/from-template/:templateId", async (req, reply) => {
