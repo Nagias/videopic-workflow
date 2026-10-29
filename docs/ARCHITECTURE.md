@@ -30,8 +30,9 @@ src/
     db/                 # schema.ts, client.ts, migrations/
     storage.ts          # NƠI DUY NHẤT ghi file media vào .data/media
     ffmpeg.ts           # NƠI DUY NHẤT chạy ffmpeg/ffprobe
-    executor.ts         # chạy đồ thị: thứ tự topo, cache theo khoá băm
-    queue.ts            # nhận run, worker, chạy tiếp sau khi tắt máy
+    executor.ts         # chạy đồ thị: node đủ nguồn chạy song song, phạm vi chạy (RunScope), cache theo khoá băm
+    run-shared.ts       # đồ dùng chung trong lần chạy: chỗ chạy theo dịch vụ, khoá chat, chat mới nhất, cầu dao
+    queue.ts            # nhận run, worker, huỷ run, chạy tiếp sau khi tắt máy (giữ phạm vi đã lưu)
   shared/               # dùng chung giao diện + máy chủ (không import gì của node:*)
     workflow.ts         # schema đồ thị (zod)
     ports.ts            # kiểu dữ liệu chảy qua dây nối

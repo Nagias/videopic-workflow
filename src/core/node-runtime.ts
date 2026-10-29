@@ -2,6 +2,7 @@ import type { ProviderRegistry } from "../providers/types";
 import type { AnyNodeDefinition, NodeDefinition } from "../shared/node-definition";
 import type { NodeOutputs, PortValue } from "../shared/ports";
 import type { Ffmpeg } from "./ffmpeg";
+import type { RunShared } from "./run-shared";
 import type { Storage } from "./storage";
 
 export type StepValue = { [k: string]: string | number | boolean | null | StepValue | StepValue[] };
@@ -14,6 +15,8 @@ export type NodeRunContext = {
   providers: ProviderRegistry;
   storage: Storage;
   ffmpeg: Ffmpeg;
+  // Chung cho mọi node của lần chạy: chỗ chạy theo dịch vụ, khoá chat, chat mới nhất của nhân vật, cầu dao.
+  shared: RunShared;
 };
 
 // Cổng thường giao một PortValue; cổng `multiple` giao mảng PortValue theo thứ tự đã sắp.

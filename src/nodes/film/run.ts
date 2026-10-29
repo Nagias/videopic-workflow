@@ -1,4 +1,5 @@
 import { optionalInput, requireInput, type NodeRun, type NodeRunContext } from "../../core/node-runtime";
+import { ServiceBreakerOpen } from "../../core/run-shared";
 import { semaphore } from "../../core/semaphore";
 import { ProviderError, type ChatSessionRef, type ImageReference, type MediaProvider, type ProviderContext } from "../../providers/types";
 import { checkShotList, MAX_PROP_REFS, parsePropLines, type Shot } from "../../shared/director";
@@ -7,12 +8,6 @@ import { DEFAULT_LOOK, keyframePrompt, motionPrompt, textVideoPrompt, type Keyfr
 import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC, SERVICE_FAILURE_LIMIT, SHOT_SECONDS, type FilmParams } from "./definition";
 
 const SERVICE_FAILURE_CODES = new Set(["MUSE_FAILED", "NO_MEDIA"]);
-
-class ServiceBreakerOpen extends Error {
-  constructor() {
-    super(`Dừng: dịch vụ báo lỗi máy chủ ${SERVICE_FAILURE_LIMIT} lần — không gửi thêm để tránh tốn lượt. Bấm Chạy lại khi dịch vụ ổn (cảnh đã xong được giữ).`);
-  }
-}
 
 type Brightness = { startLuma: number; endLuma: number; clipSec: number };
 type FinishedShot = { clipId: string; durationSec: number; trimStartSec: number; hasAudio: boolean; brightness?: Brightness };
@@ -78,7 +73,7 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
   const characterChat = semaphore(1);
   let serviceFailures = 0;
   const ensureServiceUp = () => {
-    if (serviceFailures >= SERVICE_FAILURE_LIMIT) throw new ServiceBreakerOpen();
+    if (serviceFailures >= SERVICE_FAILURE_LIMIT) throw new ServiceBreakerOpen(SERVICE_FAILURE_LIMIT);
   };
   let session: ChatSessionRef | undefined = character.session;
   const look = location.look ?? DEFAULT_LOOK;

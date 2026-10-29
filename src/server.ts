@@ -4,6 +4,7 @@ import { loadConfig } from "./core/config";
 import { openDb } from "./core/db/client";
 import { createFfmpeg } from "./core/ffmpeg";
 import { createQueue } from "./core/queue";
+import { createChatLocks } from "./core/run-shared";
 import { createStorage } from "./core/storage";
 import { serverNodes } from "./nodes/registry.server";
 import { createProviders } from "./providers";
@@ -15,7 +16,7 @@ const storage = createStorage(cfg, db);
 const ffmpeg = createFfmpeg(cfg);
 const musePool = createAccountPool(cfg.profilesDir);
 const providers = createProviders(cfg, musePool);
-const base = { db, storage, ffmpeg, providers, nodes: serverNodes };
+const base = { db, storage, ffmpeg, providers, nodes: serverNodes, chatLocks: createChatLocks() };
 const queue = createQueue(base, { log: (m) => console.log(`[hàng đợi] ${m}`) });
 const deps: AppDeps = { ...base, cfg, queue, musePool };
 

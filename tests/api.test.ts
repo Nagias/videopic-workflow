@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runs } from "../src/core/db/schema";
+import { runNodes, runs } from "../src/core/db/schema";
+import type { ServerNode } from "../src/core/node-runtime";
 import { createQueue } from "../src/core/queue";
 import { AssetListResponseSchema, LatestRunResponseSchema, RunResponseSchema, WorkflowResponseSchema } from "../src/shared/api";
 import { promptToVideoGraph } from "./helpers/nodes";
@@ -105,7 +106,7 @@ describe("hàng đợi chạy tiếp sau khi tắt máy giữa chừng", () => {
     const stuck = s.deps.queue.enqueue("default", graph);
     s.db.update(runs).set({ status: "running" }).where(eq(runs.id, stuck)).run();
 
-    const restarted = createQueue({ db: s.db, storage: s.storage, ffmpeg: s.ffmpeg, providers: s.deps.providers, nodes: s.deps.nodes }, { pollMs: 20 });
+    const restarted = createQueue({ db: s.db, storage: s.storage, ffmpeg: s.ffmpeg, providers: s.deps.providers, nodes: s.deps.nodes, chatLocks: s.deps.chatLocks }, { pollMs: 20 });
     restarted.start();
     const deadline = Date.now() + 10_000;
     while (s.db.select().from(runs).where(eq(runs.id, stuck)).get()?.status !== "succeeded" && Date.now() < deadline) {
@@ -115,6 +116,77 @@ describe("hàng đợi chạy tiếp sau khi tắt máy giữa chừng", () => {
     expect(s.db.select().from(runs).where(eq(runs.id, stuck)).get()?.status).toBe("succeeded");
     expect(s.db.select().from(runs).where(eq(runs.id, first)).get()?.status).toBe("succeeded");
     expect(s.calls()).toBe(1);
+  });
+});
+
+describe("phạm vi chạy và huỷ lượt chạy", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await createTestServer();
+  });
+  afterEach(async () => {
+    await s.cleanup();
+  });
+
+  const runRow = (id: string) => s.db.select().from(runs).where(eq(runs.id, id)).get();
+  const nodeIdsOf = (id: string) => s.db.select().from(runNodes).where(eq(runNodes.runId, id)).all().map((r) => r.nodeId).sort();
+
+  it("run mở lại sau khi tắt máy dùng lại phạm vi đã lưu", async () => {
+    const stuck = s.deps.queue.enqueue("default", promptToVideoGraph("Rừng"), { mode: "node", nodeId: "p1" });
+    expect(JSON.parse(runRow(stuck)!.scopeJson!)).toEqual({ mode: "node", nodeId: "p1" });
+    s.db.update(runs).set({ status: "running" }).where(eq(runs.id, stuck)).run();
+
+    const restarted = createQueue({ db: s.db, storage: s.storage, ffmpeg: s.ffmpeg, providers: s.deps.providers, nodes: s.deps.nodes, chatLocks: s.deps.chatLocks }, { pollMs: 20 });
+    restarted.start();
+    const deadline = Date.now() + 10_000;
+    while (runRow(stuck)?.status !== "succeeded" && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    await restarted.stop();
+    expect(runRow(stuck)?.status).toBe("succeeded");
+    expect(nodeIdsOf(stuck)).toEqual(["p1"]);
+    expect(s.calls()).toBe(0);
+  });
+
+  it("huỷ run đang xếp hàng → failed, error 'Đã huỷ'", async () => {
+    const runId = s.deps.queue.enqueue("default", promptToVideoGraph("Rừng"));
+    expect(s.deps.queue.cancel(runId)).toBe("cancelled");
+    expect(runRow(runId)).toMatchObject({ status: "failed", error: "Đã huỷ" });
+    expect(runRow(runId)?.finishedAt).toBeTypeOf("number");
+    expect(await s.deps.queue.processNext()).toBe(false);
+    expect(s.calls()).toBe(0);
+    expect(s.deps.queue.cancel(runId)).toBe("finished");
+    expect(s.deps.queue.cancel("khong-co")).toBe("not_found");
+  });
+
+  it("huỷ run đang chạy → signal bị huỷ, run failed 'Đã huỷ'", async () => {
+    let markStarted!: () => void;
+    const started = new Promise<void>((r) => (markStarted = r));
+    let aborted = false;
+    const waiter: ServerNode = {
+      definition: { type: "waiter", label: "Chờ", description: "", inputs: [], outputs: [], params: { parse: (x: unknown) => x } as never, defaults: {} },
+      parseParams: (x) => x,
+      run: (ctx) =>
+        new Promise((_resolve, reject) => {
+          ctx.signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              reject(new Error("node thấy tín hiệu huỷ"));
+            },
+            { once: true },
+          );
+          markStarted();
+        }),
+    };
+    const queue = createQueue({ db: s.db, storage: s.storage, ffmpeg: s.ffmpeg, providers: s.deps.providers, nodes: { waiter }, chatLocks: s.deps.chatLocks });
+    const runId = queue.enqueue("default", { nodes: [{ id: "w", type: "waiter", position: { x: 0, y: 0 }, params: {} }], edges: [] });
+    const processing = queue.processNext();
+    await started;
+    expect(runRow(runId)?.status).toBe("running");
+    expect(queue.cancel(runId)).toBe("cancelled");
+    expect(await processing).toBe(true);
+    expect(aborted).toBe(true);
+    expect(runRow(runId)).toMatchObject({ status: "failed", error: "Đã huỷ" });
+    expect(queue.cancel(runId)).toBe("finished");
   });
 });
 

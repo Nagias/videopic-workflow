@@ -18,6 +18,9 @@ export const runs = sqliteTable(
     createdAt: integer("created_at").notNull(),
     startedAt: integer("started_at"),
     finishedAt: integer("finished_at"),
+    // Phạm vi chạy (RunScope dạng JSON); rỗng = chạy cả workflow.
+    scopeJson: text("scope_json"),
+    decisionJson: text("decision_json"),
   },
   (t) => [index("runs_status_idx").on(t.status, t.createdAt)],
 );

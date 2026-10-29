@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { and, eq } from "drizzle-orm";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import type { ProviderRegistry } from "../providers/types";
 import { NodeOutputsSchema, type NodeOutputs, type PortValue } from "../shared/ports";
 import type { WorkflowGraph, WorkflowNode } from "../shared/workflow";
@@ -11,6 +11,7 @@ import type { Ffmpeg } from "./ffmpeg";
 import type { NodeInputs, ServerNode, StepValue } from "./node-runtime";
 import { recordAsset } from "../features/assets/store";
 import { collectMediaIds } from "./media-ids";
+import { createRunShared, SERVICE_FAILURE_LIMIT, type ChatLocks } from "./run-shared";
 import type { Storage } from "./storage";
 
 export class GraphError extends Error {
@@ -64,7 +65,15 @@ export type ExecuteDeps = {
   ffmpeg: Ffmpeg;
   providers: ProviderRegistry;
   nodes: Record<string, ServerNode>;
+  chatLocks: ChatLocks;
 };
+
+// Phạm vi một lần chạy: cả workflow, một node (kèm phía trước), hoặc một node và mọi node phía sau.
+export const RunScopeSchema = z.union([
+  z.object({ mode: z.literal("all") }),
+  z.object({ mode: z.enum(["node", "downstream"]), nodeId: z.string().min(1) }),
+]);
+export type RunScope = z.infer<typeof RunScopeSchema>;
 
 function zodMessage(err: ZodError): string {
   return err.issues.map((i) => i.message).join("; ");
@@ -164,27 +173,63 @@ function outputsStillValid(outputs: NodeOutputs, storage: Storage): boolean {
   return Object.values(outputs).every((v: PortValue) => mediaStillValid(v, storage));
 }
 
-export async function executeRun(deps: ExecuteDeps, runId: string, graph: WorkflowGraph, signal: AbortSignal): Promise<void> {
+const sourcesOf = (p: PlannedNode): string[] => [...p.inputs.values()].flat().map((w) => w.source);
+
+// Các node thuộc phạm vi chạy. `node`: node đó và mọi node phía trước.
+// `downstream`: node đó, mọi node phía sau, và mọi node phía trước của các node ấy.
+export function scopeNodes(order: PlannedNode[], scope: RunScope): Set<string> {
+  const byId = new Map(order.map((p) => [p.node.id, p]));
+  if (scope.mode === "all") return new Set(byId.keys());
+  if (!byId.has(scope.nodeId)) throw new GraphError(`Node "${scope.nodeId}" không có trong workflow`);
+
+  const roots = new Set([scope.nodeId]);
+  // order đã xếp nguồn trước đích nên một lượt đi xuôi là đủ gom mọi node phía sau.
+  if (scope.mode === "downstream") for (const p of order) if (sourcesOf(p).some((s) => roots.has(s))) roots.add(p.node.id);
+
+  const picked = new Set<string>();
+  const pick = (id: string) => {
+    if (picked.has(id)) return;
+    picked.add(id);
+    for (const s of sourcesOf(byId.get(id)!)) pick(s);
+  };
+  for (const id of roots) pick(id);
+  return picked;
+}
+
+type NodeState = "pending" | "running" | "done" | "failed" | "skipped";
+
+// Lập lịch: node nào đủ nguồn (đã xong hoặc dùng lại) thì chạy ngay; giới hạn chỉ nằm ở ctx.shared.slot theo dịch vụ.
+export async function executeRun(
+  deps: ExecuteDeps,
+  runId: string,
+  workflowId: string,
+  graph: WorkflowGraph,
+  signal: AbortSignal,
+  scope: RunScope,
+): Promise<void> {
   const { db } = deps;
   const now = () => Date.now();
   const setNode = (nodeId: string, patch: Partial<typeof runNodes.$inferInsert>) =>
     db.update(runNodes).set({ ...patch, updatedAt: now() }).where(and(eq(runNodes.runId, runId), eq(runNodes.nodeId, nodeId))).run();
+  const addRow = (nodeId: string) => db.insert(runNodes).values({ runId, nodeId, status: "pending", updatedAt: now() }).onConflictDoNothing().run();
 
-  for (const n of graph.nodes) {
-    db.insert(runNodes)
-      .values({ runId, nodeId: n.id, status: "pending", updatedAt: now() })
-      .onConflictDoNothing()
-      .run();
-  }
-
-  let order: PlannedNode[];
+  let plan: PlannedNode[];
   try {
-    order = planGraph(graph, deps.nodes);
+    const order = planGraph(graph, deps.nodes);
+    const inScope = scopeNodes(order, scope);
+    plan = order.filter((p) => inScope.has(p.node.id));
   } catch (err) {
-    for (const n of graph.nodes) setNode(n.id, { status: "skipped" });
+    // Đồ thị hỏng: chỉ đánh dấu những node lần chạy này nhắm tới, node khác giữ nguyên kết quả cũ.
+    const targets = scope.mode === "all" ? graph.nodes.map((n) => n.id) : graph.nodes.filter((n) => n.id === scope.nodeId).map((n) => n.id);
+    for (const id of targets) {
+      addRow(id);
+      setNode(id, { status: "skipped" });
+    }
     throw err;
   }
+  for (const p of plan) addRow(p.node.id);
 
+  const shared = createRunShared({ providers: deps.providers, chatLocks: deps.chatLocks, failureLimit: SERVICE_FAILURE_LIMIT });
   const outputs = new Map<string, NodeOutputs>();
   const keys = new Map<string, string>();
   const remember = (p: PlannedNode, key: string, out: NodeOutputs) => {
@@ -192,11 +237,8 @@ export async function executeRun(deps: ExecuteDeps, runId: string, graph: Workfl
     if (kind) recordAsset(db, { cacheKey: key, kind, params: p.params, outputs: out });
   };
 
-  for (let i = 0; i < order.length; i++) {
-    const p = order[i]!;
+  const runNode = async (p: PlannedNode): Promise<void> => {
     const id = p.node.id;
-    if (signal.aborted) throw new Error("Run đã bị dừng");
-
     const inputs: NodeInputs = {};
     const upstream: Record<string, string> = {};
     for (const port of p.impl.definition.inputs) {
@@ -222,48 +264,101 @@ export async function executeRun(deps: ExecuteDeps, runId: string, graph: Workfl
         outputs.set(id, parsed);
         remember(p, key, parsed);
         setNode(id, { status: "cached", cacheKey: key, outputJson: cached.outputJson, message: "Dùng lại kết quả trước", error: null });
-        continue;
+        return;
       }
       db.delete(nodeCache).where(eq(nodeCache.cacheKey, key)).run();
     }
 
     setNode(id, { status: "running", cacheKey: key, message: "Đang chạy…", error: null });
-    try {
-      const result = await p.impl.run(
-        {
-          signal,
-          report: (message) => setNode(id, { message }),
-          partial: (partialOutputs) => setNode(id, { outputJson: JSON.stringify(NodeOutputsSchema.parse(partialOutputs)) }),
-          step: async <T extends StepValue>(keyParts: unknown, fn: () => Promise<T>): Promise<T> => {
-            const takePart = take > 1 ? `take${take}:` : "";
-            const stepKey = createHash("sha256").update(`step:${stepScope}:${takePart}${stableStringify(keyParts)}`).digest("hex");
-            const hit = db.select().from(nodeCache).where(eq(nodeCache.cacheKey, stepKey)).get();
-            if (hit) {
-              const value = JSON.parse(hit.outputJson) as T;
-              if (mediaStillValid(value, deps.storage)) return value;
-              db.delete(nodeCache).where(eq(nodeCache.cacheKey, stepKey)).run();
-            }
-            const value = await fn();
-            db.insert(nodeCache).values({ cacheKey: stepKey, outputJson: JSON.stringify(value), createdAt: now() }).onConflictDoNothing().run();
-            return value;
-          },
-          providers: deps.providers,
-          storage: deps.storage,
-          ffmpeg: deps.ffmpeg,
+    const result = await p.impl.run(
+      {
+        signal,
+        report: (message) => setNode(id, { message }),
+        partial: (partialOutputs) => setNode(id, { outputJson: JSON.stringify(NodeOutputsSchema.parse(partialOutputs)) }),
+        step: async <T extends StepValue>(keyParts: unknown, fn: () => Promise<T>): Promise<T> => {
+          const takePart = take > 1 ? `take${take}:` : "";
+          const stepKey = createHash("sha256").update(`step:${stepScope}:${takePart}${stableStringify(keyParts)}`).digest("hex");
+          const hit = db.select().from(nodeCache).where(eq(nodeCache.cacheKey, stepKey)).get();
+          if (hit) {
+            const value = JSON.parse(hit.outputJson) as T;
+            if (mediaStillValid(value, deps.storage)) return value;
+            db.delete(nodeCache).where(eq(nodeCache.cacheKey, stepKey)).run();
+          }
+          const value = await fn();
+          db.insert(nodeCache).values({ cacheKey: stepKey, outputJson: JSON.stringify(value), createdAt: now() }).onConflictDoNothing().run();
+          return value;
         },
-        inputs,
-        p.params,
-      );
-      const json = JSON.stringify(NodeOutputsSchema.parse(result));
-      db.insert(nodeCache).values({ cacheKey: key, outputJson: json, createdAt: now() }).onConflictDoNothing().run();
-      outputs.set(id, result);
-      remember(p, key, result);
-      setNode(id, { status: "succeeded", outputJson: json, message: "Xong" });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setNode(id, { status: "failed", error: message, message: null });
-      for (const rest of order.slice(i + 1)) setNode(rest.node.id, { status: "skipped" });
-      throw new Error(`Node "${p.impl.definition.label}" lỗi: ${message}`, { cause: err });
-    }
+        providers: deps.providers,
+        storage: deps.storage,
+        ffmpeg: deps.ffmpeg,
+        shared,
+      },
+      inputs,
+      p.params,
+    );
+    const json = JSON.stringify(NodeOutputsSchema.parse(result));
+    db.insert(nodeCache).values({ cacheKey: key, outputJson: json, createdAt: now() }).onConflictDoNothing().run();
+    outputs.set(id, result);
+    remember(p, key, result);
+    setNode(id, { status: "succeeded", outputJson: json, message: "Xong" });
+  };
+
+  const state = new Map<string, NodeState>(plan.map((p) => [p.node.id, "pending"]));
+  // Nhãn node lỗi gốc của mỗi node lỗi/bị bỏ qua, để báo đúng tên dù bị bỏ qua dây chuyền.
+  const culprit = new Map<string, string>();
+  const errors = new Map<string, unknown>();
+
+  await new Promise<void>((resolve, reject) => {
+    let running = 0;
+    const pump = () => {
+      for (const p of plan) {
+        const id = p.node.id;
+        if (state.get(id) !== "pending") continue;
+        const sources = sourcesOf(p);
+        const broken = sources.find((s) => state.get(s) === "failed" || state.get(s) === "skipped");
+        if (broken !== undefined) {
+          const who = culprit.get(broken)!;
+          state.set(id, "skipped");
+          culprit.set(id, who);
+          setNode(id, { status: "skipped", error: `Bỏ qua vì "${who}" lỗi`, message: null });
+          continue;
+        }
+        if (signal.aborted || !sources.every((s) => state.get(s) === "done")) continue;
+        state.set(id, "running");
+        running++;
+        runNode(p)
+          .then(
+            () => {
+              state.set(id, "done");
+            },
+            (err: unknown) => {
+              state.set(id, "failed");
+              culprit.set(id, p.impl.definition.label);
+              errors.set(id, err);
+              setNode(id, { status: "failed", error: err instanceof Error ? err.message : String(err), message: null });
+            },
+          )
+          .then(() => {
+            running--;
+            pump();
+          })
+          .catch((err: unknown) => reject(err instanceof Error ? err : new Error(String(err))));
+      }
+      if (running === 0) resolve();
+    };
+    pump();
+  });
+
+  if (signal.aborted) {
+    for (const p of plan) if (state.get(p.node.id) === "pending") setNode(p.node.id, { status: "skipped", error: "Bỏ qua vì lần chạy bị dừng", message: null });
+    throw new Error("Run đã bị dừng");
+  }
+  const failed = plan.filter((p) => errors.has(p.node.id));
+  if (failed.length > 0) {
+    const detail = failed.map((p) => {
+      const err = errors.get(p.node.id);
+      return `Node "${p.impl.definition.label}" lỗi: ${err instanceof Error ? err.message : String(err)}`;
+    });
+    throw new Error(`${failed.length} node lỗi. ${detail.join(" | ")}`, { cause: errors.get(failed[0]!.node.id) });
   }
 }
