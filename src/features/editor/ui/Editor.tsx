@@ -16,7 +16,7 @@ import { api } from "../../../app/api-client";
 import { webNodes } from "../../../nodes/registry.web";
 import type { MuseAccountsResponse, RunResponse, WorkflowListResponse, WorkflowResponse } from "../../../shared/api";
 import { WORKFLOW_TEMPLATES } from "../../../shared/templates";
-import { connectionProblem, droppedConnectionProblem, edgeKindClass, fromFlow, toFlow } from "./graph-convert";
+import { connectionProblem, droppedConnectionProblem, edgeKindClass, fromFlow, replaceTargetEdges, targetAcceptsMany, toFlow } from "./graph-convert";
 import { GraphNode, type FlowNode } from "./GraphNode";
 import { inheritProvider, placeNewNode } from "./new-node";
 import { EditorContext, type EditorApi } from "./node-kit";
@@ -168,8 +168,9 @@ export function Editor() {
         id: `e-${conn.source}-${conn.sourceHandle}-${conn.target}-${conn.targetHandle}`,
         className: edgeKindClass(conn, latest.current.nodes),
       };
-      // Cổng vào chỉ nhận một dây: nối mới thì thay dây cũ.
-      setEdges((eds) => addEdge(edge, eds.filter((e) => !(e.target === conn.target && e.targetHandle === conn.targetHandle))));
+      // Cổng thường chỉ nhận một dây (nối mới thay dây cũ); cổng multiple nhận thêm dây.
+      const many = targetAcceptsMany(conn, latest.current.nodes);
+      setEdges((eds) => addEdge(edge, replaceTargetEdges(eds, conn, many)));
     },
     [setEdges],
   );

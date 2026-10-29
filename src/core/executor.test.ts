@@ -1,11 +1,13 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { countingFakeProviders, promptToVideoGraph, testNodes } from "../../tests/helpers/nodes";
 import { createTestEnv, type TestEnv } from "../../tests/helpers/test-env";
+import type { PortValue } from "../shared/ports";
 import type { WorkflowGraph } from "../shared/workflow";
-import { runNodes } from "./db/schema";
-import { cacheKeyOf, executeRun, GraphError, planGraph } from "./executor";
+import { nodeCache, runNodes } from "./db/schema";
+import { cacheKeyOf, executeRun, GraphError, planGraph, stableStringify } from "./executor";
+import { requireInput, requireInputs, type NodeInputs, type NodeRun, type ServerNode } from "./node-runtime";
 
 describe("planGraph — cổng vào không bắt buộc", () => {
   it("cổng optional chưa nối thì không lỗi; cổng bắt buộc chưa nối vẫn lỗi", () => {
@@ -122,5 +124,126 @@ describe("planGraph", () => {
     expect(() => planGraph({ nodes: [{ ...base.nodes[0]!, type: "khong-co" }], edges: [] }, testNodes)).toThrow(/không tồn tại/);
     const bad = { ...base, nodes: [base.nodes[0]!, { ...base.nodes[1]!, params: { provider: "fake", durationSec: 7 } }] };
     expect(() => planGraph(bad, testNodes)).toThrow(/5 hoặc 10 giây/);
+  });
+});
+
+// Node thử chỉ sống trong file test này (không đưa vào registry).
+const looseParams = { parse: (x: unknown) => x } as never;
+function probeNode(opts: { type: string; inputs: { name: string; multiple?: boolean }[]; stepScope?: string; run: NodeRun<unknown> }): ServerNode {
+  return {
+    definition: {
+      type: opts.type,
+      label: "Thử",
+      description: "",
+      inputs: opts.inputs.map((i) => ({ ...i, kind: "text" as const, label: i.name })),
+      outputs: [{ name: "out", kind: "text" as const, label: "out" }],
+      params: looseParams,
+      defaults: {},
+      stepScope: opts.stepScope,
+    },
+    parseParams: (x) => x,
+    run: opts.run,
+  };
+}
+const srcNode = (id: string, x: number, y = 0) => ({ id, type: "src", position: { x, y }, params: { text: id } });
+const wire = (source: string, target: string, handle = "in") => ({ id: `${source}-${target}`, source, sourceHandle: "out", target, targetHandle: handle });
+const emitter = probeNode({
+  type: "src",
+  inputs: [],
+  run: (_ctx, _in, p) => Promise.resolve({ out: { kind: "text", text: (p as { text: string }).text } }),
+});
+
+describe("cổng multiple", () => {
+  let env: TestEnv;
+  beforeEach(() => {
+    env = createTestEnv();
+  });
+  afterEach(async () => {
+    await env.cleanup();
+  });
+
+  const received: string[][] = [];
+  const collector = probeNode({
+    type: "collect",
+    inputs: [{ name: "in", multiple: true }],
+    run: (_ctx, inputs) => {
+      received.push(requireInputs(inputs, "in", "text").map((v) => v.text));
+      return Promise.resolve({ out: { kind: "text", text: "ok" } });
+    },
+  });
+  const graphWith = (order?: string[]): WorkflowGraph => ({
+    nodes: [srcNode("a", 100), srcNode("b", 300), srcNode("c", 200), { id: "z", type: "collect", position: { x: 500, y: 0 }, params: order ? { order } : {} }],
+    edges: [wire("a", "z"), wire("b", "z"), wire("c", "z")],
+  });
+  const runWith = (graph: WorkflowGraph) =>
+    executeRun({ ...env, providers: countingFakeProviders().providers, nodes: { src: emitter, collect: collector } }, randomUUID(), graph, new AbortController().signal);
+
+  it("cổng multiple nhận 3 dây, node nhận mảng theo params.order", async () => {
+    await runWith(graphWith(["c", "a", "b"]));
+    expect(received.at(-1)).toEqual(["c", "a", "b"]);
+    await runWith(graphWith());
+    expect(received.at(-1)).toEqual(["a", "c", "b"]);
+  });
+
+  it("planGraph luôn trả inputs dạng mảng, cổng multiple giữ cả 3 dây", () => {
+    const planned = planGraph(graphWith(), { src: emitter, collect: collector });
+    const z = planned.find((p) => p.node.id === "z");
+    expect(planned.find((p) => p.node.id === "a")?.inputs.size).toBe(0);
+    expect(z?.inputs.get("in")).toHaveLength(3);
+  });
+
+  it("cổng thường vẫn báo lỗi khi có 2 dây", () => {
+    const single = probeNode({ type: "collect", inputs: [{ name: "in" }], run: () => Promise.resolve({}) });
+    expect(() => planGraph(graphWith(), { src: emitter, collect: single })).toThrow(/có nhiều hơn một dây nối/);
+  });
+
+  it("requireInput báo lỗi khi cổng giữ mảng; requireInputs sai kiểu cũng báo lỗi", () => {
+    const arr: NodeInputs = { in: [{ kind: "text", text: "a" }, { kind: "text", text: "b" }] };
+    expect(() => requireInput(arr, "in", "text")).toThrow(/nhiều dây/);
+    const wrong: PortValue[] = [{ kind: "text", text: "a" }, { kind: "shotlist", shots: [] }];
+    expect(() => requireInputs({ in: wrong }, "in", "text")).toThrow(/kiểu text/);
+  });
+});
+
+describe("take (lần tạo) trong khoá cache", () => {
+  it("take 1 hoặc không có take: cùng khoá cache; take 2: khoá khác", () => {
+    const params = { description: "x", provider: "fake" };
+    const base = cacheKeyOf("character", params, {});
+    expect(cacheKeyOf("character", { ...params, take: 1 }, {})).toBe(base);
+    expect(cacheKeyOf("character", { ...params, take: 2 }, {})).not.toBe(base);
+  });
+
+  it("khoá bước con dùng stepScope và thêm take khi > 1", async () => {
+    const env = createTestEnv();
+    try {
+      const stepper = probeNode({
+        type: "stepper",
+        inputs: [],
+        stepScope: "film",
+        run: async (ctx) => {
+          await ctx.step(["a"], () => Promise.resolve({ v: 1 }));
+          return { out: { kind: "text", text: "ok" } };
+        },
+      });
+      const stepKeys = () => env.db.select().from(nodeCache).all().map((r) => r.cacheKey);
+      const runTake = (take?: number) =>
+        executeRun(
+          { ...env, providers: countingFakeProviders().providers, nodes: { stepper } },
+          randomUUID(),
+          { nodes: [{ id: "s", type: "stepper", position: { x: 0, y: 0 }, params: take === undefined ? {} : { take } }], edges: [] },
+          new AbortController().signal,
+        );
+
+      await runTake();
+      const plain = createHash("sha256").update(`step:film:${stableStringify(["a"])}`).digest("hex");
+      expect(stepKeys()).toContain(plain);
+
+      await runTake(2);
+      const take2Step = createHash("sha256").update(`step:film:take2:${stableStringify(["a"])}`).digest("hex");
+      expect(take2Step).not.toBe(plain);
+      expect(stepKeys()).toContain(take2Step);
+    } finally {
+      await env.cleanup();
+    }
   });
 });

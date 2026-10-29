@@ -47,6 +47,18 @@ function hintFor(kind: PortKind): string {
     : `Hiện chưa có node nào nhận ${PORT_KIND_LABEL[kind]}.`;
 }
 
+// Cổng vào có nhận nhiều dây (multiple) không: nối thêm thì giữ dây cũ.
+export function targetAcceptsMany(conn: Connection | Edge, nodes: FlowNode[]): boolean {
+  const dst = nodes.find((n) => n.id === conn.target);
+  return webNodes[dst?.type ?? ""]?.definition.inputs.find((p) => p.name === conn.targetHandle)?.multiple === true;
+}
+
+// Cổng thường: dây mới THAY dây cũ ở cùng cổng (như ComfyUI). Cổng multiple: giữ nguyên các dây cũ.
+export function replaceTargetEdges(edges: Edge[], conn: Connection | Edge, isMultiple: boolean): Edge[] {
+  if (isMultiple) return edges;
+  return edges.filter((e) => !(e.target === conn.target && e.targetHandle === conn.targetHandle));
+}
+
 // Cổng vào đã có dây thì nối mới sẽ THAY dây cũ (như ComfyUI), nên không tính là lỗi ở đây.
 export function connectionProblem(conn: Connection | Edge, nodes: FlowNode[]): string | null {
   const src = nodes.find((n) => n.id === conn.source);

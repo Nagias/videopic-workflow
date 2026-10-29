@@ -1,4 +1,4 @@
-import type { NodeRun } from "../../core/node-runtime";
+import { optionalInput, type NodeRun } from "../../core/node-runtime";
 import { semaphore } from "../../core/semaphore";
 import type { ChatSessionRef } from "../../providers/types";
 import type { PropItem, PropSetValue } from "../../shared/ports";
@@ -6,8 +6,8 @@ import { DEFAULT_LOOK, propStatePrompt, propStillPrompt } from "../../shared/pro
 import { checkSpec, rowsToSpec, type PropsParams } from "./definition";
 
 export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
-  const fromWriter = inputs.spec?.kind === "propspec";
-  const spec = checkSpec(inputs.spec?.kind === "propspec" ? inputs.spec.items : rowsToSpec(params.items), { allowEmpty: fromWriter });
+  const fromWriter = optionalInput(inputs, "spec", "propspec");
+  const spec = checkSpec(fromWriter ? fromWriter.items : rowsToSpec(params.items), { allowEmpty: fromWriter !== undefined });
   const provider = ctx.providers.get(params.provider);
   const sem = semaphore(Math.max(1, provider.maxParallel()));
   const items: PropItem[] = spec.map((s) => ({ name: s.name, description: s.description, images: [] }));

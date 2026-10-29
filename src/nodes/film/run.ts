@@ -1,4 +1,4 @@
-import { requireInput, type NodeRun, type NodeRunContext } from "../../core/node-runtime";
+import { optionalInput, requireInput, type NodeRun, type NodeRunContext } from "../../core/node-runtime";
 import { semaphore } from "../../core/semaphore";
 import { ProviderError, type ChatSessionRef, type ImageReference, type MediaProvider, type ProviderContext } from "../../providers/types";
 import { checkShotList, MAX_PROP_REFS, parsePropLines, type Shot } from "../../shared/director";
@@ -61,7 +61,7 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
   const character = requireInput(inputs, "character", "imageset");
   const location = requireInput(inputs, "location", "imageset");
   const { shots } = requireInput(inputs, "shots", "shotlist");
-  const props = inputs.props?.kind === "props" ? inputs.props : undefined;
+  const props = optionalInput(inputs, "props", "props");
   const known = props?.items.map((p) => ({ name: p.name, states: p.images.map((x) => x.state) }));
   const check = checkShotList(shots, known);
   if (check.errors.length) throw new Error(check.errors.join("; "));

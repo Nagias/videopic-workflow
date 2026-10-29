@@ -10,6 +10,7 @@
   --warn: #f2b84b;
   --err: #ff6b6b;
   --text-port: #c9a2ff;
+  --image-port: #dfe3ee;
   --video-port: #4fd1c5;
   --imageset-port: #ff9f6b;
   --shotlist-port: #6cb8ff;
@@ -200,6 +201,9 @@ button.primary {
 /* Mỗi loại dữ liệu một màu: chấm cổng, chữ loại cổng và dây cùng màu → cùng màu là cắm được. */
 .kind-text {
   --kind: var(--text-port);
+}
+.kind-image {
+  --kind: var(--image-port);
 }
 .kind-video {
   --kind: var(--video-port);

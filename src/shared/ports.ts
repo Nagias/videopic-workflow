@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { ShotSchema } from "./director";
 
-export const PORT_KINDS = ["text", "video", "imageset", "shotlist", "storyboard", "props", "propspec"] as const;
+export const PORT_KINDS = ["text", "image", "video", "imageset", "shotlist", "storyboard", "props", "propspec"] as const;
 export type PortKind = (typeof PORT_KINDS)[number];
 
 export const PORT_KIND_LABEL: Record<PortKind, string> = {
   text: "Chữ",
+  image: "Ảnh",
   video: "Video",
   imageset: "Bộ ảnh",
   shotlist: "Danh sách cảnh",
@@ -15,7 +16,8 @@ export const PORT_KIND_LABEL: Record<PortKind, string> = {
 };
 
 // optional: node vẫn chạy khi cổng vào này chưa nối (planGraph bỏ qua).
-export type PortDef = { name: string; kind: PortKind; label: string; optional?: boolean };
+// multiple: cổng vào nhận nhiều dây; node nhận mảng giá trị theo thứ tự params.order rồi toạ độ.
+export type PortDef = { name: string; kind: PortKind; label: string; optional?: boolean; multiple?: boolean };
 
 export const ImageRefSchema = z.object({ mediaId: z.string().min(1), view: z.string() });
 
@@ -57,12 +59,21 @@ export type StoryboardShot = z.infer<typeof StoryboardShotSchema>;
 
 export const PortValueSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
+  z.object({ kind: z.literal("image"), mediaId: z.string().min(1), width: z.number(), height: z.number() }),
   z.object({
     kind: z.literal("video"),
     mediaId: z.string().min(1),
     durationSec: z.number(),
     width: z.number(),
     height: z.number(),
+    // Thông tin để ghép clip: cắt đầu bao nhiêu giây, có tiếng không, độ sáng đầu/cuối.
+    clip: z
+      .object({
+        trimStartSec: z.number(),
+        hasAudio: z.boolean(),
+        brightness: z.object({ startLuma: z.number(), endLuma: z.number(), clipSec: z.number() }).optional(),
+      })
+      .optional(),
   }),
   z.object({
     kind: z.literal("imageset"),
@@ -79,6 +90,7 @@ export const PortValueSchema = z.discriminatedUnion("kind", [
 ]);
 export type PortValue = z.infer<typeof PortValueSchema>;
 export type TextValue = Extract<PortValue, { kind: "text" }>;
+export type ImageValue = Extract<PortValue, { kind: "image" }>;
 export type VideoValue = Extract<PortValue, { kind: "video" }>;
 export type ImageSetValue = Extract<PortValue, { kind: "imageset" }>;
 export type ShotListValue = Extract<PortValue, { kind: "shotlist" }>;

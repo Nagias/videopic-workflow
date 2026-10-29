@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { acceptersOf, connectionProblem, droppedConnectionProblem, edgeKindClass, toFlow } from "./graph-convert";
+import type { Edge } from "@xyflow/react";
+import { acceptersOf, connectionProblem, droppedConnectionProblem, edgeKindClass, replaceTargetEdges, targetAcceptsMany, toFlow } from "./graph-convert";
 import type { FlowNode } from "./GraphNode";
 
 const node = (id: string, type: string): FlowNode => ({ id, type, position: { x: 0, y: 0 }, data: { params: {} } });
@@ -47,5 +48,25 @@ describe("nối dây giữa các node", () => {
       edges: [{ id: "e", source: "p", sourceHandle: "text", target: "v", targetHandle: "prompt" }],
     });
     expect(flow.edges[0]?.className).toBe("kind-text");
+  });
+});
+
+describe("nối vào cổng nhận nhiều dây", () => {
+  const edge = (id: string, source: string, target: string, targetHandle: string): Edge => ({ id, source, sourceHandle: "out", target, targetHandle });
+  const existing = [edge("e1", "a", "t", "in"), edge("e2", "b", "t", "in"), edge("e3", "a", "t", "other"), edge("e4", "a", "u", "in")];
+  const conn = { source: "c", sourceHandle: "out", target: "t", targetHandle: "in" };
+
+  it("cổng thường: dây mới thay mọi dây cũ cùng cổng; các cổng khác giữ nguyên", () => {
+    expect(replaceTargetEdges(existing, conn, false).map((e) => e.id)).toEqual(["e3", "e4"]);
+  });
+
+  it("cổng multiple: không lọc dây cũ", () => {
+    expect(replaceTargetEdges(existing, conn, true)).toEqual(existing);
+  });
+
+  it("connectionProblem vẫn trả null cho cổng nhận nhiều dây; node hiện có chưa có cổng nào như vậy", () => {
+    const toPrompt = { source: "p", sourceHandle: "text", target: "v", targetHandle: "prompt" };
+    expect(connectionProblem(toPrompt, nodes)).toBeNull();
+    expect(targetAcceptsMany(toPrompt, nodes)).toBe(false);
   });
 });
