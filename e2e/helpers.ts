@@ -31,9 +31,9 @@ export async function runAllConfirmed(page: Page): Promise<void> {
   await page.getByTestId("run-confirm-ok").click();
 }
 
-// Bấm vào một chỗ trống của nền canvas. Tìm điểm trống thật (ngoài thẻ, khung nhóm, nút điều khiển và minimap, tức là chỗ
-// elementFromPoint trả về chính nền) từ góc trên trái trở đi, thay cho toạ độ cố định có thể rơi vào nút điều khiển ở góc dưới phải.
-export async function clickEmptyPane(page: Page): Promise<void> {
+// Điểm trống thật của nền canvas (ngoài thẻ, khung nhóm, nút điều khiển và minimap, tức là chỗ elementFromPoint trả về chính nền),
+// tìm từ góc trên trái trở đi, thay cho toạ độ cố định có thể rơi vào nút điều khiển ở góc dưới phải.
+export async function findEmptyPane(page: Page): Promise<{ x: number; y: number }> {
   const spot = await page.evaluate(() => {
     const canvas = document.querySelector(".canvas")!.getBoundingClientRect();
     for (let y = canvas.top + 40; y < canvas.bottom - 40; y += 40) {
@@ -43,6 +43,12 @@ export async function clickEmptyPane(page: Page): Promise<void> {
     }
     return null;
   });
-  if (!spot) throw new Error("clickEmptyPane: không tìm được chỗ trống trên nền canvas");
+  if (!spot) throw new Error("findEmptyPane: không tìm được chỗ trống trên nền canvas");
+  return spot;
+}
+
+// Bấm vào một chỗ trống của nền canvas.
+export async function clickEmptyPane(page: Page): Promise<void> {
+  const spot = await findEmptyPane(page);
   await page.mouse.click(spot.x, spot.y);
 }

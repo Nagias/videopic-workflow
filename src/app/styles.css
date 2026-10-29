@@ -591,14 +591,18 @@ button.primary {
   }
 }
 
-/* Thu nhỏ quá mức: chỉ còn ảnh và tên. */
+/* Thu nhỏ quá mức: chỉ còn ảnh và tên. Chân thẻ và dòng lỗi chỉ ẩn (visibility), không gỡ (display): gỡ làm thẻ đổi chiều cao khi
+   phóng qua ngưỡng, xyflow đo lại cả chục thẻ rồi vẽ lại dây, khung nhóm, minimap (đo với 29 node: khung hình đó mất ~180 ms thay vì ~40 ms). */
 .nlabel.compact .st,
-.card.compact .cfoot,
-.card.compact .cerr,
 .card.compact .runbtn,
 .card.compact .prog,
 .gnode.compact .plabel {
   display: none;
+}
+
+.card.compact .cfoot,
+.card.compact .cerr {
+  visibility: hidden;
 }
 
 .plabel {
