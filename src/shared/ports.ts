@@ -67,6 +67,7 @@ export const PortValueSchema = z.discriminatedUnion("kind", [
     width: z.number(),
     height: z.number(),
     // Thông tin để ghép clip: cắt đầu bao nhiêu giây, có tiếng không, độ sáng đầu/cuối.
+    // durationSec ở trên luôn là thời lượng thật của file; phần dùng khi ghép = min(durationSec, SHOT_SECONDS) − clip.trimStartSec.
     clip: z
       .object({
         trimStartSec: z.number(),

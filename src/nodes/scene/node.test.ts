@@ -93,6 +93,8 @@ describe("node scene (Cảnh)", () => {
     const clip = out.clip;
     expect(clip?.kind === "video" && clip.clip?.trimStartSec).toBe(0);
     expect(clip?.kind === "video" && clip.clip?.brightness).toBeDefined();
+    const probe = await env.ffmpeg.probeVideo(env.storage.absPath(env.storage.getMedia(clip?.kind === "video" ? clip.mediaId : "")!));
+    expect(clip?.kind === "video" && clip.durationSec).toBe(probe.durationSec);
     // Clip giả một màu: khung cuối trùng nội dung với thumb nên kho trả lại cùng bản ghi (sha256), chỉ kiểm có ảnh thật.
     expect(out.last?.kind === "image" && env.storage.getMedia(out.last.mediaId)).toBeTruthy();
   });
@@ -128,6 +130,13 @@ describe("node scene (Cảnh)", () => {
     expect(env.storage.getMedia(frameId)?.source).toBe("last-frame");
     expect(first.last?.kind === "image" && first.last.mediaId).toBe(frameId);
     expect(second.clip?.kind === "video" && second.clip.clip?.trimStartSec).toBe(CHAIN_TRIM_SEC);
+    // durationSec là thời lượng thật của file (như mọi video), không trừ phần cắt đầu.
+    for (const out of [first, second]) {
+      const v = out.clip?.kind === "video" ? out.clip : undefined;
+      const probe = await env.ffmpeg.probeVideo(env.storage.absPath(env.storage.getMedia(v!.mediaId)!));
+      expect(v?.durationSec).toBe(probe.durationSec);
+      expect([v?.width, v?.height]).toEqual([probe.width, probe.height]);
+    }
   });
 
   it("take 2 → gọi lại dịch vụ dù chữ y hệt", async () => {

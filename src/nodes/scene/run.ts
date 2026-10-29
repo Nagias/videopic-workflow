@@ -48,16 +48,17 @@ export const run: NodeRun<SceneParams> = async (ctx, inputs, params) => {
   });
   const last = await lastFrameOf(ctx, done.clipId);
   const clip = ctx.storage.getMedia(done.clipId);
-  if (!clip || clip.width === null || clip.height === null) throw new Error(`Không đọc được kích thước clip ${done.clipId}`);
-  ctx.report(`Xong: clip ${done.durationSec.toFixed(1)} giây`);
+  if (!clip) throw new Error(`Không tìm thấy clip ${done.clipId}`);
+  // Như mọi video khác: thời lượng và kích thước thật của file. Phần dùng khi ghép do nơi ghép tự tính (xem ports.ts).
+  const probe = await ctx.ffmpeg.probeVideo(ctx.storage.absPath(clip));
+  ctx.report(`Xong: clip ${probe.durationSec.toFixed(1)} giây`);
   return {
-    // durationSec là phần dùng khi ghép (đã cắt đầu nếu nối, tối đa SHOT_SECONDS), giống phần ghép của Dựng phim.
     clip: {
       kind: "video",
       mediaId: done.clipId,
-      durationSec: done.durationSec,
-      width: clip.width,
-      height: clip.height,
+      durationSec: probe.durationSec,
+      width: probe.width,
+      height: probe.height,
       clip: { trimStartSec: done.trimStartSec, hasAudio: done.hasAudio, ...(done.brightness ? { brightness: done.brightness } : {}) },
     },
     frame: imageOf(ctx, done.keyframeId),
