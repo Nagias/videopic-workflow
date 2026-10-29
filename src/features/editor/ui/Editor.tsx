@@ -78,10 +78,11 @@ export function Editor() {
       loaded.current = true;
       api.listWorkflows().then((l) => setWorkflowList(l.workflows), () => setWorkflowList([]));
       api.getLatestRun(wf.id).then(
-        ({ run: last }) => {
+        ({ run: last, nodes }) => {
           // Đã đổi sang workflow khác, hoặc đã bấm Chạy trong lúc chờ: bỏ kết quả cũ.
           if (shownWorkflow.current !== wf.id || !last || currentRun.current) return;
-          setRun(last);
+          // Mỗi node hiện kết quả mới nhất của nó qua mọi lần chạy (lần gần nhất có thể chỉ chạy một phần).
+          setRun({ ...last, nodes });
           setRunFromHistory(true);
         },
         (e: unknown) => setProblem(`Không tải được kết quả lần chạy trước: ${e instanceof Error ? e.message : String(e)}`),

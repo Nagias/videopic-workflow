@@ -1,6 +1,8 @@
 import { z } from "zod";
-import { CAMERA_ANGLES, CAMERA_MOVES, parsePropLines, SHOT_SIZES, SUBJECTS, type Shot } from "../../shared/director";
+import { CAMERA_ANGLES, CAMERA_MOVES, SHOT_SIZES, SUBJECTS, type Shot } from "../../shared/director";
 import { defineNode } from "../../shared/node-definition";
+import { pickInput } from "../../shared/ports";
+import { shotCalls } from "../../shared/shot-plan";
 import { PROVIDER_IDS, type ProviderId } from "../../shared/providers";
 import { SHOT_CACHE_VERSION } from "../film/definition";
 
@@ -22,6 +24,19 @@ export const params = z.object({
   take: z.number().int().min(1).optional(),
 }) satisfies z.ZodType<SceneParams>;
 
+// Cảnh của node: có dây Nối tiếp là cảnh nối. Mã cảnh không vào prompt hay khoá bước con nào, chỉ để dùng chung kiểu Shot với Dựng phim.
+export const sceneShot = (p: SceneParams, follows: boolean): Shot => ({
+  id: "scene",
+  link: follows ? "chain" : "cut",
+  size: p.size,
+  angle: p.angle,
+  move: p.move,
+  subject: p.subject,
+  start: p.start,
+  motion: p.motion,
+  props: p.props,
+});
+
 export const definition = defineNode<SceneParams>({
   type: "scene",
   label: "Cảnh",
@@ -42,8 +57,20 @@ export const definition = defineNode<SceneParams>({
   cacheVersion: SHOT_CACHE_VERSION,
   params,
   defaults: { size: "MS", angle: "eye", move: "static", subject: "character", start: "", motion: "", props: "", provider: "fake" },
-  estimate(p, connected) {
-    const textOnly = p.subject === "none" && parsePropLines(p.props).items.length === 0;
-    return connected.has("follow") || textOnly ? { image: 0, video: 1, text: 0 } : { image: 1, video: 1, text: 0 };
+  // Theo đúng khoá bước con của makeShot(): biết đầu vào thì chỉ đếm bước còn thiếu cache; chưa biết thì cảnh nối hoặc
+  // chữ→video 1 video, còn lại 1 ảnh + 1 video.
+  estimate(p, connected, known) {
+    const inputs = known?.inputs ?? {};
+    return shotCalls(
+      sceneShot(p, connected.has("follow")),
+      {
+        providerId: p.provider,
+        character: pickInput(inputs, "character", "imageset"),
+        location: pickInput(inputs, "location", "imageset"),
+        props: pickInput(inputs, "props", "props"),
+        prevClipId: pickInput(inputs, "follow", "video")?.mediaId,
+      },
+      (keyParts) => known?.step(keyParts),
+    );
   },
 });

@@ -150,6 +150,62 @@ describe("phạm vi chạy và huỷ lượt chạy", () => {
     expect(s.calls()).toBe(0);
   });
 
+  const post = (url: string, payload: unknown) => s.app.inject({ method: "POST", url, payload: payload as object });
+  const finished = async (runId: string) => {
+    while (await s.deps.queue.processNext());
+    return RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${runId}` })).json());
+  };
+
+  it("POST runs scope node chỉ chạy node đó", async () => {
+    expect((await s.app.inject({ method: "PUT", url: "/api/workflows/default", payload: { graph: promptToVideoGraph("Rừng") } })).statusCode).toBe(200);
+    const start = await post("/api/workflows/default/runs", { scope: { mode: "node", nodeId: "p1" } });
+    expect(start.statusCode, start.body).toBe(202);
+    const run = await finished(start.json<{ runId: string }>().runId);
+    expect(run.status).toBe("succeeded");
+    expect(Object.keys(run.nodes)).toEqual(["p1"]);
+    expect(s.calls()).toBe(0);
+
+    const bad = await post("/api/workflows/default/runs", { scope: { mode: "node" } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json<{ error: string }>().error).toMatch(/Phạm vi chạy không hợp lệ/);
+    const unknown = await post("/api/workflows/default/runs", { scope: { mode: "downstream", nodeId: "khong-co" } });
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.json<{ error: string }>().error).toContain("khong-co");
+    expect((await post("/api/workflows/khong-co/runs", {})).statusCode).toBe(404);
+    expect(s.db.select().from(runs).all()).toHaveLength(1);
+  });
+
+  it("latest gộp theo node: chạy all rồi chạy node → nodes có đủ mọi node", async () => {
+    expect((await s.app.inject({ method: "PUT", url: "/api/workflows/default", payload: { graph: promptToVideoGraph("Rừng") } })).statusCode).toBe(200);
+    const all = await finished((await post("/api/workflows/default/runs", {})).json<{ runId: string }>().runId);
+    const one = await finished((await post("/api/workflows/default/runs", { scope: { mode: "node", nodeId: "p1" } })).json<{ runId: string }>().runId);
+    const latest = LatestRunResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/workflows/default/runs/latest" })).json());
+    expect(latest.run?.id).toBe(one.id);
+    expect(Object.keys(latest.run!.nodes)).toEqual(["p1"]);
+    expect(Object.keys(latest.nodes).sort()).toEqual(["p1", "v1"]);
+    expect(latest.nodes.p1).toEqual(one.nodes.p1);
+    expect(latest.nodes.v1).toEqual(all.nodes.v1);
+    expect(latest.nodes.v1?.output?.video?.kind).toBe("video");
+
+    // Node đã bỏ khỏi workflow thì không còn trong `nodes`.
+    expect((await s.app.inject({ method: "PUT", url: "/api/workflows/default", payload: { graph: { nodes: [promptToVideoGraph("Rừng").nodes[0]], edges: [] } } })).statusCode).toBe(200);
+    const after = LatestRunResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/workflows/default/runs/latest" })).json());
+    expect(Object.keys(after.nodes)).toEqual(["p1"]);
+  });
+
+  it("cancel 404 với run lạ", async () => {
+    const missing = await post("/api/runs/khong-co/cancel", {});
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json<{ error: string }>().error).toMatch(/Không tìm thấy lần chạy/);
+    const runId = s.deps.queue.enqueue("default", promptToVideoGraph("Rừng"));
+    const first = await post(`/api/runs/${runId}/cancel`, {});
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toEqual({ result: "cancelled" });
+    expect(runRow(runId)).toMatchObject({ status: "failed", error: "Đã huỷ" });
+    expect((await post(`/api/runs/${runId}/cancel`, {})).json()).toEqual({ result: "finished" });
+    expect(s.calls()).toBe(0);
+  });
+
   it("huỷ run đang xếp hàng → failed, error 'Đã huỷ'", async () => {
     const runId = s.deps.queue.enqueue("default", promptToVideoGraph("Rừng"));
     expect(s.deps.queue.cancel(runId)).toBe("cancelled");

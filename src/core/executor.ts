@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { and, eq } from "drizzle-orm";
-import { z, ZodError } from "zod";
+import { ZodError } from "zod";
 import type { ProviderRegistry } from "../providers/types";
-import type { RunDecision } from "../shared/api";
+import type { RunDecision, RunScope } from "../shared/api";
 import { stableStringify } from "../shared/hash";
 import type { SourceRef } from "../shared/node-definition";
 import { NodeOutputsSchema, type NodeOutputs, type PortValue } from "../shared/ports";
@@ -77,13 +77,6 @@ export type ExecuteDeps = {
   nodes: Record<string, ServerNode>;
   chatLocks: ChatLocks;
 };
-
-// Phạm vi một lần chạy: cả workflow, một node (kèm phía trước), hoặc một node và mọi node phía sau.
-export const RunScopeSchema = z.union([
-  z.object({ mode: z.literal("all") }),
-  z.object({ mode: z.enum(["node", "downstream"]), nodeId: z.string().min(1) }),
-]);
-export type RunScope = z.infer<typeof RunScopeSchema>;
 
 function zodMessage(err: ZodError): string {
   return err.issues.map((i) => i.message).join("; ");
@@ -164,19 +157,61 @@ export function cacheKeyOf(type: string, params: unknown, upstream: Record<strin
   return createHash("sha256").update(stableStringify(parts)).digest("hex");
 }
 
-function mediaStillValid(value: unknown, storage: Storage): boolean {
+// Khoá cache của node: loại, tham số, khoá các node nguồn theo từng cổng (cổng nhiều dây theo đúng thứ tự orderSources()).
+// keyOf trả khoá của node nguồn (đã tính trước, vì order xếp nguồn trước đích).
+export function nodeKeyOf(p: PlannedNode, graph: WorkflowGraph, keyOf: (nodeId: string) => string | undefined): string {
+  const upstream: Record<string, string> = {};
+  for (const port of p.impl.definition.inputs) {
+    if (!p.inputs.has(port.name)) continue;
+    const wires = port.multiple ? orderSources(p, port.name, graph) : p.inputs.get(port.name)!;
+    upstream[port.name] = wires.map((src) => `${keyOf(src.source)}:${src.sourceHandle}`).join(",");
+  }
+  return cacheKeyOf(p.node.type, p.params, upstream, p.impl.definition.cacheVersion);
+}
+
+// Khoá cache của mọi node theo thứ tự chạy: khoá chỉ phụ thuộc tham số và khoá nguồn nên tính được trước khi chạy (ước tính lượt).
+export function computeKeys(order: PlannedNode[], graph: WorkflowGraph): Map<string, string> {
+  const keys = new Map<string, string>();
+  for (const p of order) keys.set(p.node.id, nodeKeyOf(p, graph, (id) => keys.get(id)));
+  return keys;
+}
+
+// Giá trị đầu vào của node từ kết quả các node nguồn; thiếu thì trả dây đầu tiên chưa có giá trị.
+export function gatherInputs(p: PlannedNode, graph: WorkflowGraph, outputOf: (nodeId: string) => NodeOutputs | undefined): { inputs: NodeInputs } | { missing: SourceRef } {
+  const inputs: NodeInputs = {};
+  for (const port of p.impl.definition.inputs) {
+    if (!p.inputs.has(port.name)) continue;
+    const wires = port.multiple ? orderSources(p, port.name, graph) : p.inputs.get(port.name)!;
+    const values: PortValue[] = [];
+    for (const src of wires) {
+      const value = outputOf(src.source)?.[src.sourceHandle];
+      if (!value) return { missing: src };
+      values.push(value);
+    }
+    inputs[port.name] = port.multiple ? values : values[0]!;
+  }
+  return { inputs };
+}
+
+// Khoá cache của bước con ctx.step: theo vùng (stepScope) và lần tạo (take > 1), không theo node.
+export function stepKeyOf(stepScope: string, take: number, keyParts: unknown): string {
+  const takePart = take > 1 ? `take${take}:` : "";
+  return createHash("sha256").update(`step:${stepScope}:${takePart}${stableStringify(keyParts)}`).digest("hex");
+}
+
+export function mediaStillValid(value: unknown, storage: Storage): boolean {
   return collectMediaIds(value).every((id) => {
     const rec = storage.getMedia(id);
     return rec !== undefined && existsSync(storage.absPath(rec));
   });
 }
 
-function outputsStillValid(outputs: NodeOutputs, storage: Storage): boolean {
+export function outputsStillValid(outputs: NodeOutputs, storage: Storage): boolean {
   return Object.values(outputs).every((v: PortValue) => mediaStillValid(v, storage));
 }
 
 // Mọi node phải xong trước node này: nguồn của các dây vào, cộng phụ thuộc ngầm (after).
-function sourcesOf(p: PlannedNode): string[] {
+export function sourcesOf(p: PlannedNode): string[] {
   return [...[...p.inputs.values()].flat().map((w) => w.source), ...p.after];
 }
 
@@ -279,22 +314,12 @@ export async function executeRun(
 
   const runNode = async (p: PlannedNode): Promise<void> => {
     const id = p.node.id;
-    const inputs: NodeInputs = {};
-    const upstream: Record<string, string> = {};
-    for (const port of p.impl.definition.inputs) {
-      if (!p.inputs.has(port.name)) continue;
-      const wires = port.multiple ? orderSources(p, port.name, current) : p.inputs.get(port.name)!;
-      const values = wires.map((src) => {
-        const value = outputs.get(src.source)?.[src.sourceHandle];
-        if (!value) throw new Error(`Node nguồn "${src.source}" không trả cổng "${src.sourceHandle}"`);
-        return value;
-      });
-      inputs[port.name] = port.multiple ? values : values[0]!;
-      upstream[port.name] = wires.map((src) => `${keys.get(src.source)}:${src.sourceHandle}`).join(",");
-    }
+    const gathered = gatherInputs(p, current, (nodeId) => outputs.get(nodeId));
+    if ("missing" in gathered) throw new Error(`Node nguồn "${gathered.missing.source}" không trả cổng "${gathered.missing.sourceHandle}"`);
+    const { inputs } = gathered;
     const take = takeOf(p.params);
     const stepScope = p.impl.definition.stepScope ?? p.node.type;
-    const key = cacheKeyOf(p.node.type, p.params, upstream, p.impl.definition.cacheVersion);
+    const key = nodeKeyOf(p, current, (nodeId) => keys.get(nodeId));
     keys.set(id, key);
 
     // Node giống hệt (cùng khoá) đang chạy: chờ nó rồi dùng lại, không gọi dịch vụ lần hai.
@@ -344,8 +369,7 @@ export async function executeRun(
         report: (message) => setNode(id, { message }),
         partial: (partialOutputs) => setNode(id, { outputJson: JSON.stringify(NodeOutputsSchema.parse(partialOutputs)) }),
         step: async <T extends StepValue>(keyParts: unknown, fn: () => Promise<T>): Promise<T> => {
-          const takePart = take > 1 ? `take${take}:` : "";
-          const stepKey = createHash("sha256").update(`step:${stepScope}:${takePart}${stableStringify(keyParts)}`).digest("hex");
+          const stepKey = stepKeyOf(stepScope, take, keyParts);
           const hit = db.select().from(nodeCache).where(eq(nodeCache.cacheKey, stepKey)).get();
           if (hit) {
             const value = JSON.parse(hit.outputJson) as T;

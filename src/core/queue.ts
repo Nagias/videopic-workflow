@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { WorkflowGraphSchema, type WorkflowGraph } from "../shared/workflow";
 import { runs } from "./db/schema";
-import { executeRun, RunScopeSchema, type ExecuteDeps, type RunScope } from "./executor";
+import { RunScopeSchema, type RunScope } from "../shared/api";
+import { executeRun, type ExecuteDeps } from "./executor";
 
 export type CancelResult = "cancelled" | "not_found" | "finished";
 

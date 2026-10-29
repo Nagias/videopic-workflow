@@ -74,4 +74,23 @@ describe("node props (Đồ vật)", () => {
     await expect(run(ctx, {}, definition.params.parse({ items: [{ ...items[1]!, states: " , " }], provider: "fake" }))).rejects.toThrow(/ít nhất một trạng thái/);
     expect(counter.log.image).toBe(0);
   });
+
+  it("ước tính lượt: 1 ảnh mỗi trạng thái chưa có trong cache bước con; nối Biên kịch chưa có kết quả → 0; predict ra đúng kết quả chạy", async () => {
+    const params = definition.params.parse({ items, provider: "fake" });
+    const none = new Set<string>();
+    expect(definition.estimate?.(params, none)).toEqual({ image: 3, video: 0, text: 0 });
+    expect(definition.estimate?.(params, new Set(["spec"]))).toEqual({ image: 0, video: 0, text: 0 });
+
+    // Chạy với bộ nhớ bước con riêng, rồi ước tính/dự đoán bằng chính bộ nhớ đó.
+    const counter = countingFakeProviders();
+    const steps = new Map<string, unknown>();
+    const ctx = testNodeCtx(env, counter.providers);
+    const ran = await run({ ...ctx, step: async (k, fn) => { const v = await ctx.step(k, fn); steps.set(JSON.stringify(k), v); return v; } }, {}, params);
+    const known = { inputs: {}, step: (k: unknown) => steps.get(JSON.stringify(k)) };
+    expect(definition.estimate?.(params, none, known)).toEqual({ image: 0, video: 0, text: 0 });
+    expect(definition.predict?.(params, known)).toEqual(ran);
+    steps.delete([...steps.keys()][1]!);
+    expect(definition.estimate?.(params, none, known)).toEqual({ image: 1, video: 0, text: 0 });
+    expect(definition.predict?.(params, known)).toBeUndefined();
+  });
 });

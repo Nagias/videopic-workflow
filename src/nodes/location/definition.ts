@@ -23,4 +23,6 @@ export const definition = defineNode<LocationParams>({
   cacheVersion: codeVersion(LOCATION_SHEET),
   params,
   defaults: { name: "", description: "", look: DEFAULT_LOOK, provider: "fake" },
+  // 1 ảnh mỗi góc của bộ ảnh bối cảnh (2).
+  estimate: (p) => ({ image: LOCATION_SHEET(p.description, lookOf(p)).length, video: 0, text: 0 }),
 });

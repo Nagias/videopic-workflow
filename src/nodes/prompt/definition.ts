@@ -14,4 +14,5 @@ export const definition = defineNode<PromptParams>({
   outputs: [{ name: "text", kind: "text", label: "Prompt" }],
   params,
   defaults: { text: "" },
+  estimate: () => ({ image: 0, video: 0, text: 0 }),
 });

@@ -16,4 +16,5 @@ export const definition = defineNode<GenerateVideoParams>({
   outputs: [{ name: "video", kind: "video", label: "Video" }],
   params,
   defaults: { provider: "fake", durationSec: 5 },
+  estimate: () => ({ image: 0, video: 1, text: 0 }),
 });

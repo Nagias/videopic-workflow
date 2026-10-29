@@ -2,7 +2,7 @@ import { optionalInput, requireInput, type NodeRun, type NodeRunContext } from "
 import { checkShotList, type Shot } from "../../shared/director";
 import type { ImageValue } from "../../shared/ports";
 import { lastFrameOf, makeShot } from "../film/shot-steps";
-import type { SceneParams } from "./definition";
+import { sceneShot, type SceneParams } from "./definition";
 
 const imageOf = (ctx: NodeRunContext, mediaId: string): ImageValue => {
   const rec = ctx.storage.getMedia(mediaId);
@@ -17,18 +17,7 @@ export const run: NodeRun<SceneParams> = async (ctx, inputs, params) => {
   const props = optionalInput(inputs, "props", "props");
   const follow = optionalInput(inputs, "follow", "video");
 
-  // Mã cảnh không vào prompt hay khoá bước con nào, chỉ để dùng chung kiểu Shot với Dựng phim.
-  const shot: Shot = {
-    id: "scene",
-    link: follow ? "chain" : "cut",
-    size: params.size,
-    angle: params.angle,
-    move: params.move,
-    subject: params.subject,
-    start: params.start,
-    motion: params.motion,
-    props: params.props,
-  };
+  const shot = sceneShot(params, follow !== undefined);
   // Luật của riêng cảnh này (chữ, đồ vật) kiểm trước khi tốn lượt. Luật giữa các cảnh (nối, trạng thái đồ vật liên tục)
   // do Ghép phim kiểm trên cả chuỗi; cảnh nối được kiểm như cảnh cắt có khung đầu là khung cuối cảnh trước.
   const known = props?.items.map((p) => ({ name: p.name, states: p.images.map((x) => x.state) }));

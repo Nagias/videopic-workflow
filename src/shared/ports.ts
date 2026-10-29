@@ -101,3 +101,18 @@ export type PropSpecValue = Extract<PortValue, { kind: "propspec" }>;
 
 export const NodeOutputsSchema = z.record(z.string(), PortValueSchema);
 export type NodeOutputs = z.infer<typeof NodeOutputsSchema>;
+
+// Mã media trong một giá trị bước con đã lưu ({ mediaId, … }); không có thì undefined.
+export const mediaIdOf = (v: unknown): string | undefined => {
+  const id = v && typeof v === "object" ? (v as { mediaId?: unknown }).mediaId : undefined;
+  return typeof id === "string" ? id : undefined;
+};
+
+// Giá trị đầu vào của node: cổng thường một PortValue, cổng `multiple` mảng PortValue theo thứ tự đã sắp.
+export type NodeInputs = Record<string, PortValue | PortValue[]>;
+
+// Cổng thường không bắt buộc: chưa nối (hoặc nối giá trị khác kiểu) thì trả undefined.
+export function pickInput<K extends PortValue["kind"]>(inputs: Readonly<NodeInputs>, name: string, kind: K): Extract<PortValue, { kind: K }> | undefined {
+  const v = inputs[name];
+  return v && !Array.isArray(v) && v.kind === kind ? (v as Extract<PortValue, { kind: K }>) : undefined;
+}

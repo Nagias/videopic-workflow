@@ -1,6 +1,6 @@
 import type { ProviderRegistry } from "../providers/types";
 import type { AnyNodeDefinition, NodeDefinition } from "../shared/node-definition";
-import type { NodeOutputs, PortValue } from "../shared/ports";
+import { pickInput, type NodeInputs, type NodeOutputs, type PortValue } from "../shared/ports";
 import type { Ffmpeg } from "./ffmpeg";
 import type { RunShared } from "./run-shared";
 import type { Storage } from "./storage";
@@ -19,8 +19,7 @@ export type NodeRunContext = {
   shared: RunShared;
 };
 
-// Cổng thường giao một PortValue; cổng `multiple` giao mảng PortValue theo thứ tự đã sắp.
-export type NodeInputs = Record<string, PortValue | PortValue[]>;
+export type { NodeInputs };
 
 export type NodeRun<P> = (ctx: NodeRunContext, inputs: NodeInputs, params: P) => Promise<NodeOutputs>;
 
@@ -50,14 +49,7 @@ export function requireInput<K extends PortValue["kind"]>(
 }
 
 // Cổng không bắt buộc: chưa nối (hoặc nối giá trị khác kiểu) thì trả undefined.
-export function optionalInput<K extends PortValue["kind"]>(
-  inputs: NodeInputs,
-  name: string,
-  kind: K,
-): Extract<PortValue, { kind: K }> | undefined {
-  const v = inputs[name];
-  return v && !Array.isArray(v) && v.kind === kind ? (v as Extract<PortValue, { kind: K }>) : undefined;
-}
+export const optionalInput = pickInput;
 
 // Cổng `multiple`: trả mọi giá trị theo thứ tự; chưa nối thì mảng rỗng; có giá trị sai kiểu thì báo lỗi.
 export function requireInputs<K extends PortValue["kind"]>(

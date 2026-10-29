@@ -1,8 +1,10 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppDeps } from "../../core/app-deps";
+import { estimateRun } from "../../core/estimate";
+import { GraphError } from "../../core/executor";
 import { runNodes, runs, workflows } from "../../core/db/schema";
-import { ExpandScenesBodySchema, SaveWorkflowBodySchema, type WorkflowListResponse } from "../../shared/api";
+import { ExpandScenesBodySchema, RunRequestBodySchema, SaveWorkflowBodySchema, type RunScope, type WorkflowListResponse } from "../../shared/api";
 import { NodeOutputsSchema } from "../../shared/ports";
 import { keepWriterGroup, rebuildWriterGroup, writerGroups } from "../../shared/scenes";
 import { WORKFLOW_TEMPLATES } from "../../shared/templates";
@@ -99,10 +101,35 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: AppDeps): voi
     return toWorkflowResponse(saveWorkflowGraph(deps.db, row.id, next));
   });
 
+  // Thân { scope? } của chạy và ước tính: workflow đang lưu + phạm vi đã kiểm (node phải có trong workflow).
+  const runRequest = (id: string, body: unknown): { error: string; code: 400 | 404 } | { workflowId: string; graph: WorkflowGraph; scope: RunScope } => {
+    const parsed = RunRequestBodySchema.safeParse(body ?? {});
+    if (!parsed.success) return { code: 400, error: `Phạm vi chạy không hợp lệ: ${parsed.error.issues[0]?.message ?? ""}` };
+    const row = get(id);
+    if (!row) return { code: 404, error: "Không tìm thấy workflow" };
+    const graph = WorkflowGraphSchema.parse(JSON.parse(row.graphJson));
+    const scope = parsed.data.scope ?? { mode: "all" };
+    if (scope.mode !== "all" && !graph.nodes.some((n) => n.id === scope.nodeId)) return { code: 400, error: `Node "${scope.nodeId}" không có trong workflow` };
+    return { workflowId: row.id, graph, scope };
+  };
+
+  // Chạy cả workflow (thân {}) hoặc một phần: { scope: { mode: "node" | "downstream", nodeId } } (spec mục 6.3).
   app.post<{ Params: { id: string } }>("/api/workflows/:id/runs", async (req, reply) => {
-    const row = get(req.params.id);
-    if (!row) return reply.code(404).send({ error: "Không tìm thấy workflow" });
-    const runId = deps.queue.enqueue(row.id, WorkflowGraphSchema.parse(JSON.parse(row.graphJson)));
+    const r = runRequest(req.params.id, req.body);
+    if ("error" in r) return reply.code(r.code).send({ error: r.error });
+    const runId = deps.queue.enqueue(r.workflowId, r.graph, r.scope);
     return reply.code(202).send({ runId });
+  });
+
+  // Ước tính lượt cho cùng yêu cầu chạy, trước khi chạy (spec mục 6.5): không gọi dịch vụ, không ghi gì.
+  app.post<{ Params: { id: string } }>("/api/workflows/:id/estimate", async (req, reply) => {
+    const r = runRequest(req.params.id, req.body);
+    if ("error" in r) return reply.code(r.code).send({ error: r.error });
+    try {
+      return estimateRun(deps, r.graph, r.scope);
+    } catch (err) {
+      if (err instanceof GraphError) return reply.code(400).send({ error: `Không ước tính được: ${err.message}` });
+      throw err;
+    }
   });
 }

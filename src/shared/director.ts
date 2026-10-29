@@ -90,6 +90,9 @@ export function normalizeShots(raw: unknown): Shot[] {
 
 export const MAX_CHAIN_RUN = 2;
 
+// Độ dài một cảnh (giây): mỗi cảnh là một clip Muse.
+export const SHOT_SECONDS = 5;
+
 export type ShotListCheck = { errors: string[]; warnings: string[] };
 
 export type PropUse = { name: string; from: string; to?: string };
@@ -118,6 +121,10 @@ export type KnownProp = { name: string; states: string[] };
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 export const MAX_PROP_REFS = 2;
+
+// Cảnh cắt không người, không đồ vật: chữ→video thẳng (đo 28/10: thật nhất), không có ảnh khung.
+// Dùng chung cho đường tạo cảnh (src/shared/shot-plan.ts) và ước tính lượt của node Cảnh.
+export const textOnly = (shot: Pick<Shot, "link" | "subject" | "props">) => shot.link === "cut" && shot.subject === "none" && parsePropLines(shot.props).items.length === 0;
 
 function checkProps(shots: Shot[], known: KnownProp[] | undefined, errors: string[], warnings: string[]): void {
   const lastState = new Map<string, { name: string; state: string }>();
