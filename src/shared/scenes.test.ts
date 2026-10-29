@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ShotSchema, type Shot } from "./director";
-import { expandScenes, groupEdited, SCENE_GRID, snapshotGroup } from "./scenes";
+import { expandScenes, groupEdited, keepWriterGroup, SCENE_GRID, snapshotGroup } from "./scenes";
 import { sha256Hex } from "./hash";
 import { WORKFLOW_TEMPLATES } from "./templates";
 import type { WorkflowGraph } from "./workflow";
@@ -142,6 +142,11 @@ describe("nhóm Phân cảnh (expandScenes)", () => {
     expect(groupEdited(unwired, groupId)).toBe(true);
     const deleted: WorkflowGraph = { ...graph, nodes: graph.nodes.filter((n) => n.id !== sceneId), edges: graph.edges.filter((e) => e.source !== sceneId && e.target !== sceneId) };
     expect(groupEdited(deleted, groupId)).toBe(true);
+
+    // "Giữ" chỉ ghi nhận kết quả mới, không chụp lại: thẻ vẫn tính là đã sửa tay so với lần tạo.
+    const kept = keepWriterGroup(edited, groupId, "k2");
+    expect(kept.groups![0]!.source).toEqual({ writerId: "writer-1", resultKey: "k2", snapshot: snap });
+    expect(groupEdited(kept, groupId)).toBe(true);
 
     // Nhóm tạo tay (không có source) không bao giờ coi là "đã sửa so với Biên kịch".
     const manual = expandScenes(refsGraph(), { shots: sonLaShots(), refs: REFS, provider: "fake", origin: { x: 0, y: 0 } });

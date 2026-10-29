@@ -14,7 +14,7 @@ import { nodeCache, runNodes, runs } from "./db/schema";
 import type { Ffmpeg } from "./ffmpeg";
 import type { NodeInputs, ServerNode, StepValue } from "./node-runtime";
 import { recordAsset } from "../features/assets/store";
-import { saveWorkflowGraph } from "../features/workflows/store";
+import { getWorkflowRow, saveWorkflowGraph } from "../features/workflows/store";
 import { collectMediaIds } from "./media-ids";
 import { SERVICE_FAILURE_LIMIT } from "../shared/service-failure";
 import { preflightErrors, type PreflightError } from "./preflight";
@@ -249,8 +249,9 @@ export async function executeRun(
   for (const p of plan) addRow(p.node.id);
 
   // Kiểm luật trước khi tốn lượt trên các node chưa chạy: có lỗi thì không node nào trong số đó được khởi chạy.
-  const preflightOf = (targets: PlannedNode[]) => preflightErrors(targets, new Map(order.map((p) => [p.node.id, p])), current, (p, port) => orderSources(p, port, current));
-  const blockAll = (blocked: PreflightError[], targets: PlannedNode[], note: string): GraphError => {
+  const preflightOf = (targets: PlannedNode[], ord: PlannedNode[] = order, g: WorkflowGraph = current) =>
+    preflightErrors(targets, new Map(ord.map((p) => [p.node.id, p])), g, (p, port) => orderSources(p, port, g));
+  const blockAll =(blocked: PreflightError[], targets: PlannedNode[], note: string): GraphError => {
     const culprits = new Set(blocked.map((e) => e.nodeId));
     for (const p of targets) {
       const own = blocked.filter((e) => e.nodeId === p.node.id).map((e) => e.message);
@@ -259,7 +260,12 @@ export async function executeRun(
     }
     return new GraphError(`Kiểm luật trước khi chạy: ${blocked.length} lỗi, ${note}. ${blocked.map((e) => e.message).join(" | ")}`);
   };
-  const blocked = preflightOf(plan);
+  // Cảnh của nhóm có Biên kịch trong lần chạy, Ghép phim của nhóm và mọi node phía sau: hoãn kiểm tới khi Biên kịch xong
+  // (bộ cảnh cũ sắp bị thay thì không được chặn cả lần chạy). Chúng chờ Biên kịch nên chưa thể chạy trước lần kiểm đó.
+  const inPlan = new Set(plan.map((p) => p.node.id));
+  const deferred = new Set<string>();
+  for (const p of plan) if (p.after.some((w) => inPlan.has(w)) || sourcesOf(p).some((s) => deferred.has(s))) deferred.add(p.node.id);
+  const blocked = preflightOf(plan.filter((p) => !deferred.has(p.node.id)));
   if (blocked.length > 0) throw blockAll(blocked, plan, "chưa chạy node nào");
 
   const shared = createRunShared({ providers: deps.providers, chatLocks: deps.chatLocks, failureLimit: SERVICE_FAILURE_LIMIT });
@@ -384,13 +390,9 @@ export async function executeRun(
     }
   };
 
-  // Lập lại kế hoạch theo đồ thị mới. Node chỉ có ở đồ thị cũ (cảnh bị bỏ) thì chưa chạy được vì còn chờ Biên kịch,
-  // nên xoá dòng của nó khỏi lần chạy này; node mới thêm dòng. Node mới phải qua kiểm luật trước khi bất kỳ node nào được chạy tiếp.
-  const replan = (next: WorkflowGraph) => {
-    current = next;
-    const nextOrder = planGraph(next, deps.nodes);
-    const inScope = scopeNodes(nextOrder, scope);
-    const nextPlan = nextOrder.filter((p) => inScope.has(p.node.id));
+  // Nhận kế hoạch theo đồ thị mới (đã kiểm luật và đã lưu). Node chỉ có ở đồ thị cũ (cảnh bị bỏ) thì chưa chạy được
+  // vì còn chờ Biên kịch, nên xoá dòng của nó khỏi lần chạy này; node mới thêm dòng.
+  const adopt = (next: WorkflowGraph, nextOrder: PlannedNode[], nextPlan: PlannedNode[]) => {
     const kept = new Set(nextPlan.map((p) => p.node.id));
     for (const p of plan) {
       const id = p.node.id;
@@ -403,44 +405,77 @@ export async function executeRun(
       addRow(p.node.id);
       state.set(p.node.id, "pending");
     }
+    current = next;
     order = nextOrder;
     plan = nextPlan;
-    const waiting = plan.filter((p) => state.get(p.node.id) === "pending");
-    const problems = preflightOf(waiting);
-    if (problems.length === 0) return;
-    fatal = blockAll(problems, waiting, "chưa chạy cảnh nào của bộ cảnh mới");
-    for (const p of waiting) state.set(p.node.id, "skipped");
   };
 
-  // Biên kịch vừa xong (chạy hoặc dùng lại): nhóm Phân cảnh sinh từ nó mà khác kết quả (resultKey) thì tạo lại nhóm,
-  // lưu workflow và đồ thị của run (chạy tiếp sau khi tắt máy dùng đúng đồ thị mới), rồi chạy tiếp; nhóm đã sửa tay thì dừng hỏi.
+  // Biên kịch vừa xong (chạy hoặc dùng lại). Nhóm Phân cảnh sinh từ nó mà khác kết quả (resultKey):
+  // - chưa sửa tay, cả trong đồ thị của run (lúc bấm Chạy) lẫn trong workflow đang lưu (Editor có thể đã lưu trong lúc
+  //   Biên kịch viết): tạo lại nhóm ở cả hai, kiểm luật, rồi mới lưu workflow (bản trong db, giữ mọi sửa đổi khác) và đồ thị
+  //   của run (chạy tiếp sau khi tắt máy dùng đúng đồ thị mới) trong một giao dịch; chạy tiếp trong cùng run;
+  // - đã sửa tay ở một trong hai nơi (hoặc nhóm đã bị bỏ khỏi workflow): dừng hỏi, không ghi đè gì.
+  // Kiểm luật các node còn chờ (cảnh mới, hoặc cảnh đã hoãn kiểm lúc bắt đầu) trước khi bất kỳ cảnh nào được chạy.
+  // Lỗi thì ném ra: không lưu gì, node chưa chạy bị bỏ qua (xem chỗ gọi).
   const regroup = (writerId: string) => {
     const key = keys.get(writerId);
     const shots = outputs.get(writerId)?.shots;
     if (key === undefined || shots?.kind !== "shotlist") return;
+    const stale = writerGroups(current, writerId).filter((g) => g.source?.resultKey !== key);
     let next = current;
+    let stored: WorkflowGraph | undefined;
     const edited: WorkflowGroup[] = [];
-    for (const g of writerGroups(current, writerId)) {
-      if (g.source?.resultKey === key) continue;
-      if (groupEdited(next, g.id)) edited.push(g);
-      else next = rebuildWriterGroup(next, { writerId, groupId: g.id, shots: shots.shots, resultKey: key }).graph;
+    if (stale.length > 0) {
+      const row = getWorkflowRow(db, workflowId);
+      if (!row) throw new Error(`Không tìm thấy workflow "${workflowId}" (đã bị xoá?) — không lưu được thẻ cảnh mới của Biên kịch`);
+      let inDb: WorkflowGraph = WorkflowGraphSchema.parse(JSON.parse(row.graphJson));
+      for (const g of stale) {
+        const there = writerGroups(inDb, writerId).some((x) => x.id === g.id);
+        if (groupEdited(next, g.id) || !there || groupEdited(inDb, g.id)) {
+          edited.push(g);
+          continue;
+        }
+        const args = { writerId, groupId: g.id, shots: shots.shots, resultKey: key };
+        next = rebuildWriterGroup(next, args).graph;
+        inDb = rebuildWriterGroup(inDb, args).graph;
+      }
+      if (next !== current) stored = inDb;
     }
+
+    let nextOrder = order;
+    let nextPlan = plan;
     if (next !== current) {
-      saveWorkflowGraph(db, workflowId, next);
-      db.update(runs).set({ graphJson: JSON.stringify(WorkflowGraphSchema.parse(next)) }).where(eq(runs.id, runId)).run();
-      replan(next);
+      nextOrder = planGraph(next, deps.nodes);
+      const inScope = scopeNodes(nextOrder, scope);
+      nextPlan = nextOrder.filter((p) => inScope.has(p.node.id));
+    }
+    // Nhóm phải hỏi: cảnh, Ghép phim của nhóm và mọi node phía sau (order xếp nguồn trước đích nên đi xuôi một lượt là đủ).
+    const held = new Set<string>();
+    for (const g of edited) {
+      for (const id of g.nodeIds) held.add(id);
+      const combineId = groupCombineId(next, g.id);
+      if (combineId !== undefined) held.add(combineId);
+    }
+    for (const p of nextOrder) if (sourcesOf(p).some((s) => held.has(s))) held.add(p.node.id);
+
+    const waiting = nextPlan.filter((p) => (state.get(p.node.id) ?? "pending") === "pending" && !held.has(p.node.id));
+    const problems = preflightOf(waiting, nextOrder, next);
+    if (problems.length > 0) {
+      const note = stored ? "chưa chạy cảnh nào của bộ cảnh mới, chưa lưu thẻ cảnh mới" : "chưa chạy cảnh nào của nhóm";
+      throw new GraphError(`Kiểm luật trước khi chạy: ${problems.length} lỗi, ${note}. ${problems.map((e) => e.message).join(" | ")}`);
+    }
+
+    if (stored) {
+      const saved = stored;
+      db.transaction(() => {
+        saveWorkflowGraph(db, workflowId, saved);
+        db.update(runs).set({ graphJson: JSON.stringify(WorkflowGraphSchema.parse(next)) }).where(eq(runs.id, runId)).run();
+      });
+      adopt(next, nextOrder, nextPlan);
     }
     if (edited.length === 0) return;
     decision ??= { kind: "scenes-edited", writerId, groupId: edited[0]!.id };
     db.update(runs).set({ decisionJson: JSON.stringify(decision) }).where(eq(runs.id, runId)).run();
-    // Cảnh trong nhóm, Ghép phim của nhóm và mọi node phía sau (order xếp nguồn trước đích nên đi xuôi một lượt là đủ).
-    const held = new Set<string>();
-    for (const g of edited) {
-      for (const id of g.nodeIds) held.add(id);
-      const combineId = groupCombineId(current, g.id);
-      if (combineId !== undefined) held.add(combineId);
-    }
-    for (const p of order) if (sourcesOf(p).some((s) => held.has(s))) held.add(p.node.id);
     skipPending(held, SCENES_EDITED_MESSAGE, order.find((p) => p.node.id === writerId)?.impl.definition.label ?? writerId);
   };
 
@@ -470,9 +505,9 @@ export async function executeRun(
               try {
                 regroup(id);
               } catch (err) {
-                // Không tạo lại được nhóm (đồ thị mới hỏng…): node chưa chạy dừng lại, run báo đúng lỗi này.
+                // Không tạo lại được nhóm hoặc cảnh không qua kiểm luật: chưa lưu gì, node chưa chạy dừng lại, run báo đúng lỗi này.
                 fatal = err instanceof Error ? err : new Error(String(err));
-                skipPending(plan.map((x) => x.node.id), `Bỏ qua vì không tạo lại được thẻ cảnh: ${fatal.message}`, p.impl.definition.label);
+                skipPending(plan.map((x) => x.node.id), `Bỏ qua: ${fatal.message}`, p.impl.definition.label);
               }
             },
             (err: unknown) => {

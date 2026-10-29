@@ -56,7 +56,7 @@ export type CallLog = {
   textSessions: string[];
 };
 
-export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string; textReply?: (prompt: string, call: number) => string; failImageWhen?: (prompt: string) => boolean } = {}): {
+export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string; textReply?: (prompt: string, call: number) => string; textGate?: (prompt: string) => Promise<void>; failImageWhen?: (prompt: string) => boolean } = {}): {
   providers: ProviderRegistry;
   calls: () => number;
   log: CallLog;
@@ -75,11 +75,14 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
       }
       return fake.generateVideo(req, ctx);
     },
-    generateText: (req, ctx) => {
+    generateText: async (req, ctx) => {
       log.text++;
       log.textPrompts.push(req.prompt);
       log.textSessions.push(req.session ? "continue" : "new");
-      return (opts.textReply ? Promise.resolve({ text: opts.textReply(req.prompt, log.text), session: req.session ?? { accountId: "fake", threadUrl: "fake://thread/text" } }) : fake.generateText(req, ctx));
+      const call = log.text;
+      // textGate: giữ câu trả lời lại (giả Muse viết chữ mất vài phút) cho test làm việc khác trong lúc chờ.
+      if (opts.textGate) await opts.textGate(req.prompt);
+      return opts.textReply ? { text: opts.textReply(req.prompt, call), session: req.session ?? { accountId: "fake", threadUrl: "fake://thread/text" } } : fake.generateText(req, ctx);
     },
     generateImage: (req, ctx) => {
       log.image++;

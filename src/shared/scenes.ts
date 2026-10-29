@@ -181,10 +181,11 @@ export function rebuildWriterGroup(
   return expandScenes(graph, { writerId, ...(groupId === undefined ? {} : { groupId }), shots, refs, provider, resultKey, origin });
 }
 
-// "Giữ": giữ các thẻ đang có, chỉ ghi nhận kết quả mới của Biên kịch và chụp lại nhóm (bản sửa tay thành bản gốc mới).
+// "Giữ": giữ các thẻ đang có, chỉ ghi nhận kết quả mới của Biên kịch. Ảnh chụp giữ nguyên bản lúc tạo: "Giữ" không phải
+// một lần tạo, nên thẻ vẫn tính là đã sửa tay — Biên kịch ra kết quả khác nữa thì lại dừng hỏi (spec mục 5.4).
 export function keepWriterGroup(graph: WorkflowGraph, groupId: string, resultKey: string): WorkflowGraph {
   const group = groupOf(graph, groupId);
   if (!group?.source) throw new Error(`Nhóm "${groupId}" không sinh từ Biên kịch`);
-  const source = { ...group.source, resultKey, snapshot: snapshotGroup(graph, groupId) };
+  const source = { ...group.source, resultKey };
   return { ...graph, groups: groupsOf(graph).map((g) => (g.id === groupId ? { ...g, source } : g)) };
 }
