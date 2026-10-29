@@ -16,6 +16,7 @@ import { api } from "../../../app/api-client";
 import { webNodes } from "../../../nodes/registry.web";
 import type { MuseAccountsResponse, RunResponse, WorkflowListResponse, WorkflowResponse } from "../../../shared/api";
 import { WORKFLOW_TEMPLATES } from "../../../shared/templates";
+import type { WorkflowGroup } from "../../../shared/workflow";
 import { connectionProblem, droppedConnectionProblem, edgeKindClass, fromFlow, replaceTargetEdges, targetAcceptsMany, toFlow } from "./graph-convert";
 import { GraphNode, type FlowNode } from "./GraphNode";
 import { inheritProvider, placeNewNode } from "./new-node";
@@ -54,6 +55,8 @@ export function Editor() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef({ nodes, edges });
   latest.current = { nodes, edges };
+  // Nhóm (Phân cảnh) của workflow đang mở: canvas chưa sửa nhóm, nhưng lưu phải giữ nguyên để Biên kịch còn tạo lại được.
+  const groups = useRef<WorkflowGroup[]>([]);
 
   const [workflowList, setWorkflowList] = useState<WorkflowListResponse["workflows"]>([]);
 
@@ -61,6 +64,7 @@ export function Editor() {
     (wf: WorkflowResponse) => {
       loaded.current = false;
       const flow = toFlow(wf.graph);
+      groups.current = wf.graph.groups;
       setNodes(flow.nodes);
       setEdges(flow.edges);
       setWorkflowId(wf.id);
@@ -103,7 +107,7 @@ export function Editor() {
     saveTimer.current = null;
     setSaveState("saving");
     try {
-      await api.saveWorkflow(workflowId, { graph: fromFlow(latest.current.nodes, latest.current.edges) });
+      await api.saveWorkflow(workflowId, { graph: fromFlow(latest.current.nodes, latest.current.edges, groups.current) });
       setSaveState("saved");
     } catch (e) {
       setSaveState("error");
@@ -141,7 +145,7 @@ export function Editor() {
     try {
       await save();
       const { runId } = await api.startRun(workflowId);
-      setRun({ id: runId, status: "queued", error: null, nodes: {} });
+      setRun({ id: runId, status: "queued", error: null, decision: null, nodes: {} });
       setRunFromHistory(false);
     } catch (e) {
       setProblem(e instanceof Error ? e.message : String(e));

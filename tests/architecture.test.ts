@@ -69,6 +69,15 @@ describe("khoá cứng kiến trúc", () => {
     expect(gi).toMatch(/^\.env$/m);
   });
 
+  it("bảng workflows chỉ được ghi ở src/features/workflows/store.ts", () => {
+    const store = path.join(ROOT, "src/features/workflows/store.ts");
+    const offenders = walk(path.join(ROOT, "src"))
+      .filter((f) => /\.(ts|tsx)$/.test(f) && f !== store)
+      .filter((f) => /\.(insert|update|delete)\(\s*workflows\s*\)/.test(readFileSync(f, "utf8")));
+    expect(offenders, "ghi workflow qua saveWorkflowGraph()").toEqual([]);
+    expect(readFileSync(store, "utf8")).toMatch(/\.insert\(workflows\)/);
+  });
+
   it("không file nào trong src/ trỏ sang dự án khác hay ổ C", () => {
     const offenders = walk(path.join(ROOT, "src"))
       .filter((f) => /\.(ts|tsx)$/.test(f))

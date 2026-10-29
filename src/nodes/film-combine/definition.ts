@@ -67,7 +67,9 @@ export const definition = defineNode<FilmCombineParams>({
   type: "film-combine",
   label: "Ghép phim",
   description: "Ghép các clip (thường là clip của các node Cảnh) thành một video, theo thứ tự đã xếp; bù sáng giữa các cảnh.",
-  inputs: [{ name: "clips", kind: "video", label: "Clip", multiple: true }],
+  // Không bắt buộc để đồ thị có nhóm Phân cảnh còn rỗng (Biên kịch chưa có kết quả) vẫn lập được kế hoạch;
+  // chạy tới đây mà vẫn chưa có clip nào thì run.ts báo lỗi.
+  inputs: [{ name: "clips", kind: "video", label: "Clip", multiple: true, optional: true }],
   outputs: [{ name: "video", kind: "video", label: "Phim" }],
   // Cùng vùng bước con với Dựng phim: cùng các phần thì bước ghép dùng lại phim đã ghép.
   stepScope: "film",

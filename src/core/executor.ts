@@ -3,17 +3,21 @@ import { existsSync } from "node:fs";
 import { and, eq } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import type { ProviderRegistry } from "../providers/types";
+import type { RunDecision } from "../shared/api";
+import { stableStringify } from "../shared/hash";
 import type { SourceRef } from "../shared/node-definition";
 import { NodeOutputsSchema, type NodeOutputs, type PortValue } from "../shared/ports";
-import type { WorkflowGraph, WorkflowNode } from "../shared/workflow";
+import { groupCombineId, groupEdited, rebuildWriterGroup, SCENES_EDITED_MESSAGE, writerGroups, writerWaits } from "../shared/scenes";
+import { WorkflowGraphSchema, type WorkflowGraph, type WorkflowGroup, type WorkflowNode } from "../shared/workflow";
 import type { Db } from "./db/client";
-import { nodeCache, runNodes } from "./db/schema";
+import { nodeCache, runNodes, runs } from "./db/schema";
 import type { Ffmpeg } from "./ffmpeg";
 import type { NodeInputs, ServerNode, StepValue } from "./node-runtime";
 import { recordAsset } from "../features/assets/store";
+import { saveWorkflowGraph } from "../features/workflows/store";
 import { collectMediaIds } from "./media-ids";
 import { SERVICE_FAILURE_LIMIT } from "../shared/service-failure";
-import { preflightErrors } from "./preflight";
+import { preflightErrors, type PreflightError } from "./preflight";
 import { createRunShared, type ChatLocks } from "./run-shared";
 import type { Storage } from "./storage";
 
@@ -30,9 +34,12 @@ export type PlannedNode = {
   params: unknown;
   // Mỗi cổng vào là một mảng dây; cổng thường luôn đúng 1 dây, cổng `multiple` có thể nhiều.
   inputs: Map<string, SourceRef[]>;
+  // Phụ thuộc ngầm (không có dây): các Biên kịch phải xong trước, vì có thể tạo lại nhóm Phân cảnh chứa node này (writerWaits()).
+  after: string[];
 };
 
 export type { SourceRef };
+export { stableStringify };
 
 // Số lần tạo (take) của node: càng cao càng là một lần tạo khác. Mặc định 1.
 export function takeOf(params: unknown): number {
@@ -90,6 +97,7 @@ export function planGraph(graph: WorkflowGraph, nodes: Record<string, ServerNode
     byId.set(n.id, n);
   }
 
+  const waits = writerWaits(graph);
   const planned = new Map<string, PlannedNode>();
   for (const n of graph.nodes) {
     const impl = nodes[n.type]!;
@@ -100,7 +108,7 @@ export function planGraph(graph: WorkflowGraph, nodes: Record<string, ServerNode
       if (err instanceof ZodError) throw new GraphError(`Node "${impl.definition.label}" (${n.id}): ${zodMessage(err)}`);
       throw err;
     }
-    planned.set(n.id, { node: n, impl, params, inputs: new Map() });
+    planned.set(n.id, { node: n, impl, params, inputs: new Map(), after: waits.get(n.id) ?? [] });
   }
 
   for (const e of graph.edges) {
@@ -133,21 +141,12 @@ export function planGraph(graph: WorkflowGraph, nodes: Record<string, ServerNode
     if (s === "visiting") throw new GraphError("Workflow có vòng lặp (node nối ngược về chính nó)");
     state.set(id, "visiting");
     const p = planned.get(id)!;
-    for (const wires of p.inputs.values()) for (const src of wires) visit(src.source);
+    for (const src of sourcesOf(p)) visit(src);
     state.set(id, "done");
     order.push(p);
   };
   for (const n of graph.nodes) visit(n.id);
   return order;
-}
-
-export function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 // take = 1 là lần tạo mặc định nên không đưa vào khoá: kết quả đã có từ trước khi có take vẫn dùng lại được.
@@ -176,7 +175,10 @@ function outputsStillValid(outputs: NodeOutputs, storage: Storage): boolean {
   return Object.values(outputs).every((v: PortValue) => mediaStillValid(v, storage));
 }
 
-const sourcesOf = (p: PlannedNode): string[] => [...p.inputs.values()].flat().map((w) => w.source);
+// Mọi node phải xong trước node này: nguồn của các dây vào, cộng phụ thuộc ngầm (after).
+function sourcesOf(p: PlannedNode): string[] {
+  return [...[...p.inputs.values()].flat().map((w) => w.source), ...p.after];
+}
 
 // Các node thuộc phạm vi chạy. `node`: node đó và mọi node phía trước.
 // `downstream`: node đó, mọi node phía sau, và mọi node phía trước của các node ấy.
@@ -227,15 +229,17 @@ export async function executeRun(
     db.update(runNodes).set({ ...patch, updatedAt: now() }).where(and(eq(runNodes.runId, runId), eq(runNodes.nodeId, nodeId))).run();
   const addRow = (nodeId: string) => db.insert(runNodes).values({ runId, nodeId, status: "pending", updatedAt: now() }).onConflictDoNothing().run();
 
+  // Đồ thị của lần chạy: đổi giữa chừng khi Biên kịch tạo lại nhóm Phân cảnh (regroup bên dưới).
+  let current = graph;
   let order: PlannedNode[];
   let plan: PlannedNode[];
   try {
-    order = planGraph(graph, deps.nodes);
+    order = planGraph(current, deps.nodes);
     const inScope = scopeNodes(order, scope);
     plan = order.filter((p) => inScope.has(p.node.id));
   } catch (err) {
     // Đồ thị hỏng: chỉ đánh dấu những node lần chạy này nhắm tới, node khác giữ nguyên kết quả cũ.
-    const targets = scope.mode === "all" ? graph.nodes.map((n) => n.id) : graph.nodes.filter((n) => n.id === scope.nodeId).map((n) => n.id);
+    const targets = scope.mode === "all" ? current.nodes.map((n) => n.id) : current.nodes.filter((n) => n.id === scope.nodeId).map((n) => n.id);
     for (const id of targets) {
       addRow(id);
       setNode(id, { status: "skipped" });
@@ -244,17 +248,19 @@ export async function executeRun(
   }
   for (const p of plan) addRow(p.node.id);
 
-  // Kiểm luật trước khi tốn lượt: có lỗi thì không node nào được khởi chạy.
-  const blocked = preflightErrors(plan, new Map(order.map((p) => [p.node.id, p])), graph, (p, port) => orderSources(p, port, graph));
-  if (blocked.length > 0) {
+  // Kiểm luật trước khi tốn lượt trên các node chưa chạy: có lỗi thì không node nào trong số đó được khởi chạy.
+  const preflightOf = (targets: PlannedNode[]) => preflightErrors(targets, new Map(order.map((p) => [p.node.id, p])), current, (p, port) => orderSources(p, port, current));
+  const blockAll = (blocked: PreflightError[], targets: PlannedNode[], note: string): GraphError => {
     const culprits = new Set(blocked.map((e) => e.nodeId));
-    for (const p of plan) {
+    for (const p of targets) {
       const own = blocked.filter((e) => e.nodeId === p.node.id).map((e) => e.message);
       const error = own.length > 0 ? own.join("; ") : `Bỏ qua vì kiểm luật trước khi chạy có lỗi ở ${[...culprits].map((id) => `"${id}"`).join(", ")}`;
       setNode(p.node.id, { status: "skipped", error, message: null });
     }
-    throw new GraphError(`Kiểm luật trước khi chạy: ${blocked.length} lỗi, chưa chạy node nào. ${blocked.map((e) => e.message).join(" | ")}`);
-  }
+    return new GraphError(`Kiểm luật trước khi chạy: ${blocked.length} lỗi, ${note}. ${blocked.map((e) => e.message).join(" | ")}`);
+  };
+  const blocked = preflightOf(plan);
+  if (blocked.length > 0) throw blockAll(blocked, plan, "chưa chạy node nào");
 
   const shared = createRunShared({ providers: deps.providers, chatLocks: deps.chatLocks, failureLimit: SERVICE_FAILURE_LIMIT });
   const outputs = new Map<string, NodeOutputs>();
@@ -271,7 +277,7 @@ export async function executeRun(
     const upstream: Record<string, string> = {};
     for (const port of p.impl.definition.inputs) {
       if (!p.inputs.has(port.name)) continue;
-      const wires = port.multiple ? orderSources(p, port.name, graph) : p.inputs.get(port.name)!;
+      const wires = port.multiple ? orderSources(p, port.name, current) : p.inputs.get(port.name)!;
       const values = wires.map((src) => {
         const value = outputs.get(src.source)?.[src.sourceHandle];
         if (!value) throw new Error(`Node nguồn "${src.source}" không trả cổng "${src.sourceHandle}"`);
@@ -364,6 +370,79 @@ export async function executeRun(
   // Nhãn node lỗi gốc của mỗi node lỗi/bị bỏ qua, để báo đúng tên dù bị bỏ qua dây chuyền.
   const culprit = new Map<string, string>();
   const errors = new Map<string, unknown>();
+  // Lỗi làm cả phần còn lại không chạy được (kiểm luật nhóm cảnh mới hỏng…): node chưa chạy bị bỏ qua, run lỗi khi node đang chạy xong.
+  let fatal: Error | undefined;
+  // Lần chạy dừng để hỏi (nhóm Phân cảnh đã sửa tay): chỉ nhóm đó và phía sau bị bỏ qua, node khác chạy tiếp.
+  let decision: RunDecision | undefined;
+
+  const skipPending = (targets: Iterable<string>, error: string, who: string) => {
+    for (const id of targets) {
+      if (state.get(id) !== "pending") continue;
+      state.set(id, "skipped");
+      culprit.set(id, who);
+      setNode(id, { status: "skipped", error, message: null });
+    }
+  };
+
+  // Lập lại kế hoạch theo đồ thị mới. Node chỉ có ở đồ thị cũ (cảnh bị bỏ) thì chưa chạy được vì còn chờ Biên kịch,
+  // nên xoá dòng của nó khỏi lần chạy này; node mới thêm dòng. Node mới phải qua kiểm luật trước khi bất kỳ node nào được chạy tiếp.
+  const replan = (next: WorkflowGraph) => {
+    current = next;
+    const nextOrder = planGraph(next, deps.nodes);
+    const inScope = scopeNodes(nextOrder, scope);
+    const nextPlan = nextOrder.filter((p) => inScope.has(p.node.id));
+    const kept = new Set(nextPlan.map((p) => p.node.id));
+    for (const p of plan) {
+      const id = p.node.id;
+      if (kept.has(id) || state.get(id) !== "pending") continue;
+      state.delete(id);
+      db.delete(runNodes).where(and(eq(runNodes.runId, runId), eq(runNodes.nodeId, id))).run();
+    }
+    for (const p of nextPlan) {
+      if (state.has(p.node.id)) continue;
+      addRow(p.node.id);
+      state.set(p.node.id, "pending");
+    }
+    order = nextOrder;
+    plan = nextPlan;
+    const waiting = plan.filter((p) => state.get(p.node.id) === "pending");
+    const problems = preflightOf(waiting);
+    if (problems.length === 0) return;
+    fatal = blockAll(problems, waiting, "chưa chạy cảnh nào của bộ cảnh mới");
+    for (const p of waiting) state.set(p.node.id, "skipped");
+  };
+
+  // Biên kịch vừa xong (chạy hoặc dùng lại): nhóm Phân cảnh sinh từ nó mà khác kết quả (resultKey) thì tạo lại nhóm,
+  // lưu workflow và đồ thị của run (chạy tiếp sau khi tắt máy dùng đúng đồ thị mới), rồi chạy tiếp; nhóm đã sửa tay thì dừng hỏi.
+  const regroup = (writerId: string) => {
+    const key = keys.get(writerId);
+    const shots = outputs.get(writerId)?.shots;
+    if (key === undefined || shots?.kind !== "shotlist") return;
+    let next = current;
+    const edited: WorkflowGroup[] = [];
+    for (const g of writerGroups(current, writerId)) {
+      if (g.source?.resultKey === key) continue;
+      if (groupEdited(next, g.id)) edited.push(g);
+      else next = rebuildWriterGroup(next, { writerId, groupId: g.id, shots: shots.shots, resultKey: key }).graph;
+    }
+    if (next !== current) {
+      saveWorkflowGraph(db, workflowId, next);
+      db.update(runs).set({ graphJson: JSON.stringify(WorkflowGraphSchema.parse(next)) }).where(eq(runs.id, runId)).run();
+      replan(next);
+    }
+    if (edited.length === 0) return;
+    decision ??= { kind: "scenes-edited", writerId, groupId: edited[0]!.id };
+    db.update(runs).set({ decisionJson: JSON.stringify(decision) }).where(eq(runs.id, runId)).run();
+    // Cảnh trong nhóm, Ghép phim của nhóm và mọi node phía sau (order xếp nguồn trước đích nên đi xuôi một lượt là đủ).
+    const held = new Set<string>();
+    for (const g of edited) {
+      for (const id of g.nodeIds) held.add(id);
+      const combineId = groupCombineId(current, g.id);
+      if (combineId !== undefined) held.add(combineId);
+    }
+    for (const p of order) if (sourcesOf(p).some((s) => held.has(s))) held.add(p.node.id);
+    skipPending(held, SCENES_EDITED_MESSAGE, order.find((p) => p.node.id === writerId)?.impl.definition.label ?? writerId);
+  };
 
   await new Promise<void>((resolve, reject) => {
     let running = 0;
@@ -380,13 +459,21 @@ export async function executeRun(
           setNode(id, { status: "skipped", error: `Bỏ qua vì "${who}" lỗi`, message: null });
           continue;
         }
-        if (signal.aborted || !sources.every((s) => state.get(s) === "done")) continue;
+        if (fatal || signal.aborted || !sources.every((s) => state.get(s) === "done")) continue;
         state.set(id, "running");
         running++;
         runNode(p)
           .then(
             () => {
               state.set(id, "done");
+              if (writerGroups(current, id).length === 0) return;
+              try {
+                regroup(id);
+              } catch (err) {
+                // Không tạo lại được nhóm (đồ thị mới hỏng…): node chưa chạy dừng lại, run báo đúng lỗi này.
+                fatal = err instanceof Error ? err : new Error(String(err));
+                skipPending(plan.map((x) => x.node.id), `Bỏ qua vì không tạo lại được thẻ cảnh: ${fatal.message}`, p.impl.definition.label);
+              }
             },
             (err: unknown) => {
               if (err instanceof SkippedBecause) {
@@ -416,12 +503,13 @@ export async function executeRun(
     for (const p of plan) if (state.get(p.node.id) === "pending") setNode(p.node.id, { status: "skipped", error: "Bỏ qua vì lần chạy bị dừng", message: null });
     throw new Error("Run đã bị dừng");
   }
+  if (fatal) throw fatal;
   const failed = plan.filter((p) => errors.has(p.node.id));
-  if (failed.length > 0) {
-    const detail = failed.map((p) => {
-      const err = errors.get(p.node.id);
-      return `Node "${p.impl.definition.label}" lỗi: ${err instanceof Error ? err.message : String(err)}`;
-    });
-    throw new Error(`${failed.length} node lỗi. ${detail.join(" | ")}`, { cause: errors.get(failed[0]!.node.id) });
-  }
+  const detail = failed.map((p) => {
+    const err = errors.get(p.node.id);
+    return `Node "${p.impl.definition.label}" lỗi: ${err instanceof Error ? err.message : String(err)}`;
+  });
+  const failure = failed.length > 0 ? `${failed.length} node lỗi. ${detail.join(" | ")}` : undefined;
+  if (decision) throw new Error(failure ? `${SCENES_EDITED_MESSAGE} | ${failure}` : SCENES_EDITED_MESSAGE);
+  if (failure) throw new Error(failure, { cause: errors.get(failed[0]!.node.id) });
 }

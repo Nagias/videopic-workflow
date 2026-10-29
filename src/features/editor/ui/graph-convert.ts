@@ -1,7 +1,7 @@
 import type { Connection, Edge } from "@xyflow/react";
 import { webNodes } from "../../../nodes/registry.web";
 import { PORT_KIND_LABEL, type PortDef, type PortKind } from "../../../shared/ports";
-import type { WorkflowGraph } from "../../../shared/workflow";
+import type { WorkflowGraph, WorkflowGroup } from "../../../shared/workflow";
 import type { FlowNode } from "./GraphNode";
 
 // Dây mang màu theo loại dữ liệu ở cổng ra, khớp màu chấm cổng (styles.css: .kind-*).
@@ -16,8 +16,10 @@ export function toFlow(graph: WorkflowGraph): { nodes: FlowNode[]; edges: Edge[]
   return { nodes, edges: graph.edges.map((e) => ({ ...e, className: edgeKindClass(e, nodes) })) };
 }
 
-export function fromFlow(nodes: FlowNode[], edges: Edge[]): WorkflowGraph {
+// groups: nhóm của đồ thị đã tải (canvas chưa sửa nhóm), lưu lại nguyên vẹn để nhóm Phân cảnh không mất khi lưu.
+export function fromFlow(nodes: FlowNode[], edges: Edge[], groups: WorkflowGroup[]): WorkflowGraph {
   return {
+    groups,
     nodes: nodes.map((n) => ({
       id: n.id,
       type: n.type ?? "",

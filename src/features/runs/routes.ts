@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppDeps } from "../../core/app-deps";
 import { runNodes, runs, workflows } from "../../core/db/schema";
-import type { LatestRunResponse, RunNodeState, RunResponse } from "../../shared/api";
+import { RunDecisionSchema, type LatestRunResponse, type RunNodeState, type RunResponse } from "../../shared/api";
 import { NodeOutputsSchema } from "../../shared/ports";
 
 function toRunResponse(deps: AppDeps, run: typeof runs.$inferSelect): RunResponse {
@@ -16,7 +16,8 @@ function toRunResponse(deps: AppDeps, run: typeof runs.$inferSelect): RunRespons
       output: r.outputJson ? NodeOutputsSchema.parse(JSON.parse(r.outputJson)) : null,
     };
   }
-  return { id: run.id, status: run.status, error: run.error, nodes };
+  const decision = run.decisionJson ? RunDecisionSchema.parse(JSON.parse(run.decisionJson)) : null;
+  return { id: run.id, status: run.status, error: run.error, decision, nodes };
 }
 
 export function registerRunRoutes(app: FastifyInstance, deps: AppDeps): void {
