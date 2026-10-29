@@ -21,6 +21,7 @@ Trả nợ xong: chuyển dòng xuống mục "Đã trả", ghi ngày và commit
 | N-013 | Kho tài sản chưa có nút xoá/đổi tên mục; trùng tên thì hiện hai mục | Ít mục, một người dùng | Kho dài, khó chọn | Khi kho > 30 mục | 28/10/2026 |
 | N-014 | Biên kịch không có ô sửa tay riêng (muốn sửa phải chép sang node Danh sách cảnh) | Giữ một nơi sửa cảnh duy nhất | Sửa 1 cảnh của Biên kịch phải chép cả danh sách | Khi chủ dự án dùng Biên kịch thường xuyên: thêm nút "Chép sang Danh sách cảnh" | 28/10/2026 |
 | N-015 | Khi danh sách đồ vật đến từ Biên kịch, tên/trạng thái đồ vật lạ chỉ bị chặn trong từng Cảnh (trước khi Cảnh đó gọi Muse, `src/nodes/scene/run.ts`), không chặn cả lượt chạy ở bước kiểm luật trước khi chạy (`scenesFeeding()` chưa biết món nào trước khi Đồ vật chạy) | Các cảnh khác chạy song song không mất lượt vì kết quả được cache và dùng lại | Một lượt chạy kết thúc với cảnh lỗi trong khi cảnh khác đã chạy | Khi chủ dự án muốn chặn cả lượt chạy, hoặc khi Biên kịch → thẻ cảnh (Task 5) cho thấy lỗi này hay gặp | 29/10/2026 |
+| N-017 | Ô tìm node lọc theo cổng chỉ nối vào CỔNG ĐẦU TIÊN cùng loại của node được chọn (kéo từ cổng Bối cảnh ra, chọn Cảnh → nối vào cổng Nhân vật vì cả hai cùng là Bộ ảnh); mỗi mục ghi rõ cổng sẽ nối nhưng chưa cho chọn cổng khác | Cổng cùng loại dữ liệu thì máy chủ không phân biệt; người dùng thấy cổng đích ghi trên mục và kéo lại dây nếu muốn cổng khác | Dây nối nhầm cổng Nhân vật/Bối cảnh, phải kéo lại bằng tay | Khi có node mới có hai cổng vào cùng loại mà hay bị nối nhầm (mỗi cổng một mục trong ô tìm) | 29/10/2026 |
 
 ## Đã trả
 
