@@ -162,7 +162,11 @@ describe("node film-combine (Ghép phim)", () => {
     expect(error?.message).toContain(`Cảnh "s2" nối tiếp "s1" nhưng đứng đầu Ghép phim`);
     expect(counter.calls()).toBe(0);
     expect(counter.log.image).toBe(0);
-    for (const id of ["ch", "lo", "s1", "s2", "g"]) expect(rowOf(runId, id)?.status).toBe("skipped");
+    // Lỗi hiện ở đúng thẻ cảnh liên quan; các node khác trong phạm vi bị bỏ qua và nêu tên thẻ lỗi.
+    expect(rowOf(runId, "s2")?.status).toBe("failed");
+    expect(rowOf(runId, "s2")?.error).toContain(`Cảnh "s2" nối tiếp "s1" nhưng đứng đầu Ghép phim`);
+    for (const id of ["ch", "lo", "s1", "g"]) expect(rowOf(runId, id)?.status).toBe("skipped");
+    expect(rowOf(runId, "g")?.error).toContain("kiểm luật trước khi chạy có lỗi ở");
   });
 
   it("preflight: trạng thái đồ vật không liên tục → lỗi, calls() = 0", async () => {
@@ -245,7 +249,7 @@ describe("node film-combine (Ghép phim)", () => {
           return p.impl.definition.inputs.find((x) => x.name === port)?.multiple ? orderSources(p, port, graph) : [...(p.inputs.get(port) ?? [])];
         },
       };
-      return { feeding: scenesFeeding("g", ctx), errors: definition.preflight!(ctx) };
+      return { feeding: scenesFeeding("g", ctx), errors: definition.preflight!(ctx).map((i) => (typeof i === "string" ? i : i.message)) };
     };
 
     it("[v, s(follow←v)] qua kiểm luật, s coi là cảnh cắt, chạy được", async () => {

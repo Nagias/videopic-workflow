@@ -6,7 +6,7 @@ import { createTestEnv, type TestEnv } from "../../tests/helpers/test-env";
 import type { PortValue } from "../shared/ports";
 import type { WorkflowGraph } from "../shared/workflow";
 import { nodeCache, runNodes } from "./db/schema";
-import { cacheKeyOf, executeRun, GraphError, planGraph, stableStringify, type ExecuteDeps } from "./executor";
+import { cacheKeyOf, executeRun, GraphError, NODE_CANCELLED_MESSAGE, planGraph, stableStringify, type ExecuteDeps } from "./executor";
 import { requireInput, requireInputs, type NodeInputs, type NodeRun, type ServerNode } from "./node-runtime";
 import { createChatLocks, type RunShared } from "./run-shared";
 
@@ -371,6 +371,92 @@ describe("lập lịch chạy song song và phạm vi chạy", () => {
     expect(rows.get("t1")).toMatchObject({ status: "failed", error: "dịch vụ sập" });
     expect(rows.get("t2")).toMatchObject({ status: "skipped", error: 'Bỏ qua vì "Hỏng" lỗi' });
     expect(rows.get("after")).toMatchObject({ status: "skipped", error: 'Bỏ qua vì "Hỏng" lỗi' });
+  });
+
+  describe("tên thẻ trong thông báo (12 cảnh không còn cùng tên \"Cảnh\")", () => {
+    const sceneLike = (fail: string[]) =>
+      probeNode({
+        type: "scene-like",
+        label: "Cảnh",
+        inputs: [],
+        run: (_ctx, _in, p) => {
+          const id = (p as { text: string }).text;
+          return fail.includes(id) ? Promise.reject(new Error("dịch vụ sập")) : Promise.resolve({ out: { kind: "text", text: id } });
+        },
+      });
+    const grouped = (): WorkflowGraph => ({
+      nodes: [at("s1", "scene-like", 0), at("s2", "scene-like", 100), at("s3", "scene-like", 200), at("after", "pass", 300)],
+      edges: [wire("s3", "after")],
+      groups: [{ id: "g1", label: "Phân cảnh", nodeIds: ["s1", "s2", "s3"] }],
+    });
+
+    it("cảnh lỗi được gọi \"Cảnh <số>\" trong lỗi của lần chạy và trong lý do bỏ qua của node phía sau", async () => {
+      const runId = randomUUID();
+      await expect(executeRun(deps({ "scene-like": sceneLike(["s2", "s3"]), pass }), runId, "wf", grouped(), new AbortController().signal, { mode: "all" })).rejects.toThrow(
+        /^2 node lỗi\. Node "Cảnh 2" lỗi: dịch vụ sập \| Node "Cảnh 3" lỗi: dịch vụ sập$/,
+      );
+      const rows = rowsOf(runId);
+      expect(rows.get("s1")?.status).toBe("succeeded");
+      expect(rows.get("after")).toMatchObject({ status: "skipped", error: 'Bỏ qua vì "Cảnh 3" lỗi' });
+    });
+  });
+
+  describe("kiểm luật gắn lỗi vào thẻ liên quan", () => {
+    it("lỗi của một cảnh hiện ở đúng thẻ cảnh (failed); thẻ khác trong phạm vi bị bỏ qua và nêu tên cảnh; không node nào chạy", async () => {
+      let ran = 0;
+      const scene = probeNode({
+        type: "scene-like",
+        label: "Cảnh",
+        inputs: [],
+        run: () => {
+          ran++;
+          return Promise.resolve({ out: { kind: "text", text: "x" } });
+        },
+      });
+      const combine = probeNode({ type: "combine-like", label: "Ghép", inputs: [{ name: "in", multiple: true }], run: () => Promise.resolve({ out: { kind: "text", text: "x" } }) });
+      combine.definition.preflight = () => [{ nodeId: "s2", message: "nối sai" }, "luật chung"];
+      const graph: WorkflowGraph = {
+        nodes: [at("s1", "scene-like", 0), at("s2", "scene-like", 100), at("g", "combine-like", 300)],
+        edges: [wire("s1", "g"), wire("s2", "g")],
+        groups: [{ id: "g1", label: "Phân cảnh", nodeIds: ["s1", "s2"] }],
+      };
+      const runId = randomUUID();
+      await expect(executeRun(deps({ "scene-like": scene, "combine-like": combine }), runId, "wf", graph, new AbortController().signal, { mode: "all" })).rejects.toThrow(
+        /Kiểm luật trước khi chạy: 2 lỗi.*nối sai.*luật chung/,
+      );
+      expect(ran).toBe(0);
+      const rows = rowsOf(runId);
+      expect(rows.get("s2")).toMatchObject({ status: "failed", error: 'Node "Ghép" (g): nối sai' });
+      expect(rows.get("g")).toMatchObject({ status: "failed", error: 'Node "Ghép" (g): luật chung' });
+      expect(rows.get("s1")?.status).toBe("skipped");
+      expect(rows.get("s1")?.error).toContain('"Cảnh 2"');
+      expect(rows.get("s1")?.error).toContain('"Ghép"');
+    });
+  });
+
+  it("node đang chạy mà lần chạy bị huỷ: thẻ báo tiếng Việt, không hiện lỗi tiếng Anh của AbortError", async () => {
+    const controller = new AbortController();
+    let started!: () => void;
+    const running = new Promise<void>((r) => (started = r));
+    const waits = probeNode({
+      type: "waits",
+      inputs: [],
+      run: async (ctx) => {
+        started();
+        await sleep(30);
+        ctx.signal.throwIfAborted();
+        return { out: { kind: "text", text: "ok" } };
+      },
+    });
+    const runId = randomUUID();
+    const done = executeRun(deps({ waits, pass }), runId, "wf", { nodes: [at("n", "waits", 0), at("after", "pass", 100)], edges: [wire("n", "after")] }, controller.signal, { mode: "all" });
+    await running;
+    controller.abort();
+    await expect(done).rejects.toThrow("Run đã bị dừng");
+    const rows = rowsOf(runId);
+    expect(rows.get("n")).toMatchObject({ status: "failed", error: NODE_CANCELLED_MESSAGE });
+    expect(rows.get("n")?.error).not.toMatch(/aborted/i);
+    expect(rows.get("after")).toMatchObject({ status: "skipped" });
   });
 
   // a → b → c ← x ; d đứng riêng

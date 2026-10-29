@@ -16,6 +16,7 @@ import type { NodeInputs, ServerNode, StepValue } from "./node-runtime";
 import { recordAsset } from "../features/assets/store";
 import { getWorkflowRow, saveWorkflowGraph } from "../features/workflows/store";
 import { collectMediaIds } from "./media-ids";
+import { labelOf } from "./node-label";
 import { SERVICE_FAILURE_LIMIT } from "../shared/service-failure";
 import { preflightErrors, type PreflightError } from "./preflight";
 import { createRunShared, type ChatLocks } from "./run-shared";
@@ -237,6 +238,12 @@ export function scopeNodes(order: PlannedNode[], scope: RunScope): Set<string> {
   return picked;
 }
 
+// Node đang chạy bị ngắt vì lần chạy bị huỷ (ctx.signal.throwIfAborted(), tải bị abort…): lỗi gốc là tiếng Anh ("This operation was aborted").
+export const NODE_CANCELLED_MESSAGE = "Đã huỷ vì lần chạy bị dừng";
+function isAbort(err: unknown, signal: AbortSignal): boolean {
+  return signal.aborted || (err instanceof Error && err.name === "AbortError");
+}
+
 type NodeState = "pending" | "running" | "done" | "failed" | "skipped";
 
 // Kết quả node đang chạy, cho node giống hệt chờ dùng lại. Không bao giờ reject: lỗi đi theo node gốc.
@@ -287,12 +294,15 @@ export async function executeRun(
   // Kiểm luật trước khi tốn lượt trên các node chưa chạy: có lỗi thì không node nào trong số đó được khởi chạy.
   const preflightOf = (targets: PlannedNode[], ord: PlannedNode[] = order, g: WorkflowGraph = current) =>
     preflightErrors(targets, new Map(ord.map((p) => [p.node.id, p])), g, (p, port) => orderSources(p, port, g));
-  const blockAll =(blocked: PreflightError[], targets: PlannedNode[], note: string): GraphError => {
-    const culprits = new Set(blocked.map((e) => e.nodeId));
+  // Lỗi kiểm luật hiện ở đúng thẻ nó nói tới (PreflightError.nodeId, vd thẻ Cảnh): thẻ đó "failed" với chính lỗi đó;
+  // node khác trong phạm vi chưa chạy nên "skipped", nêu tên các thẻ lỗi.
+  const blockAll = (blocked: PreflightError[], targets: PlannedNode[], note: string): GraphError => {
+    const names = new Map(targets.map((p) => [p.node.id, labelOf(p, current)]));
+    const culprits = [...new Set(blocked.map((e) => e.nodeId))].map((id) => `"${names.get(id) ?? id}"`).join(", ");
     for (const p of targets) {
       const own = blocked.filter((e) => e.nodeId === p.node.id).map((e) => e.message);
-      const error = own.length > 0 ? own.join("; ") : `Bỏ qua vì kiểm luật trước khi chạy có lỗi ở ${[...culprits].map((id) => `"${id}"`).join(", ")}`;
-      setNode(p.node.id, { status: "skipped", error, message: null });
+      if (own.length > 0) setNode(p.node.id, { status: "failed", error: own.join("; "), message: null });
+      else setNode(p.node.id, { status: "skipped", error: `Bỏ qua vì kiểm luật trước khi chạy có lỗi ở ${culprits}`, message: null });
     }
     return new GraphError(`Kiểm luật trước khi chạy: ${blocked.length} lỗi, ${note}. ${blocked.map((e) => e.message).join(" | ")}`);
   };
@@ -354,7 +364,7 @@ export async function executeRun(
       const json = await produce(p, id, key, inputs, take, stepScope);
       settle({ ok: true, json });
     } catch (err) {
-      settle({ ok: false, label: p.impl.definition.label });
+      settle({ ok: false, label: labelOf(p, current) });
       throw err;
     } finally {
       inflight.delete(key);
@@ -500,7 +510,8 @@ export async function executeRun(
     if (edited.length === 0) return;
     decision ??= { kind: "scenes-edited", writerId, groupId: edited[0]!.id };
     db.update(runs).set({ decisionJson: JSON.stringify(decision) }).where(eq(runs.id, runId)).run();
-    skipPending(held, SCENES_EDITED_MESSAGE, order.find((p) => p.node.id === writerId)?.impl.definition.label ?? writerId);
+    const writer = order.find((p) => p.node.id === writerId);
+    skipPending(held, SCENES_EDITED_MESSAGE, writer ? labelOf(writer, current) : writerId);
   };
 
   await new Promise<void>((resolve, reject) => {
@@ -531,7 +542,7 @@ export async function executeRun(
               } catch (err) {
                 // Không tạo lại được nhóm hoặc cảnh không qua kiểm luật: chưa lưu gì, node chưa chạy dừng lại, run báo đúng lỗi này.
                 fatal = err instanceof Error ? err : new Error(String(err));
-                skipPending(plan.map((x) => x.node.id), `Bỏ qua: ${fatal.message}`, p.impl.definition.label);
+                skipPending(plan.map((x) => x.node.id), `Bỏ qua: ${fatal.message}`, labelOf(p, current));
               }
             },
             (err: unknown) => {
@@ -542,9 +553,10 @@ export async function executeRun(
                 return;
               }
               state.set(id, "failed");
-              culprit.set(id, p.impl.definition.label);
+              culprit.set(id, labelOf(p, current));
               errors.set(id, err);
-              setNode(id, { status: "failed", error: err instanceof Error ? err.message : String(err), message: null });
+              // Node đang chạy mà lần chạy bị huỷ: báo tiếng Việt thay cho thông điệp tiếng Anh của AbortError.
+              setNode(id, { status: "failed", error: isAbort(err, signal) ? NODE_CANCELLED_MESSAGE : err instanceof Error ? err.message : String(err), message: null });
             },
           )
           .then(() => {
@@ -566,7 +578,7 @@ export async function executeRun(
   const failed = plan.filter((p) => errors.has(p.node.id));
   const detail = failed.map((p) => {
     const err = errors.get(p.node.id);
-    return `Node "${p.impl.definition.label}" lỗi: ${err instanceof Error ? err.message : String(err)}`;
+    return `Node "${culprit.get(p.node.id) ?? p.impl.definition.label}" lỗi: ${isAbort(err, signal) ? NODE_CANCELLED_MESSAGE : err instanceof Error ? err.message : String(err)}`;
   });
   const failure = failed.length > 0 ? `${failed.length} node lỗi. ${detail.join(" | ")}` : undefined;
   if (decision) throw new Error(failure ? `${SCENES_EDITED_MESSAGE} | ${failure}` : SCENES_EDITED_MESSAGE);

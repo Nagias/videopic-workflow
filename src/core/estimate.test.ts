@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fakeTextReply } from "../providers/fake/text";
 import { EstimateResponseSchema, RunResponseSchema, WorkflowResponseSchema, type EstimateResponse } from "../shared/api";
 import type { RunScope } from "../shared/api";
+import { WRITER_MAX_TRIES } from "../nodes/writer/definition";
 import { expandScenes } from "../shared/scenes";
 import { WORKFLOW_TEMPLATES } from "../shared/templates";
 import type { WorkflowGraph } from "../shared/workflow";
@@ -231,7 +232,9 @@ describe("ước tính lượt trước khi chạy (POST /api/workflows/:id/esti
       expect(e.waitsOnWriter).toBe(true);
       expect(statusOf(e, "writer-1")).toBe("run");
       expect(statusOf(e, "props-1")).toBe("unknown");
-      expect(e.total).toEqual({ image: 6, video: 0, text: 1 });
+      // Biên kịch có thể phải viết lại tới WRITER_MAX_TRIES lần: ước theo mức cao nhất (thà dư còn hơn thiếu).
+      expect(e.nodes.find((n) => n.id === "writer-1")?.calls).toEqual({ image: 0, video: 0, text: WRITER_MAX_TRIES });
+      expect(e.total).toEqual({ image: 6, video: 0, text: WRITER_MAX_TRIES });
     });
 
     it("đổi ý tưởng: Biên kịch sẽ viết lại → cảnh của nhóm 'unknown'", async () => {

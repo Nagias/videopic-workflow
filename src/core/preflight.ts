@@ -23,7 +23,7 @@ export function preflightErrors(
   const errors: PreflightError[] = [];
   for (const p of scoped) {
     const def = p.impl.definition;
-    const add = (message: string) => errors.push({ nodeId: p.node.id, message: `Node "${def.label}" (${p.node.id}): ${message}` });
+    const add = (message: string, nodeId = p.node.id) => errors.push({ nodeId, message: `Node "${def.label}" (${p.node.id}): ${message}` });
     for (const port of def.inputs) {
       if (!port.multiple) continue;
       const seen = new Set<string>();
@@ -37,7 +37,10 @@ export function preflightErrors(
         seen.add(k);
       }
     }
-    for (const message of def.preflight?.({ node: p, graph, planned, sources }) ?? []) add(message);
+    for (const issue of def.preflight?.({ node: p, graph, planned, sources }) ?? []) {
+      if (typeof issue === "string") add(issue);
+      else add(issue.message, issue.nodeId);
+    }
   }
   return errors;
 }

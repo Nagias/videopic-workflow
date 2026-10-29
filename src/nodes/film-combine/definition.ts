@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { checkShotList, type KnownProp, type Shot } from "../../shared/director";
-import { defineNode, type PreflightCtx } from "../../shared/node-definition";
+import { defineNode, type PreflightCtx, type PreflightIssue } from "../../shared/node-definition";
 import { params as propsParams, rowsToSpec } from "../props/definition";
 import { params as sceneParams } from "../scene/definition";
 
@@ -20,11 +20,15 @@ export type FilmCombineParams = z.infer<typeof params>;
 // - `positions[i]`: vị trí (từ 1) của shots[i] trong phim, để báo lỗi đúng chỗ.
 // known: từ node Đồ vật đầu tiên mà các cảnh cắm vào, đọc tham số như node Đồ vật đọc (rowsToSpec()).
 // Đồ vật lấy danh sách từ Biên kịch (cổng spec có dây) thì chưa biết món nào trước khi chạy: known để trống (DEBT.md N-015).
-export function scenesFeeding(combineId: string, ctx: PreflightCtx): { shots: Shot[]; positions: number[]; errors: string[]; known?: KnownProp[] } {
+// `errors` gắn vào đúng thẻ Cảnh liên quan (nodeId của Cảnh).
+export function scenesFeeding(
+  combineId: string,
+  ctx: PreflightCtx,
+): { shots: Shot[]; positions: number[]; errors: { nodeId: string; message: string }[]; known?: KnownProp[] } {
   const clips = ctx.sources(combineId, "clips");
   const shots: Shot[] = [];
   const positions: number[] = [];
-  const errors: string[] = [];
+  const errors: { nodeId: string; message: string }[] = [];
   const isScene = (id: string | undefined) => id !== undefined && ctx.planned.get(id)?.node.type === "scene";
   let propsNode: string | undefined;
   clips.forEach((src, i) => {
@@ -40,7 +44,7 @@ export function scenesFeeding(combineId: string, ctx: PreflightCtx): { shots: Sh
           ? `đứng sau "${prev.source}" trong Ghép phim`
           : "đứng đầu Ghép phim"
         : `"${follow.source}" không có trong Ghép phim`;
-      errors.push(`Cảnh "${p.node.id}" nối tiếp "${follow.source}" nhưng ${where}`);
+      errors.push({ nodeId: p.node.id, message: `Cảnh "${p.node.id}" nối tiếp "${follow.source}" nhưng ${where}` });
     }
     const chain = followsPrev && isScene(prev?.source);
     shots.push({
@@ -80,10 +84,14 @@ export const definition = defineNode<FilmCombineParams>({
   preflight(ctx) {
     const { shots, positions, errors, known } = scenesFeeding(ctx.node.node.id, ctx);
     if (shots.length === 0) return errors;
-    // checkShotList đánh số theo shots; đổi về mã node và vị trí clip trong phim.
-    const checked = checkShotList(shots, known).errors.map((e) =>
-      e.replace(/^Cảnh (\d+):/, (_, n: string) => `Cảnh "${shots[Number(n) - 1]!.id}" (clip ${positions[Number(n) - 1]!}):`),
-    );
+    // checkShotList đánh số theo shots; đổi về mã node và vị trí clip trong phim. Lỗi của một cảnh gắn vào thẻ cảnh đó,
+    // lỗi chung của cả chuỗi (không mở đầu bằng "Cảnh N:") ở lại Ghép phim.
+    const checked = checkShotList(shots, known).errors.map((e): PreflightIssue => {
+      const n = /^Cảnh (\d+):/.exec(e)?.[1];
+      if (n === undefined) return e;
+      const shot = shots[Number(n) - 1]!;
+      return { nodeId: shot.id, message: e.replace(/^Cảnh \d+:/, `Cảnh "${shot.id}" (clip ${positions[Number(n) - 1]!}):`) };
+    });
     return [...errors, ...checked];
   },
 });

@@ -27,6 +27,6 @@ export const definition = defineNode<WriterParams>({
   cacheVersion: codeVersion(writerPrompt, repairPrompt),
   params,
   defaults: { idea: "", shotCount: 12, provider: "fake" },
-  // 1 lượt chữ; kịch bản sai luật thì nhờ sửa thêm tối đa WRITER_MAX_TRIES − 1 lượt.
-  estimate: () => ({ image: 0, video: 0, text: 1 }),
+  // Ước dư (spec mục 6.5): 1 lượt viết, kịch bản sai luật thì nhờ sửa thêm tối đa WRITER_MAX_TRIES − 1 lượt → tối đa WRITER_MAX_TRIES.
+  estimate: () => ({ image: 0, video: 0, text: WRITER_MAX_TRIES }),
 });

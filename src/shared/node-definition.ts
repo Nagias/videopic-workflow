@@ -30,9 +30,12 @@ export type NodeDefinition<P> = {
   // bước con. Chỉ đúng các trường node phía sau dùng để ước tính (mã media, kích thước); không lưu, không hiện.
   predict?(params: P, connected: ReadonlySet<string>, known: EstimateKnown): NodeOutputs | undefined;
   // Kiểm luật trên cả đồ thị trước khi lần chạy khởi chạy node đầu tiên (chưa tốn lượt nào); trả danh sách lỗi.
-  // Có lỗi thì cả lần chạy dừng (src/core/preflight.ts).
-  preflight?(ctx: PreflightCtx): string[];
+  // Có lỗi thì cả lần chạy dừng (src/core/preflight.ts). Lỗi là chuỗi (gắn vào chính node này) hoặc {nodeId, message}
+  // khi lỗi thuộc về node khác (vd Ghép phim báo lỗi ở đúng thẻ Cảnh) để lỗi hiện ở thẻ đó.
+  preflight?(ctx: PreflightCtx): PreflightIssue[];
 };
+
+export type PreflightIssue = string | { nodeId: string; message: string };
 
 // Điều đã biết trước khi chạy một node: giá trị đầu vào, cache bước con, thông tin file media đã lưu.
 export type EstimateKnown = {

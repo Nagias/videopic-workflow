@@ -19,6 +19,7 @@ import {
   takeOf,
   type PlannedNode,
 } from "./executor";
+import { labelOf } from "./node-label";
 import type { ServerNode } from "./node-runtime";
 import type { Storage } from "./storage";
 
@@ -31,15 +32,6 @@ const isZero = (c: Calls) => c.image === 0 && c.video === 0 && c.text === 0;
 function providerOf(params: unknown): ProviderId | null {
   const raw = params && typeof params === "object" ? (params as { provider?: unknown }).provider : undefined;
   return PROVIDER_IDS.find((id) => id === raw) ?? null;
-}
-
-// Tên node trong bảng ước tính: Cảnh trong nhóm theo số thứ tự ("Cảnh 3"), node có tên thì kèm tên.
-function labelOf(p: PlannedNode, graph: WorkflowGraph): string {
-  const base = p.impl.definition.label;
-  const group = graph.groups?.find((g) => g.nodeIds.includes(p.node.id));
-  if (group) return `${base} ${group.nodeIds.indexOf(p.node.id) + 1}`;
-  const name = p.params && typeof p.params === "object" ? (p.params as { name?: unknown }).name : undefined;
-  return typeof name === "string" && name.trim() ? `${base}: ${name.trim()}` : base;
 }
 
 // Ước tính lượt của một lần chạy (spec mục 6.5): không gọi dịch vụ, không ghi gì. Đi đúng đường executeRun():

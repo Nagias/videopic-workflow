@@ -101,3 +101,15 @@ Tổng lượt Muse thật đợt nâng chất lượng: thử nghiệm 6 + Sơn
 | 12:59–13:02 | Sửa chuyển động cảnh 3 (thêm "cô đứng thẳng lại thở ra một hơi"); ước tính trước khi chạy: 1 video, chỉ cảnh 3 (run `a0ce2882`) | ✅ đúng 1 video Muse (muse_vid_01, ~2 phút 18 giây; media Muse 134→135), 14 node dùng lại. Clip h264 1280×720 5,0 giây có tiếng; đã xem đầu/giữa/cuối: bổ rìu → gỗ tách đôi → cô đứng thẳng thở ra, đúng người, đúng trang phục, lều xanh rêu. Phim mới `b69e1b18…` 59,8 giây |
 
 Tổng lượt Muse thật Đợt 1A: 1.
+
+### Việc chuyển sang Đợt 1B (từ soát cuối 1A)
+
+- [ ] Bảng ước tính hiện "chưa biết" cho node unknown và không cộng 0 vào tổng
+- [ ] `snapshotGroup` phải tính `order` của Ghép phim trước khi có dải đổi thứ tự
+- [ ] Cảnh báo luật đạo diễn (30°) hiện lại ở nhóm Phân cảnh
+- [ ] Sau Tạo thẻ cảnh / Thay / Giữ thẻ cùng mã còn kết quả cũ
+- [ ] Kiểm phiên bản khi `PUT /api/workflows/:id` (DEBT N-016)
+- [ ] Đồ vật / Nhân vật / Bối cảnh / Biên kịch / Tạo video chưa qua `ctx.shared.slot` và cầu dao
+- [ ] `estimateRun` đổi lỗi không phải `GraphError` thành 500
+- [ ] Regroup xoá đúng node của `scope.nodeId` thì báo lỗi chung chung
+- [ ] `Editor.tsx` nên tách hook `useRunSync`
