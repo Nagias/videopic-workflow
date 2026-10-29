@@ -68,7 +68,14 @@ export function useWorkflow() {
       const sameWorkflow = shownWorkflow.current === wf.id;
       setNodes((prev) => {
         const picked = new Set(sameWorkflow ? prev.filter((n) => n.selected).map((n) => n.id) : []);
-        return flow.nodes.map((n) => (picked.has(n.id) ? { ...n, selected: true } : n));
+        // Thẻ cùng mã vẫn đang gắn trên canvas nên giữ kích thước đã đo: node mới không có `measured` thì xyflow coi là chưa đo và ẩn thẻ,
+        // mà ResizeObserver chỉ báo lại khi kích thước THAY ĐỔI, nên thẻ giữ nguyên kích thước sẽ ẩn mãi (thẻ cảnh biến mất sau lần chạy).
+        const measured = new Map(prev.map((n) => [n.id, n.measured]));
+        return flow.nodes.map((n) => {
+          const size = measured.get(n.id);
+          const kept = size ? { ...n, measured: size } : n;
+          return picked.has(n.id) ? { ...kept, selected: true } : kept;
+        });
       });
       setEdges(flow.edges);
       setNotice(wf.notice ?? null);

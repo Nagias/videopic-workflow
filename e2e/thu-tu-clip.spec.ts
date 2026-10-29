@@ -194,6 +194,13 @@ test("Tạo thẻ cảnh lại với Biên kịch đổi số cảnh → thẻ m
   await expect(page.getByTestId("node-status-scene-g1-5")).toHaveText(/Xong|Dùng lại kết quả/);
   await expect(page.getByTestId("node-status-combine-g1")).toHaveText("Chưa chạy");
 
+  // "Chạy node này" ngay trên cảnh đó: lần này cảnh chỉ "dùng lại" kết quả bản mới, vẫn không chứng minh Ghép phim đã dùng nó.
+  await page.getByTestId("card-scene-g1-4").click({ button: "right" });
+  await page.getByTestId("ctx-run-node").click();
+  await expect(page.getByTestId("node-status-scene-g1-4")).toHaveText("Dùng lại kết quả", { timeout: 120_000 });
+  await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 120_000 });
+  await expect(page.getByTestId("node-status-combine-g1")).toHaveText("Chưa chạy");
+
   // Sửa tay chữ của một cảnh ở khung bên phải: lưu xong thì thẻ hiện "Chưa chạy" ngay, không cần tải lại trang.
   await expect(page.getByTestId("node-status-scene-g1-6")).toHaveText(/Xong|Dùng lại kết quả/);
   await page.getByTestId("card-scene-g1-6").click();

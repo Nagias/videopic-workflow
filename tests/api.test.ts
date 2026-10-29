@@ -815,6 +815,40 @@ describe("API chuyển workflow cũ (Dựng phim → Cảnh + Ghép phim) khi m�
     expect(videoId(back.nodes[combineId]?.output?.video)).toBeTruthy();
   });
 
+  it("runs/latest sau khi chuyển: Chạy lại (take mới) một cảnh rồi 'Chạy node này' (dòng 'dùng lại') thì Ghép phim vẫn không hiện phim cũ; chạy cả workflow thì hiện lại", async () => {
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    expect((await runOf("son-la")).status).toBe("succeeded");
+    const wf = await open("son-la");
+    const sceneIds = wf.graph.groups[0]!.nodeIds;
+    const combineId = wf.graph.nodes.find((n) => n.type === "film-combine")!.id;
+    const target = sceneIds[3]!;
+    const bumped: WorkflowGraph = { ...wf.graph, nodes: wf.graph.nodes.map((n) => (n.id === target ? { ...n, params: { ...n.params, take: 2 } } : n)) };
+    expect((await s.app.inject({ method: "PUT", url: "/api/workflows/son-la", payload: { graph: bumped } })).statusCode).toBe(200);
+    const runScope = async () => {
+      const start = await s.app.inject({ method: "POST", url: "/api/workflows/son-la/runs", payload: { scope: { mode: "node", nodeId: target } } });
+      expect(start.statusCode).toBe(202);
+      while (await s.deps.queue.processNext());
+    };
+
+    await runScope();
+    const first = await latestAll("son-la");
+    expect(videoId(first.nodes[target]?.output?.clip)).toBeTruthy();
+    expect(first.nodes[combineId]).toBeUndefined();
+    expect(first.outdated).toContain(combineId);
+
+    // Lần thứ hai cảnh chỉ "dùng lại" kết quả take 2: vẫn không chứng minh Ghép phim đã dùng nó.
+    await runScope();
+    const second = await latestAll("son-la");
+    expect(second.nodes[target]?.status).toBe("cached");
+    expect(second.nodes[combineId]).toBeUndefined();
+    expect(second.outdated).toContain(combineId);
+
+    expect((await runOf("son-la")).status).toBe("succeeded");
+    const full = await latestAll("son-la");
+    expect(full.outdated).toEqual([]);
+    expect(videoId(full.nodes[combineId]?.output?.video)).toBeTruthy();
+  });
+
   it("bản '-ban-cu' vẫn chạy được (cached)", async () => {
     await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
     const old = await runOf("son-la");

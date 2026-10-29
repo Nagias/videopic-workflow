@@ -4,9 +4,9 @@ import type { AppDeps } from "../../core/app-deps";
 import { runNodes, runs } from "../../core/db/schema";
 import { RunDecisionSchema, type CancelRunResponse, type LatestRunResponse, type RunNodeState, type RunResponse } from "../../shared/api";
 import { NodeOutputsSchema } from "../../shared/ports";
-import { WorkflowGraphSchema } from "../../shared/workflow";
+import { WorkflowGraphSchema, type WorkflowGraph } from "../../shared/workflow";
 import { getWorkflowRow } from "../workflows/store";
-import { freshResults, newestRows, paramsOfGraph } from "./fresh-results";
+import { freshResults, keyFnFor, newestRows } from "./fresh-results";
 
 function safeJson(text: string): unknown {
   try {
@@ -59,7 +59,7 @@ export function registerRunRoutes(app: FastifyInstance, deps: AppDeps): void {
   // nguyên của lần đó); `nodes` là, với mỗi node của workflow hiện tại, dòng mới nhất của nó trong mọi lần chạy (theo thời điểm
   // tạo run, rồi thời điểm cập nhật dòng), để chạy một phần không làm mất kết quả của node ngoài phạm vi (spec mục 6.3).
   // Chỉ giữ kết quả còn đúng với workflow đang lưu (freshResults): tham số của node trong đồ thị của lần chạy đó (runs.graph_json)
-  // phải giống tham số hiện tại, mọi node nối vào nó cũng còn kết quả, và kết quả của các nguồn đó không mới hơn kết quả mà lần chạy của nó đã dùng. Node khác thì vắng ở `nodes` (giao diện hiện "Chưa chạy"); những node từng có kết quả mà bị bỏ nằm ở `outdated`.
+  // phải đúng bằng khoá cache tính lại từ đồ thị hiện tại (tham số, take, nguồn mới hơn, dây, thứ tự clip), với dòng không khoá thì kiểm yếu hơn (xem fresh-results.ts). Node khác thì vắng ở `nodes` (giao diện hiện "Chưa chạy"); những node từng có kết quả mà bị bỏ nằm ở `outdated`.
   app.get<{ Params: { id: string } }>("/api/workflows/:id/runs/latest", async (req, reply) => {
     const wf = getWorkflowRow(deps.db, req.params.id);
     if (!wf) return reply.code(404).send({ error: "Không tìm thấy workflow" });
@@ -76,17 +76,25 @@ export function registerRunRoutes(app: FastifyInstance, deps: AppDeps): void {
             .where(and(eq(runs.workflowId, wf.id), inArray(runNodes.nodeId, ids)))
             .orderBy(desc(runs.createdAt), desc(runNodes.updatedAt))
             .all();
-    const allRows = rows.map(({ row }) => ({ nodeId: row.nodeId, runId: row.runId, cacheKey: row.cacheKey, status: row.status, state: row }));
-    // Đồ thị của lần chạy chỉ cần cho các lần chạy có dòng mới nhất của một node (so tham số); đủ cho cả so khoá cache giữa các nguồn.
+    const allRows = rows.map(({ row }) => ({
+      nodeId: row.nodeId,
+      runId: row.runId,
+      cacheKey: row.cacheKey,
+      status: row.status,
+      outputJson: row.outputJson,
+      state: row,
+    }));
+    // Đồ thị của lần chạy chỉ cần cho các lần chạy có dòng mới nhất của một node (đủ cho cả so khoá: khoá của nguồn trong lần chạy
+    // của một node là dòng của chính lần chạy đó, đã nằm trong `allRows`).
     const runIds = [...new Set([...newestRows(allRows, graph).values()].map((r) => r.runId))];
-    const runParams = new Map<string, Map<string, string>>();
+    const runGraphs = new Map<string, WorkflowGraph>();
     if (runIds.length > 0) {
       for (const r of deps.db.select({ id: runs.id, graphJson: runs.graphJson }).from(runs).where(inArray(runs.id, runIds)).all()) {
         const parsed = WorkflowGraphSchema.safeParse(safeJson(r.graphJson));
-        if (parsed.success) runParams.set(r.id, paramsOfGraph(parsed.data));
+        if (parsed.success) runGraphs.set(r.id, parsed.data);
       }
     }
-    const { shown, outdated } = freshResults(allRows, runParams, graph);
+    const { shown, outdated } = freshResults(allRows, runGraphs, graph, keyFnFor(deps.nodes));
     const nodes = Object.fromEntries([...shown].map(([id, row]) => [id, toNodeState(row)]));
     const res: LatestRunResponse = { run: run ? toRunResponse(deps, run) : null, nodes, outdated };
     return res;

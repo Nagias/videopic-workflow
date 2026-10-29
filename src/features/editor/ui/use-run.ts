@@ -93,24 +93,22 @@ export function useRun(wf: WorkflowApi) {
 
   // Tải kết quả của workflow `id` từ máy chủ và hiện đúng như máy chủ trả: một nơi quyết định duy nhất kết quả nào còn đúng
   // (GET .../runs/latest, freshResults). Thẻ có tham số/đầu vào khác lần chạy hiện "Chưa chạy" tới lần chạy sau. Mỗi lần gọi làm các
-  // lần gọi trước còn đang chờ thành cũ (kết quả về muộn bị bỏ), cả khi đã đổi sang workflow khác. Trả false khi lỗi (đã báo lên thanh báo).
+  // lần gọi trước còn đang chờ thành cũ (kết quả về muộn bị bỏ), cả khi đã đổi sang workflow khác. Lỗi thì báo lên thanh báo.
   const fetchSeq = useRef(0);
   const showServerResults = useCallback(
-    async (id: string): Promise<boolean> => {
+    async (id: string): Promise<void> => {
       const mine = ++fetchSeq.current;
       try {
         const last = await api.getLatestRun(id);
-        if (fetchSeq.current !== mine || shownWorkflow.current !== id) return true;
+        if (fetchSeq.current !== mine || shownWorkflow.current !== id) return;
         const shown = currentRun.current;
         if (shown) {
           currentRun.current = { ...shown, nodes: last.nodes };
           setRun(currentRun.current);
         }
         setOutdated(new Set(last.outdated));
-        return true;
       } catch (e) {
         setProblem(`Không tải được kết quả của các thẻ cảnh: ${errText(e)}`);
-        return false;
       }
     },
     [shownWorkflow, setProblem],
@@ -139,7 +137,10 @@ export function useRun(wf: WorkflowApi) {
         const next = await api.expandScenes(id, writerId, choice);
         if (shownWorkflow.current !== id) return false;
         applyGraph(next);
-        if (!(await showServerResults(id))) hideResults(expandedNodeIds(next.graph, writerId));
+        // Ẩn kết quả của nhóm thẻ vừa đổi TRƯỚC khi hỏi máy chủ; lần tải thành công sẽ hiện lại đúng phần còn đúng. Nhờ vậy kết quả cuối
+        // không phụ thuộc lần tải lỗi hay bị lần tải khác chen ngang: thẻ cảnh cũ không bao giờ hiện clip của thẻ cũ.
+        hideResults(expandedNodeIds(next.graph, writerId));
+        await showServerResults(id);
         return true;
       } catch (e) {
         setProblem(errText(e));
