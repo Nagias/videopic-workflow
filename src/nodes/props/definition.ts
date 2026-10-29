@@ -62,6 +62,12 @@ export const definition = defineNode<PropsParams>({
   cacheVersion: codeVersion(propStillPrompt, propStatePrompt),
   params,
   defaults: { name: "", items: [], provider: "fake" },
+  cardLine: (p, out) => {
+    const made = out?.props;
+    const count = Array.isArray(p.items) ? p.items.length : 0;
+    if (made?.kind === "props") return `${made.items.length} đồ vật · ${made.items.reduce((n, i) => n + i.images.length, 0)} ảnh`;
+    return count > 0 ? `${count} đồ vật` : "chưa có đồ vật";
+  },
   // 1 ảnh mỗi trạng thái mỗi món, trừ ảnh đã có trong cache bước con. Nối Biên kịch mà chưa biết danh sách: không ước được.
   estimate(p, connected, known) {
     const spec = knownSpec(p, connected, known);

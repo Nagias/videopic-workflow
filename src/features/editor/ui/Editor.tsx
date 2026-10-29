@@ -1,6 +1,7 @@
 import { addEdge, Background, Controls, ReactFlow, type Connection, type Edge, type IsValidConnection, type OnConnectEnd, type ReactFlowInstance } from "@xyflow/react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { webNodes } from "../../../nodes/registry.web";
+import { labelOf } from "../../../shared/node-label";
 import { Banners } from "./Banners";
 import { connectionProblem, droppedConnectionProblem, edgeKindClass, replaceTargetEdges, targetAcceptsMany } from "./graph-convert";
 import { GraphNode, type FlowNode } from "./GraphNode";
@@ -18,7 +19,7 @@ const nodeTypes = Object.fromEntries(Object.keys(webNodes).map((t) => [t, GraphN
 export function Editor() {
   const wf = useWorkflow();
   const run = useRun(wf);
-  const { workflowId, nodes, edges, setNodes, setEdges, setProblem, latest } = wf;
+  const { workflowId, nodes, edges, setNodes, setEdges, setProblem, latest, groups } = wf;
   const { nodeStates, expandScenes } = run;
   const flow = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -71,6 +72,25 @@ export function Editor() {
     ]);
   };
 
+  // Đúng một node đang chọn thì khung bên phải hiện nó; chọn nhiều node hoặc không chọn thì khung đóng.
+  const selectedNodes = nodes.filter((n) => n.selected);
+  const selectedId = selectedNodes.length === 1 ? selectedNodes[0]!.id : null;
+
+  // Escape: đang gõ trong ô nhập thì chỉ thoát ô đó; không thì bỏ chọn node (khung bên phải đóng).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const el = document.activeElement;
+      if (el instanceof HTMLElement && el.matches("input, textarea, select")) {
+        el.blur();
+        return;
+      }
+      setNodes((ns) => (ns.some((n) => n.selected) ? ns.map((n) => (n.selected ? { ...n, selected: false } : n)) : ns));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setNodes]);
+
   const runId = run.run?.id ?? "";
   const runStatus = run.run?.status ?? "";
   const busy = run.active || run.starting || run.syncing;
@@ -83,8 +103,9 @@ export function Editor() {
       refreshKey: `${workflowId ?? ""}:${runId}:${runStatus}`,
       busy,
       expandScenes: (writerId) => void expandScenes(writerId),
+      titleOf: (nodeId, baseLabel, params) => labelOf({ id: nodeId, params }, baseLabel, { groups: groups.current }),
     }),
-    [nodeStates, setNodes, workflowId, runId, runStatus, busy, expandScenes],
+    [nodeStates, setNodes, workflowId, runId, runStatus, busy, expandScenes, groups],
   );
 
   return (
@@ -109,6 +130,7 @@ export function Editor() {
               isValidConnection={isValidConnection}
               fitView
               fitViewOptions={{ padding: 0.3 }}
+              minZoom={0.1}
               colorMode="dark"
             >
               <Background gap={24} />
@@ -116,7 +138,7 @@ export function Editor() {
             </ReactFlow>
           </div>
           <aside className="right-panel">
-            <Inspector />
+            <Inspector nodeId={selectedId} nodes={nodes} edges={edges} />
             <QueuePanel />
           </aside>
         </div>

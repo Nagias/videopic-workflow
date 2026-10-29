@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 test.describe("Luồng 1 — Prompt → Tạo video → xem clip (dịch vụ giả)", () => {
   test("gõ prompt, bấm Chạy, clip 5 giây hiện trong node; chạy lại thì dùng lại kết quả", async ({ page }) => {
     await page.goto("/");
+    await page.getByTestId("card-prompt-1").click();
     const prompt = page.getByTestId("prompt-text-prompt-1");
     await expect(prompt).toBeVisible();
 
@@ -13,6 +14,8 @@ test.describe("Luồng 1 — Prompt → Tạo video → xem clip (dịch vụ gi
     await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 45_000 });
     await expect(page.getByTestId("node-status-video-1")).toHaveText("Xong");
 
+    await expect(page.getByTestId("card-video-1").locator("video")).toHaveCount(1);
+    await page.getByTestId("card-video-1").click();
     const video = page.getByTestId("video-preview-video-1");
     await expect(video).toBeVisible();
     await expect
@@ -26,6 +29,7 @@ test.describe("Luồng 1 — Prompt → Tạo video → xem clip (dịch vụ gi
 
   test("prompt trống: node báo lỗi tiếng Việt, không tạo clip", async ({ page }) => {
     await page.goto("/");
+    await page.getByTestId("card-prompt-1").click();
     await page.getByTestId("prompt-text-prompt-1").fill("");
     await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
     await page.getByTestId("run-button").click();
@@ -35,7 +39,9 @@ test.describe("Luồng 1 — Prompt → Tạo video → xem clip (dịch vụ gi
 
   test("chọn Muse khi chưa có tài khoản đăng nhập: báo cách đăng nhập, không treo", async ({ page }) => {
     await page.goto("/");
+    await page.getByTestId("card-prompt-1").click();
     await page.getByTestId("prompt-text-prompt-1").fill("Product on a wooden table, slow orbit");
+    await page.getByTestId("card-video-1").click();
     await page.getByTestId("provider-select-video-1").selectOption("muse");
     await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
     await page.getByTestId("run-button").click();

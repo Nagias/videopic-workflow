@@ -31,6 +31,10 @@ export type EditorApi = {
   // Tạo (thay) nhóm thẻ cảnh từ kết quả Biên kịch mới nhất: lưu sửa đổi đang chờ, gọi máy chủ, rồi hiện đồ thị mới.
   // Lỗi (ví dụ Biên kịch chưa có kết quả) hiện ở thanh báo lỗi.
   expandScenes(writerId: string): void;
+  // Tên node cho người đọc ("Cảnh 3" trong nhóm Phân cảnh, "Hồ sơ nhân vật: Mai"): cùng cách đặt tên với thông báo của lần chạy.
+  titleOf(nodeId: string, baseLabel: string, params: unknown): string;
+  // Chạy riêng một node từ nút ▶ trên thẻ. Chưa có lệnh này thì thẻ không hiện nút (không để lệnh chết).
+  runNode?(nodeId: string): void;
 };
 
 export const EditorContext = createContext<EditorApi | null>(null);

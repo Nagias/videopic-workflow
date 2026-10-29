@@ -19,24 +19,30 @@ test("Luồng 2/4 — mẫu Sinh tồn Sơn La (12 node Cảnh + Ghép phim), ch
   await expect(addNode.locator("option", { hasText: "Danh sách cảnh" })).toHaveCount(0);
 
   for (const id of ["character-1", "location-1", "props-1"]) {
+    await page.getByTestId(`card-${id}`).click();
     await page.getByTestId(`provider-select-${id}`).selectOption("fake");
   }
   for (const id of SCENES) {
+    await page.getByTestId(`card-${id}`).click();
     await page.getByTestId(`scene-provider-${id}`).selectOption("fake");
   }
   await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
 
   await page.getByTestId("run-button").click();
   await expect(page.getByTestId("cancel-run")).toBeVisible();
+  await page.getByTestId("card-character-1").click();
   await expect(page.getByTestId("gallery-character-1").locator("img")).toHaveCount(4, { timeout: 60_000 });
+  await page.getByTestId("card-props-1").click();
   await expect(page.getByTestId("props-gallery-props-1").locator("img")).toHaveCount(9, { timeout: 60_000 });
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 240_000 });
   await expect(page.getByTestId("cancel-run")).toHaveCount(0);
 
   for (const id of SCENES) {
     await expect(page.getByTestId(`node-status-${id}`), id).toHaveText("Xong");
+    await page.getByTestId(`card-${id}`).click();
     await expect(page.getByTestId(`scene-clip-${id}`), id).toBeVisible();
   }
+  await page.getByTestId("card-combine-g1").click();
   const video = page.getByTestId("film-combine-video-combine-g1");
   await expect
     .poll(() => video.evaluate((v: HTMLVideoElement) => (v.readyState >= 1 ? Math.round(v.duration) : 0)), { timeout: 20_000 })

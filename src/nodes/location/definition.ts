@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineNode } from "../../shared/node-definition";
+import { shorten } from "../../shared/card-line";
 import { codeVersion, DEFAULT_LOOK, LOCATION_SHEET } from "../../shared/prompts";
 import { PROVIDER_IDS } from "../../shared/providers";
 
@@ -23,6 +24,11 @@ export const definition = defineNode<LocationParams>({
   cacheVersion: codeVersion(LOCATION_SHEET),
   params,
   defaults: { name: "", description: "", look: DEFAULT_LOOK, provider: "fake" },
+  cardLine: (p, out) => {
+    const set = out?.location;
+    const where = shorten(p.name, 24) || shorten(p.description, 24) || "chưa mô tả";
+    return set?.kind === "imageset" ? `${where} · ${set.images.length} ảnh` : where;
+  },
   // 1 ảnh mỗi góc của bộ ảnh bối cảnh (2).
   estimate: (p) => ({ image: LOCATION_SHEET(p.description, lookOf(p)).length, video: 0, text: 0 }),
 });

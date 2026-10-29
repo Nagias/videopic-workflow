@@ -23,6 +23,7 @@ test("workflow cũ (Danh sách cảnh + Dựng phim, cảnh dạng `action` trư
   expect((await request.put(`/api/workflows/${id}`, { data: { graph, name: "Workflow cũ thử" } })).ok()).toBe(true);
   await page.goto(`/?wf=${id}`);
   await expect(page.getByTestId("node-scene-g1-1")).toBeVisible();
+  await page.getByTestId("card-scene-g1-1").click();
   await expect(page.getByTestId("scene-motion-scene-g1-1")).toHaveValue("cô đi về phía lều");
   await expect(page.getByTestId("scene-start-scene-g1-1")).toHaveValue("cô đi về phía lều");
   await expect(page.getByTestId("node-combine-g1")).toBeVisible();
@@ -50,6 +51,7 @@ test("workflow cũ không chuyển được (dịch vụ của Dựng phim lạ)
   await page.goto(`/?wf=${id}`);
   await expect(page.getByTestId("workflow-notice")).toContainText("Không chuyển được workflow cũ");
   await expect(page.getByTestId("node-film-1")).toBeVisible();
+  await page.getByTestId("card-shotlist-1").click();
   await expect(page.getByTestId("shot-motion-shotlist-1-1")).toHaveValue("gió thổi qua cỏ");
 });
 
@@ -65,6 +67,7 @@ test("chọn nhân vật từ kho thay TOÀN BỘ tham số node (không giữ t
   const graphB = { nodes: [{ id: "character-1", type: "character", position: { x: 0, y: 0 }, params: { name: "Tên khác", description: "một người hoàn toàn khác, tóc bạc, áo xanh", provider: "muse" } }], edges: [] };
   expect((await request.put(`/api/workflows/${dst}`, { data: { graph: graphB } })).ok()).toBe(true);
   await page.goto(`/?wf=${dst}`);
+  await page.getByTestId("card-character-1").click();
   const pick = page.getByTestId("asset-pick-character-1");
   await expect(pick.locator("option", { hasText: description })).toHaveCount(1);
   await pick.selectOption({ label: description });

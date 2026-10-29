@@ -177,71 +177,275 @@ button.primary {
   min-height: 0;
 }
 
+/* Thẻ node: nhãn nổi phía trên, thân là ảnh/video/chữ, chân một dòng. Không có ô nhập nào trên thẻ. */
+/* Bề rộng theo bản phác: thẻ thường 250, thẻ Cảnh 210 (vừa lưới nhóm Phân cảnh 230 × 250), Ghép phim 340. */
 .gnode {
-  width: 320px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+  position: relative;
+  width: 250px;
 }
 
-.gnode.selected {
-  border-color: var(--accent);
+.gnode.type-scene {
+  width: 210px;
 }
 
-.gnode.status-running {
-  border-color: var(--warn);
+.gnode.type-film-combine {
+  width: 340px;
 }
 
-.gnode.status-succeeded,
-.gnode.status-cached {
-  border-color: var(--ok);
-}
-
-.gnode.status-failed {
-  border-color: var(--err);
-}
-
-.gnode-head {
+.nlabel {
+  position: absolute;
+  top: -22px;
+  left: 2px;
+  right: 2px;
   display: flex;
-  justify-content: space-between;
+  gap: 6px;
   align-items: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.badge {
   font-size: 12px;
   color: var(--muted);
+  white-space: nowrap;
+  cursor: move;
 }
 
-.status-succeeded .badge,
-.status-cached .badge {
+.nlabel i {
+  font-style: normal;
+}
+
+.nlabel .nname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.st {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.st-succeeded {
   color: var(--ok);
 }
 
-.status-running .badge {
+.st-cached {
+  color: #7dd3a8;
+}
+
+.st-running {
   color: var(--warn);
 }
 
-.status-failed .badge {
+.st-failed {
   color: var(--err);
 }
 
-.port {
+.card {
   position: relative;
-  padding: 4px 14px;
-  font-size: 12px;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
+}
+
+.card.selected {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 2px rgb(108 140 255 / 35%),
+    0 6px 18px rgb(0 0 0 / 35%);
+}
+
+.card.status-running {
+  border-color: var(--warn);
+}
+
+.card.status-failed {
+  border-color: var(--err);
+}
+
+.cbody {
+  position: relative;
+}
+
+.cmedia {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #000;
+  pointer-events: none;
+}
+
+.cempty {
+  display: grid;
+  place-items: center;
+  background: var(--panel-2);
   color: var(--muted);
+  font-size: 28px;
 }
 
-.port.out {
-  text-align: right;
+.cempty.hint-edit {
+  font-size: 12px;
 }
 
-.port em {
+.cgrid {
+  display: grid;
+  gap: 2px;
+  background: #000;
+}
+
+.cgrid.g2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.cgrid.g3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.cgrid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.ctext {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 90px;
+  padding: 10px 12px;
+  color: #cfd3dc;
+  font-size: 12.5px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cedit {
+  display: block;
+  width: 100%;
+  min-height: 110px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 0;
+  background: var(--bg);
+  font-size: 12.5px;
+  line-height: 1.4;
+  resize: none;
+}
+
+.cfoot {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.cfoot .cm {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cfoot .cm.running {
+  color: var(--warn);
+}
+
+.cdur {
+  white-space: nowrap;
+}
+
+.cerr {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 4px 10px 6px;
+  color: var(--err);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.runbtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 19%);
+  background: rgb(0 0 0 / 55%);
+  font-size: 12px;
+}
+
+.gnode:hover .runbtn {
+  display: grid;
+}
+
+.prog {
+  position: absolute;
+  bottom: 0;
+  height: 3px;
+  width: 40%;
+  background: var(--warn);
+  animation: prog-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes prog-slide {
+  from {
+    left: -40%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+/* Thu nhỏ quá mức: chỉ còn ảnh và tên. */
+.nlabel.compact .st,
+.card.compact .cfoot,
+.card.compact .cerr,
+.card.compact .runbtn {
+  display: none;
+}
+
+.plabel {
+  position: absolute;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.plabel.in {
+  right: calc(100% + 14px);
+}
+
+.plabel.out {
+  left: calc(100% + 14px);
+}
+
+.plabel em {
   font-style: normal;
   color: var(--kind, var(--muted));
+}
+
+.gnode:hover .plabel {
+  opacity: 1;
 }
 
 /* Mỗi loại dữ liệu một màu: chấm cổng, chữ loại cổng và dây cùng màu → cùng màu là cắm được. */
@@ -286,10 +490,6 @@ button.primary {
   stroke-width: 3.5;
 }
 
-.gnode-body {
-  padding: 8px 12px;
-}
-
 .stack {
   display: flex;
   flex-direction: column;
@@ -330,18 +530,9 @@ button.primary {
   background: transparent;
 }
 
-.node-message,
 .node-error {
   padding: 6px 12px;
   font-size: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.node-message {
-  color: var(--muted);
-}
-
-.node-error {
   color: var(--err);
   white-space: pre-wrap;
 }
@@ -349,19 +540,6 @@ button.primary {
 .toolbar select {
   padding: 5px 8px;
   max-width: 220px;
-}
-
-.gnode.type-shotlist {
-  width: 560px;
-}
-
-.gnode.type-film {
-  width: 560px;
-}
-
-.gnode.type-character,
-.gnode.type-location {
-  width: 360px;
 }
 
 .preview.small {
@@ -503,4 +681,99 @@ button.icon {
 }
 .writer-result li {
   margin-bottom: 6px;
+}
+
+/* Khung bên phải (Inspector): thông số, kết quả, prompt gửi Muse của node đang chọn. */
+.inspector {
+  display: flex;
+  flex-direction: column;
+}
+
+.ih {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ih i {
+  font-style: normal;
+}
+
+.ih h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ith {
+  display: flex;
+  gap: 4px;
+  padding: 8px 14px 0;
+}
+
+.ith button {
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+}
+
+.ith button.on {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.ib {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.fieldlabel {
+  color: var(--muted);
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.resulttext {
+  margin: 0;
+  padding: 8px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  user-select: text;
+}
+
+.resultlist {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+}
+
+.resultmsg {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+
+.resulterr {
+  margin: 0;
+  color: var(--err);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }

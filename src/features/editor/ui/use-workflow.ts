@@ -55,7 +55,12 @@ export function useWorkflow() {
       const flow = toFlow(wf.graph);
       groups.current = wf.graph.groups;
       savedGraph.current = JSON.stringify(fromFlow(flow.nodes, flow.edges, wf.graph.groups));
-      setNodes(flow.nodes);
+      // Cùng workflow được tải lại (sau lần chạy, sau 409): node đang chọn vẫn chọn, khung bên phải không đóng. Mở workflow khác thì bỏ chọn.
+      const sameWorkflow = shownWorkflow.current === wf.id;
+      setNodes((prev) => {
+        const picked = new Set(sameWorkflow ? prev.filter((n) => n.selected).map((n) => n.id) : []);
+        return flow.nodes.map((n) => (picked.has(n.id) ? { ...n, selected: true } : n));
+      });
       setEdges(flow.edges);
       setNotice(wf.notice ?? null);
       loaded.current = true;

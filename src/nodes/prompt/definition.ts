@@ -14,5 +14,9 @@ export const definition = defineNode<PromptParams>({
   outputs: [{ name: "text", kind: "text", label: "Prompt" }],
   params,
   defaults: { text: "" },
+  cardLine: (p) => {
+    const words = typeof p.text === "string" ? p.text.trim().split(/\s+/).filter(Boolean).length : 0;
+    return words > 0 ? `${words} từ` : "chưa có chữ";
+  },
   estimate: () => ({ image: 0, video: 0, text: 0 }),
 });

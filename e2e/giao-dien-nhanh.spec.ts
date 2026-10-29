@@ -34,6 +34,8 @@ test("mở lại workflow đã chạy: ảnh/clip của lần chạy trước hi
     .toBe("succeeded");
 
   await page.goto(`/?wf=${id}`);
+  await expect(page.getByTestId("card-v").locator("video")).toHaveCount(1);
+  await page.getByTestId("card-v").click();
   await expect(page.getByTestId("video-preview-v")).toBeVisible();
   await expect(page.getByTestId("node-status-v")).toHaveText("Xong");
   await expect(page.getByTestId("run-status")).toHaveText("Lần trước: Chạy xong");
@@ -85,13 +87,16 @@ test("thêm node: hiện giữa màn hình, được chọn sẵn, dùng cùng d
   const added = page.locator('.react-flow__node-character');
   await expect(added).toHaveCount(1);
   await expect(added).toHaveClass(/selected/);
-  await expect(added.locator("select[data-testid^=provider-select-]")).toHaveValue("muse");
+  await expect(page.getByTestId("inspector").locator("select[data-testid^=provider-select-]")).toHaveValue("muse");
 
-  const box = await added.boundingBox();
-  const canvas = await page.locator(".canvas").boundingBox();
-  if (!box || !canvas) throw new Error("Không đo được vị trí node");
-  const cx = box.x + box.width / 2;
-  expect(Math.abs(cx - (canvas.x + canvas.width / 2))).toBeLessThan(canvas.width / 4);
-  expect(box.y).toBeGreaterThanOrEqual(canvas.y);
-  expect(box.y).toBeLessThan(canvas.y + canvas.height / 2);
+  // Khung bên phải mở ra làm canvas hẹp lại: đo lại cho tới khi bố cục đứng yên.
+  await expect
+    .poll(async () => {
+      const box = await added.boundingBox();
+      const canvas = await page.locator(".canvas").boundingBox();
+      if (!box || !canvas) return false;
+      const cx = box.x + box.width / 2;
+      return Math.abs(cx - (canvas.x + canvas.width / 2)) < canvas.width / 4 && box.y >= canvas.y && box.y < canvas.y + canvas.height / 2;
+    })
+    .toBe(true);
 });
