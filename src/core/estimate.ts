@@ -119,9 +119,14 @@ export function estimateRun(deps: EstimateDeps, graph: WorkflowGraph, scope: Run
       const afterWriter = sourcesOf(p).some((s) => writing.has(s) || fromWriter.has(s));
       let estimated: Calls | undefined;
       if (!afterWriter && !sourcesOf(p).some((s) => status.get(s) === "unknown")) {
-        const known: EstimateKnown = { inputs: gatherInputs(p, current, (nodeId) => outputs.get(nodeId)).inputs, step: stepOf(p), media };
+        // Còn cổng đã nối mà chưa biết giá trị (node nguồn sẽ chạy, không dự đoán được): không tra cache bước con, không dự đoán —
+        // khoá bước con tính trên đầu vào thiếu khác khoá lúc chạy thật, trúng cache cũ là ước thiếu. Node ước theo tham số
+        // (và các cổng đã biết, ví dụ danh sách cảnh của Dựng phim), mọi bước coi như phải tạo.
+        const gathered = gatherInputs(p, current, (nodeId) => outputs.get(nodeId));
+        const complete = gathered.missing.length === 0;
+        const known: EstimateKnown = { inputs: gathered.inputs, step: complete ? stepOf(p) : () => undefined, media };
         estimated = def.estimate ? def.estimate(p.params, connected, known) : providerOf(p.params) === null ? ZERO : undefined;
-        const predicted = estimated && isZero(estimated) ? def.predict?.(p.params, connected, known) : undefined;
+        const predicted = complete && estimated && isZero(estimated) ? def.predict?.(p.params, connected, known) : undefined;
         if (predicted) outputs.set(id, predicted);
       }
       if (estimated) {

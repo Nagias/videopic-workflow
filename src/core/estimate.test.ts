@@ -134,6 +134,44 @@ describe("ước tính lượt trước khi chạy (POST /api/workflows/:id/esti
     expect(await run()).toEqual({ image: 0, video: 1, text: 0 });
   });
 
+  it("cổng đã nối mà node nguồn sẽ chạy (Đồ vật mới nối): không tra cache bước con theo đầu vào thiếu, cảnh và cảnh nối phía sau ước đủ", async () => {
+    wf = "do-vat-moi";
+    const node = (id: string, type: string, params: Record<string, unknown>) => ({ id, type, position: { x: 0, y: 0 }, params });
+    const scene = (motion: string, extra: Record<string, unknown> = {}) => ({
+      size: "MS", angle: "eye", move: "static", subject: "character", start: "cô gái cầm khúc gỗ đứng cạnh gốc cây", motion, props: "khúc gỗ: nguyên khúc", provider: "fake", ...extra,
+    });
+    const edge = (source: string, sourceHandle: string, target: string, targetHandle: string) => ({ id: `${source}-${target}-${targetHandle}`, source, sourceHandle, target, targetHandle });
+    const base: WorkflowGraph = {
+      nodes: [
+        node("character-1", "character", { description: "một cô gái Việt Nam 22 tuổi, tóc buộc đuôi ngựa, áo thể thao xám", provider: "fake" }),
+        node("location-1", "location", { description: "sườn đồi rừng thông có gốc cây lớn và bãi cỏ", provider: "fake" }),
+        node("scene-a", "scene", scene("cô gái đặt khúc gỗ lên gốc cây")),
+        node("scene-b", "scene", scene("cô gái lùi lại một bước, nhìn khúc gỗ", { start: "", props: "khúc gỗ: nguyên khúc" })),
+      ],
+      edges: [
+        ...["scene-a", "scene-b"].flatMap((id) => [edge("character-1", "character", id, "character"), edge("location-1", "location", id, "location")]),
+        edge("scene-a", "clip", "scene-b", "follow"),
+      ],
+    };
+    // Chạy khi chưa có node Đồ vật: cache bước con có ảnh khung/clip tả đồ vật mà không có ảnh mẫu.
+    await save(base);
+    await run();
+    expect((await estimate()).total).toEqual(ZERO);
+
+    // Nối node Đồ vật (sẽ chạy): ảnh khung thật sẽ đính kèm ảnh mẫu khúc gỗ → khoá khác, phải tạo lại.
+    await save({
+      ...base,
+      nodes: [...base.nodes, node("props-1", "props", { name: "", items: [{ name: "khúc gỗ", description: "khúc gỗ thông ngắn dài 40 cm, vỏ nâu", states: "nguyên khúc" }], provider: "fake" })],
+      edges: [...base.edges, edge("props-1", "props", "scene-a", "props"), edge("props-1", "props", "scene-b", "props")],
+    });
+    const e = await estimate();
+    expect(e.nodes.find((n) => n.id === "props-1")).toMatchObject({ status: "run", calls: { image: 1, video: 0, text: 0 } });
+    expect(e.nodes.find((n) => n.id === "scene-a")).toMatchObject({ status: "run", calls: { image: 1, video: 1, text: 0 } });
+    expect(e.nodes.find((n) => n.id === "scene-b")).toMatchObject({ status: "run", calls: { image: 0, video: 1, text: 0 } });
+    expect(e.total).toEqual({ image: 2, video: 2, text: 0 });
+    expect(await run()).toEqual(e.total);
+  });
+
   it("take cảnh 3 = 2 → video = 1, ảnh = 1", async () => {
     await save(sonLa("fake"));
     await run();

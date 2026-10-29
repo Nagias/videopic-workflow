@@ -37,6 +37,7 @@ export type NodeDefinition<P> = {
 // Điều đã biết trước khi chạy một node: giá trị đầu vào, cache bước con, thông tin file media đã lưu.
 export type EstimateKnown = {
   // Chỉ các cổng mà mọi node nguồn đã có kết quả (cache, hoặc predict()); cổng vắng là chưa biết.
+  // Còn cổng đã nối mà chưa biết thì step() luôn trả undefined và không gọi predict() (src/core/estimate.ts).
   inputs: Readonly<NodeInputs>;
   // Giá trị đã lưu của bước con ctx.step(keyParts) của chính node này (đúng vùng stepScope và lần tạo take); chưa có thì undefined.
   step(keyParts: unknown): unknown;
