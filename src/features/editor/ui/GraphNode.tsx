@@ -1,12 +1,24 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { webNodes } from "../../../nodes/registry.web";
-import { PORT_KIND_LABEL, type PortDef } from "../../../shared/ports";
+import { PORT_KIND_LABEL, type PortDef, type PortKind } from "../../../shared/ports";
 import { cardWidthOf } from "./new-node";
 import { NodeCard, useCompact } from "./NodeCard";
 import { NodeErrorBoundary } from "./NodeErrorBoundary";
 import { useEditor } from "./node-kit";
 
-export type FlowNodeData = { params: Record<string, unknown> };
+// Thông tin vẽ của khung nhóm (node "group-frame", groups.ts): chỉ có ở node khung, không bao giờ được lưu.
+export type FrameInfo = {
+  groupId: string;
+  title: string;
+  count: number;
+  // Nhóm Phân cảnh (true) hay nhóm tay (false).
+  scene: boolean;
+  // Dòng kiểm luật đạo diễn; vắng khi chưa có kết quả ước tính.
+  rule?: { ok: boolean; lines: string[] };
+  // Loại dữ liệu của các dây gộp tới mép khung: mỗi loại một cổng vào `in-<loại>`.
+  inKinds: PortKind[];
+};
+export type FlowNodeData = { params: Record<string, unknown>; frame?: FrameInfo };
 export type FlowNode = Node<FlowNodeData>;
 
 // Cổng nằm ở mép thẻ, rải đều theo chiều cao; tên cổng chỉ hiện khi rê chuột vào thẻ.

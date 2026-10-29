@@ -1,10 +1,13 @@
-import { addEdge, Background, Controls, ReactFlow, type Connection, type Edge, type IsValidConnection, type OnConnectEnd, type ReactFlowInstance } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { addEdge, Background, Controls, ReactFlow, type Connection, type Edge, type IsValidConnection, type NodeChange, type OnConnectEnd, type ReactFlowInstance } from "@xyflow/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { webNodes } from "../../../nodes/registry.web";
 import { labelOf } from "../../../shared/node-label";
 import { Banners } from "./Banners";
 import { connectionProblem, droppedConnectionProblem, edgeKindClass, replaceTargetEdges, targetAcceptsMany } from "./graph-convert";
+import { videoSecondsOf } from "./card-media";
 import { GraphNode, type FlowNode } from "./GraphNode";
+import { GroupFrame } from "./GroupFrame";
+import { addManualGroup, bundleEdges, GROUP_FRAME_TYPE, groupFrames, isFrame, measuredFrom, moveFrameTo, pruneManualGroups, reuseFrames } from "./groups";
 import { COMPACT_ZOOM } from "./NodeCard";
 import { Inspector, sourcesOf, type InspectorSources } from "./Inspector";
 import { inheritProvider, placeNewNode } from "./new-node";
@@ -17,12 +20,12 @@ import { useWorkflow } from "./use-workflow";
 
 const EMPTY_SOURCES: InspectorSources = { nodes: [], edges: [] };
 
-const nodeTypes = Object.fromEntries(Object.keys(webNodes).map((t) => [t, GraphNode]));
+const nodeTypes = { ...Object.fromEntries(Object.keys(webNodes).map((t) => [t, GraphNode])), [GROUP_FRAME_TYPE]: GroupFrame };
 
 export function Editor() {
   const wf = useWorkflow();
   const run = useRun(wf);
-  const { workflowId, nodes, edges, setNodes, setEdges, setProblem, latest, groups } = wf;
+  const { workflowId, nodes, edges, setNodes, setEdges, setProblem, latest, groups, groupList, setGroups } = wf;
   const { nodeStates, expandScenes } = run;
   const flow = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -75,25 +78,88 @@ export function Editor() {
     ]);
   };
 
+  // Khung nhóm chỉ để vẽ: dựng lại từ nodes + nhóm + kích thước đo được, không nằm trong state canvas và không được lưu (fromFlow
+  // bỏ qua). Dây từ ngoài vào nhiều thẻ trong nhóm vẽ gộp thành một dây tới mép khung; dây gốc vẫn nằm nguyên trong `edges`.
+  // Chọn khung không mở khung bên phải (khung phải chỉ cho đúng một node).
+  const [selectedFrames, setSelectedFrames] = useState<ReadonlySet<string>>(new Set());
+  const bundles = useMemo(() => bundleEdges(edges, groupList), [edges, groupList]);
+  const shownFrames = useRef<FlowNode[]>([]);
+  const frames = useMemo(() => {
+    const next = reuseFrames(
+      shownFrames.current,
+      groupFrames(nodes, groupList, measuredFrom(nodes), { secondsOf: (id) => videoSecondsOf(nodeStates[id]?.output), selected: selectedFrames, edges: bundles.visible }),
+    );
+    shownFrames.current = next;
+    return next;
+  }, [nodes, groupList, nodeStates, selectedFrames, bundles]);
+  const displayNodes = useMemo(() => (frames.length > 0 ? [...frames, ...nodes] : nodes), [frames, nodes]);
+
+  // Thay đổi canvas báo lên từ xyflow: thay đổi của khung (không có trong state) đổi thành dời cả nhóm / chọn khung; thẻ thành
+  // viên của nhóm đang được kéo cùng khung thì bỏ thay đổi riêng của thẻ để không dời hai lần; xoá node thì rút khỏi nhóm tay.
+  const onNodesChange = useCallback(
+    (changes: NodeChange<FlowNode>[]) => {
+      const frameIds = new Set(shownFrames.current.map((f) => f.id));
+      const groupOfFrame = new Map(shownFrames.current.map((f) => [f.id, f.data.frame?.groupId ?? ""]));
+      const rest: NodeChange<FlowNode>[] = [];
+      const moves = new Map<string, { x: number; y: number }>();
+      const picks: { id: string; selected: boolean }[] = [];
+      for (const c of changes) {
+        if (!("id" in c) || !frameIds.has(c.id)) {
+          rest.push(c);
+        } else if (c.type === "position" && c.position) {
+          moves.set(groupOfFrame.get(c.id)!, c.position);
+        } else if (c.type === "select") {
+          picks.push({ id: c.id, selected: c.selected });
+        }
+      }
+      const carried = new Set(groups.current.filter((g) => moves.has(g.id)).flatMap((g) => g.nodeIds));
+      wf.onNodesChange(rest.filter((c) => !(c.type === "position" && carried.has(c.id))));
+      if (moves.size > 0) setNodes((ns) => [...moves].reduce((acc, [groupId, to]) => moveFrameTo(acc, groups.current, groupId, to), ns));
+      if (picks.length > 0) {
+        setSelectedFrames((prev) => {
+          const next = new Set(prev);
+          for (const p of picks) {
+            if (p.selected) next.add(p.id);
+            else next.delete(p.id);
+          }
+          return next;
+        });
+      }
+      const removed = new Set(rest.flatMap((c) => (c.type === "remove" ? [c.id] : [])));
+      if (removed.size > 0) setGroups(pruneManualGroups(groups.current, removed));
+    },
+    [wf.onNodesChange, setNodes, setGroups, groups],
+  );
+
   // Đúng một node đang chọn thì khung bên phải hiện nó; chọn nhiều node hoặc không chọn thì khung đóng.
   const selectedNodes = nodes.filter((n) => n.selected);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0]! : null;
   const inspectorSources = selectedNode ? sourcesOf(selectedNode.id, nodes, edges) : EMPTY_SOURCES;
 
-  // Escape: đang gõ trong ô nhập thì chỉ thoát ô đó; không thì bỏ chọn node (khung bên phải đóng).
+  // Escape: đang gõ trong ô nhập thì chỉ thoát ô đó; không thì bỏ chọn node và khung (khung bên phải đóng).
+  // Ctrl+G: gom các node đang chọn (từ 2 node trở lên) thành nhóm tay; đang gõ trong ô nhập thì để yên.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
       const el = document.activeElement;
-      if (el instanceof HTMLElement && el.matches("input, textarea, select")) {
+      const typing = el instanceof HTMLElement && el.matches("input, textarea, select");
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "g") {
+        if (typing) return;
+        e.preventDefault();
+        const ids = latest.current.nodes.filter((n) => n.selected && !isFrame(n)).map((n) => n.id);
+        if (ids.length >= 2) setGroups(addManualGroup(groups.current, ids));
+        return;
+      }
+      if (e.key !== "Escape") return;
+      if (typing) {
         el.blur();
         return;
       }
+      setSelectedFrames((prev) => (prev.size > 0 ? new Set() : prev));
       setNodes((ns) => (ns.some((n) => n.selected) ? ns.map((n) => (n.selected ? { ...n, selected: false } : n)) : ns));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setNodes]);
+  }, [setNodes, setGroups, groups, latest]);
 
   const runId = run.run?.id ?? "";
   const runStatus = run.run?.status ?? "";
@@ -121,13 +187,13 @@ export function Editor() {
           <Rail />
           <div className="canvas" ref={canvasRef}>
             <ReactFlow
-              nodes={nodes}
-              edges={edges}
+              nodes={displayNodes}
+              edges={bundles.visible}
               nodeTypes={nodeTypes}
               onInit={(inst) => {
                 flow.current = inst;
               }}
-              onNodesChange={wf.onNodesChange}
+              onNodesChange={onNodesChange}
               onEdgesChange={wf.onEdgesChange}
               onConnect={onConnect}
               onConnectEnd={onConnectEnd}

@@ -41,8 +41,15 @@ export function useWorkflow() {
   const graphVersion = useRef(0);
   const latest = useRef({ nodes, edges });
   latest.current = { nodes, edges };
-  // Nhóm (Phân cảnh) của workflow đang mở: canvas chưa sửa nhóm, nhưng lưu phải giữ nguyên để Biên kịch còn tạo lại được.
+  // Nhóm của workflow đang mở: nhóm Phân cảnh canvas không sửa nhưng lưu phải giữ nguyên để Biên kịch còn tạo lại được; nhóm tay
+  // (Ctrl+G, rút node bị xoá) thì sửa qua setGroups(). `groups` (ref) là giá trị mới nhất cho hàm gọi sau,
+  // `groupList` (state) để giao diện vẽ khung và để tự lưu chạy lại khi nhóm đổi. Hai cái luôn đổi cùng nhau.
+  const [groupList, setGroupList] = useState<WorkflowGroup[]>([]);
   const groups = useRef<WorkflowGroup[]>([]);
+  const setGroups = useCallback((next: WorkflowGroup[]) => {
+    groups.current = next;
+    setGroupList(next);
+  }, []);
   // Gọi mỗi khi một workflow vừa được mở: useRun đặt hàm dọn kết quả lần chạy cũ và tải lần chạy gần nhất.
   const onShown = useRef<((id: string) => void) | null>(null);
 
@@ -53,7 +60,7 @@ export function useWorkflow() {
       baseUpdatedAt.current = wf.updatedAt;
       graphVersion.current++;
       const flow = toFlow(wf.graph);
-      groups.current = wf.graph.groups;
+      setGroups(wf.graph.groups);
       savedGraph.current = JSON.stringify(fromFlow(flow.nodes, flow.edges, wf.graph.groups));
       // Cùng workflow được tải lại (sau lần chạy, sau 409): node đang chọn vẫn chọn, khung bên phải không đóng. Mở workflow khác thì bỏ chọn.
       const sameWorkflow = shownWorkflow.current === wf.id;
@@ -65,7 +72,7 @@ export function useWorkflow() {
       setNotice(wf.notice ?? null);
       loaded.current = true;
     },
-    [setNodes, setEdges],
+    [setNodes, setEdges, setGroups],
   );
 
   const showWorkflow = useCallback(
@@ -177,7 +184,7 @@ export function useWorkflow() {
         if (!graphWasReplaced(e)) setProblem(`Không lưu được: ${errText(e)}`);
       });
     }, SAVE_DELAY_MS);
-  }, [nodes, edges, workflowId, save]);
+  }, [nodes, edges, groupList, workflowId, save]);
 
   // Lưu workflow đang mở rồi mở workflow `load` trả về (chọn workflow khác, tạo từ mẫu).
   const switchTo = async (load: () => Promise<WorkflowResponse>) => {
@@ -200,6 +207,8 @@ export function useWorkflow() {
     onNodesChange,
     onEdgesChange,
     groups,
+    groupList,
+    setGroups,
     latest,
     saveState,
     notice,

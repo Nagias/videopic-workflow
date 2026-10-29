@@ -98,6 +98,39 @@ describe("ước tính lượt trước khi chạy (POST /api/workflows/:id/esti
     expect(await run()).toEqual({ image: 24, video: 12, text: 0 });
   });
 
+  it("nhóm tay (manual, không source) chỉ là khung nhìn: thêm vào Sơn La — kể cả bó cảnh theo thứ tự ngược — ước tính và tên node không đổi", async () => {
+    await save(sonLa("fake"));
+    const plain = await estimate();
+    const graph = (await open()).graph;
+    const ids = sceneIds(graph);
+    const withManual: WorkflowGraph = {
+      ...graph,
+      groups: [...graph.groups, { id: "manual-1", label: "Nhóm 1", nodeIds: [ids[2]!, ids[0]!, ids[1]!, "character-1"], manual: true }],
+    };
+    await save(withManual);
+    expect(await estimate()).toEqual(plain);
+    expect(plain.nodes.find((n) => n.id === ids[2])?.label).toBe("Cảnh 3");
+  });
+
+  it("nhóm tay gồm node Prompt và Tạo video: tên node và ước tính y hệt khi không có nhóm", async () => {
+    wf = "nhom-tay-prompt";
+    const base: WorkflowGraph = {
+      nodes: [
+        { id: "p", type: "prompt", position: { x: 0, y: 0 }, params: { text: "Rừng sương sớm" } },
+        { id: "p2", type: "prompt", position: { x: 0, y: 200 }, params: { text: "Sản phẩm trên bàn gỗ" } },
+        { id: "v", type: "generate-video", position: { x: 400, y: 0 }, params: { provider: "fake", durationSec: 5 } },
+      ],
+      edges: [{ id: "e1", source: "p", sourceHandle: "text", target: "v", targetHandle: "prompt" }],
+      groups: [],
+    };
+    expect((await s.app.inject({ method: "PUT", url: `/api/workflows/${wf}`, payload: { graph: base } })).statusCode).toBe(200);
+    const plain = await estimate();
+    await save({ ...base, groups: [{ id: "manual-1", label: "Nhóm 1", nodeIds: ["p", "p2", "v"], manual: true }] });
+    const grouped = await estimate();
+    expect(grouped).toEqual(plain);
+    expect(grouped.nodes.map((n) => n.label)).not.toContainEqual(expect.stringMatching(/\d$/));
+  });
+
   it("chạy xong rồi ước tính: total 0, mọi node cached", async () => {
     await save(sonLa("fake"));
     await run();

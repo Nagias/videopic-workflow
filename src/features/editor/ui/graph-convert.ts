@@ -3,6 +3,7 @@ import { webNodes } from "../../../nodes/registry.web";
 import { PORT_KIND_LABEL, type PortDef, type PortKind } from "../../../shared/ports";
 import type { WorkflowGraph, WorkflowGroup } from "../../../shared/workflow";
 import type { FlowNode } from "./GraphNode";
+import { isFrame } from "./groups";
 
 // Dây mang màu theo loại dữ liệu ở cổng ra, khớp màu chấm cổng (styles.css: .kind-*).
 export function edgeKindClass(edge: Pick<Edge, "source" | "sourceHandle">, nodes: Pick<FlowNode, "id" | "type">[]): string | undefined {
@@ -16,18 +17,20 @@ export function toFlow(graph: WorkflowGraph): { nodes: FlowNode[]; edges: Edge[]
   return { nodes, edges: graph.edges.map((e) => ({ ...e, className: edgeKindClass(e, nodes) })) };
 }
 
-// groups: nhóm của đồ thị đã tải (canvas chưa sửa nhóm), lưu lại nguyên vẹn để nhóm Phân cảnh không mất khi lưu.
+// groups: nhóm của đồ thị (lưu nguyên vẹn để nhóm Phân cảnh không mất khi lưu). Node khung nhóm (group-frame) chỉ để vẽ nên không
+// bao giờ được lưu, và dây gộp tới khung (chỉ để vẽ) cũng vậy.
 export function fromFlow(nodes: FlowNode[], edges: Edge[], groups: WorkflowGroup[]): WorkflowGraph {
+  const frameIds = new Set(nodes.filter(isFrame).map((n) => n.id));
   return {
     groups,
-    nodes: nodes.map((n) => ({
+    nodes: nodes.filter((n) => !isFrame(n)).map((n) => ({
       id: n.id,
       type: n.type ?? "",
       position: { x: Math.round(n.position.x), y: Math.round(n.position.y) },
       params: n.data.params,
     })),
     edges: edges
-      .filter((e) => e.sourceHandle && e.targetHandle)
+      .filter((e) => e.sourceHandle && e.targetHandle && !frameIds.has(e.source) && !frameIds.has(e.target))
       .map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle!, target: e.target, targetHandle: e.targetHandle! })),
   };
 }

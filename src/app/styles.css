@@ -492,6 +492,63 @@ button.primary {
   stroke-width: 3.5;
 }
 
+/* Dây gộp tới mép khung nhóm: nhãn "×12" cho biết đang gộp bao nhiêu dây. */
+.react-flow__edge-text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+/* Khung nhóm (GroupFrame): nét đứt quanh các thẻ; thân khung không bắt chuột, chỉ tiêu đề bắt (kéo tiêu đề thì cả nhóm đi theo). */
+.group-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 1.5px dashed #3a4150;
+  border-radius: 18px;
+  background: rgb(108 140 255 / 0.035);
+}
+
+.group-frame.selected {
+  border-color: var(--accent);
+}
+
+.group-head {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+}
+
+.group-title {
+  flex: none;
+  pointer-events: all;
+  cursor: move;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.group-rule {
+  min-width: 0;
+  max-height: 34px;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.group-rule.ok {
+  color: var(--ok);
+}
+
+.group-rule.warn {
+  color: var(--warn);
+}
+
 .stack {
   display: flex;
   flex-direction: column;
