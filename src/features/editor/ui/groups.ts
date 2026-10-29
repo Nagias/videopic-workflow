@@ -104,7 +104,8 @@ export function groupFrames(nodes: readonly FlowNode[], groups: readonly Workflo
       dragHandle: FRAME_DRAG_HANDLE,
       selected: extra.selected?.has(id) ?? false,
       // Thân khung không bắt chuột (kéo nền canvas xuyên qua khung được); chỉ tiêu đề bắt (styles.css .group-title).
-      style: { pointerEvents: "none" },
+      // zIndex cố định trong style: xyflow nâng node đang chọn thêm ~1000, khung được chọn sẽ đè lên các thẻ nếu không ghi đè ở đây.
+      style: { pointerEvents: "none", zIndex: -1 },
       data: { params: {}, frame },
     });
   }
@@ -179,13 +180,21 @@ export function moveGroup(nodes: FlowNode[], groups: readonly WorkflowGroup[], g
   return nodes.map((n) => (members.has(n.id) && !isFrame(n) ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } } : n));
 }
 
-// Đặt góc trên trái của khung về `target` (xyflow báo vị trí đích tuyệt đối khi kéo tiêu đề): tính đoạn dời từ vị trí khung
-// ngay lúc này nên gọi lặp với cùng đích không dời thêm.
-export function moveFrameTo(nodes: FlowNode[], groups: readonly WorkflowGroup[], groupId: string, target: { x: number; y: number }): FlowNode[] {
-  const group = groups.find((g) => g.id === groupId);
-  if (!group) return nodes;
-  const frame = groupFrames(nodes, [group], measuredFrom(nodes))[0];
-  return frame ? moveGroup(nodes, groups, groupId, target.x - frame.position.x, target.y - frame.position.y) : nodes;
+// Kéo nhiều khung cùng lúc (khung và khung chung thẻ thành viên): mỗi thẻ chỉ dời MỘT lần, theo đoạn dời của khung đứng trước
+// trong `groups`, không cộng dồn qua từng khung.
+export function moveFramesTo(nodes: FlowNode[], groups: readonly WorkflowGroup[], targets: ReadonlyMap<string, { x: number; y: number }>): FlowNode[] {
+  const measured = measuredFrom(nodes);
+  const delta = new Map<string, { dx: number; dy: number }>();
+  for (const g of groups) {
+    const to = targets.get(g.id);
+    const frame = to ? groupFrames(nodes, [g], measured)[0] : undefined;
+    if (!to || !frame) continue;
+    for (const id of g.nodeIds) if (!delta.has(id)) delta.set(id, { dx: to.x - frame.position.x, dy: to.y - frame.position.y });
+  }
+  return nodes.map((n) => {
+    const d = isFrame(n) ? undefined : delta.get(n.id);
+    return d && (d.dx !== 0 || d.dy !== 0) ? { ...n, position: { x: n.position.x + d.dx, y: n.position.y + d.dy } } : n;
+  });
 }
 
 // Nhóm tay từ các node đang chọn (Ctrl+G): không có `source`, có `manual`, nên chỉ là khung nhìn.
@@ -209,4 +218,10 @@ export function pruneManualGroups(groups: WorkflowGroup[], removed: ReadonlySet<
     if (nodeIds.length > 0) out.push({ ...g, nodeIds });
   }
   return changed ? out : groups;
+}
+
+// Node bị xoá thì các dây chạm vào nó cũng phải bỏ khỏi dữ liệu. xyflow chỉ biết các dây đang VẼ; dây gốc bị gộp vào mép khung
+// không được vẽ nên không tự bị xoá theo, để lại dây trỏ tới node không còn (lần chạy sau báo lỗi, người dùng không thấy để xoá).
+export function pruneEdgesFor(edges: Edge[], removed: ReadonlySet<string>): Edge[] {
+  return edges.some((e) => removed.has(e.source) || removed.has(e.target)) ? edges.filter((e) => !removed.has(e.source) && !removed.has(e.target)) : edges;
 }

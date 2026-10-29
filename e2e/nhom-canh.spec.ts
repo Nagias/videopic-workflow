@@ -5,7 +5,7 @@ const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(
 type SavedGraph = {
   graph: {
     nodes: { id: string; type: string; position: { x: number; y: number } }[];
-    edges: { id: string }[];
+    edges: { id: string; source: string; target: string }[];
     groups: { id: string; nodeIds: string[]; manual?: boolean; source?: unknown }[];
   };
 };
@@ -32,7 +32,7 @@ async function dragTitle(page: Page, groupId: string, dx: number) {
   await page.mouse.up();
 }
 
-test("kéo tiêu đề nhóm 200px → cả 12 thẻ dời, lưu, chạy lại không ra decision", async ({ page }) => {
+test("kéo tiêu đề nhóm 200px → cả 12 thẻ dời, lưu, chọn khung không đè lên thẻ, dời xong vẫn chạy được", async ({ page }) => {
   test.setTimeout(420_000);
   await page.setViewportSize({ width: 1700, height: 1000 });
   await page.goto("/");
@@ -88,16 +88,57 @@ test("kéo tiêu đề nhóm 200px → cả 12 thẻ dời, lưu, chạy lại k
   expect(after.groups).toEqual(before.groups);
   expect(after.nodes.some((n) => n.type === "group-frame")).toBe(false);
 
-  // Chọn khung không mở khung bên phải.
+  // Chọn khung không mở khung bên phải, và khung đang chọn vẫn nằm dưới thẻ (xyflow nâng node đang chọn thêm ~1000).
   await expect(page.getByTestId("inspector")).toHaveCount(0);
+  await expect(page.locator(".react-flow__node-group-frame.selected")).toHaveCount(1);
+  expect(await page.locator(".react-flow__node-group-frame").evaluate((el) => getComputedStyle(el).zIndex)).toBe("-1");
+  expect(await page.getByTestId("node-scene-g1-1").locator("xpath=ancestor::*[contains(@class,'react-flow__node')][1]").evaluate((el) => getComputedStyle(el).zIndex)).not.toBe("-1");
 
-  // Chạy sau khi dời nhóm: chạy được, không dừng hỏi Thay/Giữ, và khung ghi tổng thời lượng 12 clip.
+  // Chạy sau khi dời nhóm: chạy được và khung ghi tổng thời lượng 12 clip. (Nhóm của mẫu Sơn La không có Biên kịch nên không có
+  // hộp Thay/Giữ để kiểm: việc "dời nhóm không phải sửa tay" kiểm ở test dưới, trên mẫu Ý tưởng → phim.)
   await page.getByTestId("run-button").click();
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 300_000 });
-  await expect(page.getByTestId("scenes-decision")).toHaveCount(0);
   await expect(page.getByTestId("node-status-scene-g1-12")).toHaveText("Xong");
   await expect(page.getByTestId("group-title-g1")).toHaveText(/^▢ Phân cảnh · 12 cảnh · [\d,]+ giây$/);
   await expect(page.getByTestId("group-rule-g1")).toHaveCount(0);
+});
+
+test("xoá node đang có dây bị gộp (nguồn Nhân vật, đích một cảnh) → dây gốc đi theo, lưu xong không dây nào trỏ tới node không còn", async ({ page }) => {
+  await page.setViewportSize({ width: 1700, height: 1000 });
+  await page.goto("/");
+  await page.getByTestId("template-sinh-ton-son-la").click();
+  await expect(page).toHaveURL(/wf=sinh-ton-son-la-/);
+  const wfId = new URL(page.url()).searchParams.get("wf")!;
+  await expect(page.getByTestId("node-scene-g1-12")).toBeVisible();
+  await expect(page.locator('.react-flow__edge[data-id^="bundle-g1-"]')).toHaveCount(3);
+  const before = await readGraph(page, wfId);
+  const missing = (g: SavedGraph["graph"]) => {
+    const ids = new Set(g.nodes.map((n) => n.id));
+    return g.edges.filter((e) => !ids.has(e.source) || !ids.has(e.target)).map((e) => e.id);
+  };
+  expect(missing(before)).toEqual([]);
+
+  // Xoá nguồn gộp (Nhân vật: 12 dây tham chiếu đang ẩn) bằng phím xoá của xyflow (Backspace).
+  await page.getByTestId("card-character-1").click();
+  await page.keyboard.press("Backspace");
+  await expect(page.getByTestId("node-character-1")).toHaveCount(0);
+  // Rồi xoá một đích gộp (cảnh 3: 3 dây tham chiếu đang ẩn).
+  await page.getByTestId("card-scene-g1-3").click();
+  await page.keyboard.press("Backspace");
+  await expect(page.getByTestId("node-scene-g1-3")).toHaveCount(0);
+  await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
+
+  await expect
+    .poll(async () => {
+      const g = await readGraph(page, wfId);
+      return { nodes: g.nodes.length, dangling: missing(g), edges: g.edges.length };
+    })
+    .toEqual({ nodes: before.nodes.length - 2, dangling: [], edges: expect.any(Number) });
+  const after = await readGraph(page, wfId);
+  expect(after.edges.some((e) => e.source === "character-1" || e.target === "character-1" || e.source === "scene-g1-3" || e.target === "scene-g1-3")).toBe(false);
+  // Chỉ mất đúng dây của hai node đã xoá: không xoá lố các dây gộp còn lại.
+  const touched = before.edges.filter((e) => ["character-1", "scene-g1-3"].some((id) => e.source === id || e.target === id));
+  expect(after.edges).toHaveLength(before.edges.length - touched.length);
 });
 
 test("kéo nhóm không phải là sửa tay: Biên kịch ra bộ cảnh mới thì thay thẳng, không hiện hộp Thay/Giữ", async ({ page }) => {

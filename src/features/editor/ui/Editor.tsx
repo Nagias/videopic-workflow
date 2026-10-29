@@ -7,7 +7,7 @@ import { connectionProblem, droppedConnectionProblem, edgeKindClass, replaceTarg
 import { videoSecondsOf } from "./card-media";
 import { GraphNode, type FlowNode } from "./GraphNode";
 import { GroupFrame } from "./GroupFrame";
-import { addManualGroup, bundleEdges, GROUP_FRAME_TYPE, groupFrames, isFrame, measuredFrom, moveFrameTo, pruneManualGroups, reuseFrames } from "./groups";
+import { addManualGroup, bundleEdges, GROUP_FRAME_TYPE, groupFrames, isFrame, measuredFrom, moveFramesTo, pruneEdgesFor, pruneManualGroups, reuseFrames } from "./groups";
 import { COMPACT_ZOOM } from "./NodeCard";
 import { Inspector, sourcesOf, type InspectorSources } from "./Inspector";
 import { inheritProvider, placeNewNode } from "./new-node";
@@ -82,6 +82,10 @@ export function Editor() {
   // bỏ qua). Dây từ ngoài vào nhiều thẻ trong nhóm vẽ gộp thành một dây tới mép khung; dây gốc vẫn nằm nguyên trong `edges`.
   // Chọn khung không mở khung bên phải (khung phải chỉ cho đúng một node).
   const [selectedFrames, setSelectedFrames] = useState<ReadonlySet<string>>(new Set());
+  // Mã nhóm lặp giữa các workflow (g1...): sang workflow khác thì bỏ chọn khung.
+  useEffect(() => {
+    setSelectedFrames((prev) => (prev.size > 0 ? new Set() : prev));
+  }, [workflowId]);
   const bundles = useMemo(() => bundleEdges(edges, groupList), [edges, groupList]);
   const shownFrames = useRef<FlowNode[]>([]);
   const frames = useMemo(() => {
@@ -114,7 +118,7 @@ export function Editor() {
       }
       const carried = new Set(groups.current.filter((g) => moves.has(g.id)).flatMap((g) => g.nodeIds));
       wf.onNodesChange(rest.filter((c) => !(c.type === "position" && carried.has(c.id))));
-      if (moves.size > 0) setNodes((ns) => [...moves].reduce((acc, [groupId, to]) => moveFrameTo(acc, groups.current, groupId, to), ns));
+      if (moves.size > 0) setNodes((ns) => moveFramesTo(ns, groups.current, moves));
       if (picks.length > 0) {
         setSelectedFrames((prev) => {
           const next = new Set(prev);
@@ -126,9 +130,13 @@ export function Editor() {
         });
       }
       const removed = new Set(rest.flatMap((c) => (c.type === "remove" ? [c.id] : [])));
-      if (removed.size > 0) setGroups(pruneManualGroups(groups.current, removed));
+      if (removed.size > 0) {
+        setGroups(pruneManualGroups(groups.current, removed));
+        // Cả dây gốc đang bị gộp (không vẽ nên xyflow không biết) phải đi theo node bị xoá.
+        setEdges((es) => pruneEdgesFor(es, removed));
+      }
     },
-    [wf.onNodesChange, setNodes, setGroups, groups],
+    [wf.onNodesChange, setNodes, setEdges, setGroups, groups],
   );
 
   // Đúng một node đang chọn thì khung bên phải hiện nó; chọn nhiều node hoặc không chọn thì khung đóng.

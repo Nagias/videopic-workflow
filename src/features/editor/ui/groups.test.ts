@@ -13,8 +13,9 @@ import {
   groupFrames,
   GROUP_FRAME_TYPE,
   measuredFrom,
-  moveFrameTo,
+  moveFramesTo,
   moveGroup,
+  pruneEdgesFor,
   pruneManualGroups,
 } from "./groups";
 
@@ -179,16 +180,70 @@ describe("kéo cả nhóm", () => {
     expect(moved.filter((n) => ids.has(n.id))).toHaveLength(12);
   });
 
-  it("moveFrameTo đặt khung đúng vị trí đích (gọi hai lần cùng đích không dời thêm)", () => {
+  it("moveFramesTo đặt khung đúng vị trí đích (gọi hai lần cùng đích không dời thêm)", () => {
     const graph = sonLa();
     const { nodes } = toFlow(graph);
     const before = groupFrames(nodes, graph.groups!, measuredFrom(nodes))[0]!;
-    const target = { x: before.position.x + 200, y: before.position.y };
-    const once = moveFrameTo(nodes, graph.groups!, "g1", target);
-    const twice = moveFrameTo(once, graph.groups!, "g1", target);
-    expect(groupFrames(once, graph.groups!, measuredFrom(once))[0]!.position).toEqual(target);
-    expect(groupFrames(twice, graph.groups!, measuredFrom(twice))[0]!.position).toEqual(target);
+    const targets = new Map([["g1", { x: before.position.x + 200, y: before.position.y }]]);
+    const once = moveFramesTo(nodes, graph.groups!, targets);
+    const twice = moveFramesTo(once, graph.groups!, targets);
+    expect(groupFrames(once, graph.groups!, measuredFrom(once))[0]!.position).toEqual(targets.get("g1"));
+    expect(groupFrames(twice, graph.groups!, measuredFrom(twice))[0]!.position).toEqual(targets.get("g1"));
     expect(twice.map((n) => n.position)).toEqual(once.map((n) => n.position));
+  });
+});
+
+describe("xoá node khi dây bị gộp", () => {
+  it("pruneEdgesFor: xoá nguồn gộp (Nhân vật) hay đích gộp (một cảnh) thì mọi dây gốc chạm vào node đó đều đi theo, kể cả dây đang bị ẩn", () => {
+    const graph = sonLa();
+    const { edges } = toFlow(graph);
+    const { visible, bundled } = bundleEdges(edges, graph.groups!);
+    expect(bundled).toHaveLength(36);
+    // xyflow chỉ thấy dây đang vẽ: chỉ riêng dây gộp thì dây gốc ẩn không bị đụng tới.
+    expect(visible.filter((e) => e.source === "character-1")).toHaveLength(1);
+
+    const noChar = pruneEdgesFor(edges, new Set(["character-1"]));
+    expect(edges.filter((e) => e.source === "character-1")).toHaveLength(12);
+    expect(noChar).toHaveLength(edges.length - 12);
+    expect(noChar.some((e) => e.source === "character-1" || e.target === "character-1")).toBe(false);
+
+    const scene3 = scenes(graph.groups!)[2]!;
+    const noScene = pruneEdgesFor(edges, new Set([scene3]));
+    expect(noScene.some((e) => e.source === scene3 || e.target === scene3)).toBe(false);
+    expect(edges.filter((e) => e.source === scene3 || e.target === scene3).length).toBeGreaterThanOrEqual(4);
+    expect(noScene).toHaveLength(edges.length - edges.filter((e) => e.source === scene3 || e.target === scene3).length);
+  });
+
+  it("không có dây nào chạm vào node bị xoá thì trả đúng mảng cũ", () => {
+    const { edges } = toFlow(sonLa());
+    expect(pruneEdgesFor(edges, new Set(["khong-co"]))).toBe(edges);
+  });
+});
+
+describe("nhiều khung kéo cùng lúc", () => {
+  it("thẻ nằm trong hai khung được kéo cùng lúc chỉ dời một lần", () => {
+    const nodes: FlowNode[] = ["a", "b", "c"].map((id, i) => ({ id, type: "prompt", position: { x: i * 300, y: 0 }, data: { params: {} } }));
+    const groups: WorkflowGroup[] = [
+      { id: "g1", label: "Phân cảnh", nodeIds: ["a", "b"] },
+      { id: "manual-1", label: "Nhóm 1", nodeIds: ["b", "c"], manual: true },
+    ];
+    const f = (gid: string) => groupFrames(nodes, groups, measuredFrom(nodes)).find((x) => x.id === `frame-${gid}`)!.position;
+    const targets = new Map([
+      ["g1", { x: f("g1").x + 100, y: f("g1").y }],
+      ["manual-1", { x: f("manual-1").x + 100, y: f("manual-1").y }],
+    ]);
+    const moved = moveFramesTo(nodes, groups, targets);
+    expect(moved.map((n) => n.position.x - nodes.find((o) => o.id === n.id)!.position.x)).toEqual([100, 100, 100]);
+  });
+});
+
+describe("khung luôn nằm dưới thẻ", () => {
+  it("zIndex của khung ghi trong style (xyflow nâng node đang chọn thêm ~1000 nếu chỉ dùng thuộc tính zIndex)", () => {
+    const graph = sonLa();
+    const { nodes } = toFlow(graph);
+    const f = groupFrames(nodes, graph.groups!, SIZE, { selected: new Set(["frame-g1"]) })[0]!;
+    expect(f.zIndex).toBe(-1);
+    expect(f.style?.zIndex).toBe(-1);
   });
 });
 
