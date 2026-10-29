@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppDeps } from "../../core/app-deps";
 import { runNodes, runs } from "../../core/db/schema";
@@ -9,12 +9,16 @@ import { getWorkflowRow } from "../workflows/store";
 import { OLD_RESULT_MESSAGE } from "../workflows/upgrade";
 import { freshResults, graphRules, newestRows } from "./fresh-results";
 
-function safeJson(text: string): unknown {
+// Đồ thị đã lưu của một lần chạy (runs.graph_json); không đọc được (JSON hỏng, sai dạng) thì null để chỗ gọi ghi log và bỏ lần đó.
+function runGraphOf(text: string): WorkflowGraph | null {
+  let raw: unknown;
   try {
-    return JSON.parse(text);
+    raw = JSON.parse(text);
   } catch {
     return null;
   }
+  const parsed = WorkflowGraphSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }
 
 const BROKEN_OUTPUT = "Kết quả đã lưu của lần chạy này không đọc được — bấm Chạy để tạo lại (bước con đã có thì không tốn lượt)";
@@ -69,15 +73,33 @@ export function registerRunRoutes(app: FastifyInstance, deps: AppDeps): void {
     const run = deps.db.select().from(runs).where(eq(runs.workflowId, wf.id)).orderBy(desc(runs.createdAt)).limit(1).get();
     const graph = WorkflowGraphSchema.parse(JSON.parse(wf.graphJson));
     const ids = graph.nodes.map((n) => n.id);
-    const rows =
+    const ofWorkflow = and(eq(runs.workflowId, wf.id), inArray(runNodes.nodeId, ids));
+    // freshResults() chỉ cần dòng mới nhất của mỗi node và các dòng khác của CÙNG lần chạy với những dòng đó (khoá/đầu ra của nguồn
+    // trong lần chạy của node). Bước 1: mã các lần chạy đó, xếp hạng ngay trong SQL theo đúng thứ tự của bước 2, không đọc output_json.
+    // Bước 2: chỉ các dòng của những lần chạy đó — lịch sử dài không làm mỗi lần lưu phải đọc lại mọi đầu ra cũ.
+    const newestFirst = [desc(runs.createdAt), desc(runNodes.updatedAt), desc(runNodes.runId)];
+    const ranked =
       ids.length === 0
+        ? undefined
+        : deps.db
+            .select({
+              runId: runNodes.runId,
+              rank: sql<number>`row_number() over (partition by ${runNodes.nodeId} order by ${runs.createdAt} desc, ${runNodes.updatedAt} desc, ${runNodes.runId} desc)`.as("rank"),
+            })
+            .from(runNodes)
+            .innerJoin(runs, eq(runs.id, runNodes.runId))
+            .where(ofWorkflow)
+            .as("ranked");
+    const newestRunIds = ranked ? deps.db.selectDistinct({ runId: ranked.runId }).from(ranked).where(eq(ranked.rank, 1)).all().map((r) => r.runId) : [];
+    const rows =
+      newestRunIds.length === 0
         ? []
         : deps.db
             .select({ row: runNodes })
             .from(runNodes)
             .innerJoin(runs, eq(runs.id, runNodes.runId))
-            .where(and(eq(runs.workflowId, wf.id), inArray(runNodes.nodeId, ids)))
-            .orderBy(desc(runs.createdAt), desc(runNodes.updatedAt))
+            .where(and(ofWorkflow, inArray(runNodes.runId, newestRunIds)))
+            .orderBy(...newestFirst)
             .all();
     const allRows = rows.map(({ row }) => ({
       nodeId: row.nodeId,
@@ -93,8 +115,10 @@ export function registerRunRoutes(app: FastifyInstance, deps: AppDeps): void {
     const runGraphs = new Map<string, WorkflowGraph>();
     if (runIds.length > 0) {
       for (const r of deps.db.select({ id: runs.id, graphJson: runs.graphJson }).from(runs).where(inArray(runs.id, runIds)).all()) {
-        const parsed = WorkflowGraphSchema.safeParse(safeJson(r.graphJson));
-        if (parsed.success) runGraphs.set(r.id, parsed.data);
+        const runGraph = runGraphOf(r.graphJson);
+        // Không đọc được đồ thị của lần chạy thì không kiểm chứng được kết quả của nó: không hiện gì của lần đó (freshResults), có ghi log.
+        if (runGraph) runGraphs.set(r.id, runGraph);
+        else req.log.warn({ workflowId: wf.id, runId: r.id }, "runs/latest: đồ thị đã lưu của lần chạy không đọc được, bỏ kết quả của lần chạy này");
       }
     }
     // Lần chạy hiển thị của workflow cũ: có dòng mang OLD_RESULT_MESSAGE (writeDisplayRun()), xét mọi dòng của lần đó kể cả node

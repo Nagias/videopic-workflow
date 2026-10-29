@@ -32,10 +32,13 @@ export const SHORTCUTS: readonly Shortcut[] = [
 
 // Phím này làm việc gì? `typing`: đang gõ trong ô nhập (input, textarea, select, contenteditable) → chỉ Esc còn tác dụng.
 // `onControl`: nút bấm được (button, a, summary) đang được chọn — nó tự xử lý Space và Enter, không giành lại.
-export function actionFor(e: KeyInfo, typing: boolean, onControl = false): ShortcutAction | null {
+// `inPanel`: tiêu điểm nằm trong khung bên phải hoặc ô hàng chờ (vd vừa bấm một nút ở đó): Delete/Backspace coi như đang gõ, không
+// xoá node đang xem — xoá không hoàn lại được, chỉ xoá khi tiêu điểm ở canvas.
+export function actionFor(e: KeyInfo, typing: boolean, onControl = false, inPanel = false): ShortcutAction | null {
   for (const s of SHORTCUTS) {
     if (!s.match(e)) continue;
     if (typing && s.action !== "escape") return null;
+    if (inPanel && s.action === "delete") return null;
     if (onControl && (e.key === " " || e.key === "Enter")) return null;
     return s.action;
   }

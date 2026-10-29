@@ -14,7 +14,6 @@ import {
   GROUP_FRAME_TYPE,
   measuredFrom,
   moveFramesTo,
-  moveGroup,
   pruneEdgesFor,
   pruneManualGroups,
 } from "./groups";
@@ -87,6 +86,22 @@ describe("khung nhóm Phân cảnh", () => {
       ],
     })[0]!;
     expect(warned.data.frame?.rule).toEqual({ ok: false, lines: ["Cảnh 4 vi phạm luật 30°"] });
+  });
+
+  it("dòng kiểm luật: thành viên có lỗi chặn (problems) thì không bao giờ '✓', kể cả khi không có cảnh báo; lỗi trước, cảnh báo sau", () => {
+    const graph = sonLa();
+    const { nodes } = toFlow(graph);
+    const ids = scenes(graph.groups!);
+    const onlyProblem = groupFrames(nodes, graph.groups!, SIZE, { warnings: [], problems: [{ nodeId: ids[1]!, message: "Cảnh 2: chưa tả chuyển động" }] })[0]!;
+    expect(onlyProblem.data.frame?.rule).toEqual({ ok: false, lines: ["Cảnh 2: chưa tả chuyển động"] });
+    const both = groupFrames(nodes, graph.groups!, SIZE, {
+      warnings: [{ nodeId: ids[3]!, message: "Cảnh 4 vi phạm luật 30°" }],
+      problems: [{ nodeId: ids[5]!, message: "Cảnh 6: nối liền quá 2 cảnh" }],
+    })[0]!;
+    expect(both.data.frame?.rule).toEqual({ ok: false, lines: ["Cảnh 6: nối liền quá 2 cảnh", "Cảnh 4 vi phạm luật 30°"] });
+    // Lỗi của node ngoài nhóm không làm hỏng khung này.
+    const outside = groupFrames(nodes, graph.groups!, SIZE, { warnings: [], problems: [{ nodeId: "node-ngoai-nhom", message: "lỗi chỗ khác" }] })[0]!;
+    expect(outside.data.frame?.rule).toEqual({ ok: true, lines: ["✓ Luật đạo diễn đạt"] });
   });
 
   it("nhóm tay: tiêu đề theo tên nhóm, đếm node, không có dòng kiểm luật; thành viên đã xoá thì bỏ qua, hết thành viên thì không có khung", () => {
@@ -166,11 +181,12 @@ describe("dây gộp vào mép nhóm", () => {
 });
 
 describe("kéo cả nhóm", () => {
-  it("moveGroup dời cả 12 cảnh, node ngoài nhóm đứng yên, không sửa mảng cũ", () => {
+  it("moveFramesTo dời cả 12 cảnh cùng một đoạn, node ngoài nhóm giữ nguyên đối tượng cũ", () => {
     const graph = sonLa();
     const { nodes } = toFlow(graph);
     const ids = new Set(scenes(graph.groups!));
-    const moved = moveGroup(nodes, graph.groups!, "g1", 200, -40);
+    const frame = groupFrames(nodes, graph.groups!, measuredFrom(nodes))[0]!;
+    const moved = moveFramesTo(nodes, graph.groups!, new Map([["g1", { x: frame.position.x + 200, y: frame.position.y - 40 }]]));
     expect(moved).toHaveLength(nodes.length);
     for (const [i, n] of moved.entries()) {
       const old = nodes[i]!;

@@ -38,6 +38,9 @@ export type FrameExtra = {
   // Cảnh báo luật đạo diễn của estimate (Task 7 truyền vào). Không truyền thì khung không có dòng kiểm luật nào:
   // không ghi "✓" khi chưa kiểm. Chỉ nhóm Phân cảnh có dòng này.
   warnings?: readonly DirectorWarning[];
+  // Lỗi kiểm luật chặn chạy của cùng ước tính (EstimateResponse.problems). Thành viên còn lỗi thì khung không bao giờ ghi "✓":
+  // ghi lỗi trước, cảnh báo sau.
+  problems?: readonly DirectorWarning[];
   // Mã khung đang được chọn.
   selected?: ReadonlySet<string>;
   // Dây đang hiển thị (từ bundleEdges): khung vẽ một cổng vào cho mỗi loại dây gộp tới nó.
@@ -79,7 +82,7 @@ export function groupFrames(nodes: readonly FlowNode[], groups: readonly Workflo
     let rule: FrameInfo["rule"];
     if (scene && extra.warnings) {
       const ids = new Set(members.map((n) => n.id));
-      const lines = extra.warnings.filter((w) => ids.has(w.nodeId)).map((w) => w.message);
+      const lines = [...(extra.problems ?? []), ...extra.warnings].filter((w) => ids.has(w.nodeId)).map((w) => w.message);
       rule = lines.length === 0 ? { ok: true, lines: [RULE_OK] } : { ok: false, lines };
     }
     const id = frameIdOf(g.id);
@@ -171,13 +174,6 @@ export function bundleEdges(edges: readonly Edge[], groups: readonly WorkflowGro
     }
   }
   return { visible: [...edges.filter((e) => !hidden.has(e)), ...made], bundled: edges.filter((e) => hidden.has(e)) };
-}
-
-// Dời mọi thành viên của nhóm cùng một đoạn. Node ngoài nhóm giữ nguyên đối tượng cũ.
-export function moveGroup(nodes: FlowNode[], groups: readonly WorkflowGroup[], groupId: string, dx: number, dy: number): FlowNode[] {
-  const members = new Set(groups.find((g) => g.id === groupId)?.nodeIds ?? []);
-  if ((dx === 0 && dy === 0) || members.size === 0) return nodes;
-  return nodes.map((n) => (members.has(n.id) && !isFrame(n) ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } } : n));
 }
 
 // Kéo nhiều khung cùng lúc (khung và khung chung thẻ thành viên): mỗi thẻ chỉ dời MỘT lần, theo đoạn dời của khung đứng trước

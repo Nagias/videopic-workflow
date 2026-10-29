@@ -1,17 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { clickEmptyPane } from "./helpers";
-
-type SavedGraph = { graph: { nodes: { id: string; type: string }[]; edges: { source: string; sourceHandle: string; target: string; targetHandle: string }[] } };
-const readGraph = async (page: Page, id: string) => ((await (await page.request.get(`/api/workflows/${id}`)).json()) as SavedGraph).graph;
-
-const viewportOf = (page: Page) => page.locator(".react-flow__viewport").evaluate((el) => (el as HTMLElement).style.transform);
-
-// Bấm nút "vừa màn hình" của xyflow rồi đợi khung nhìn đổi xong (đo cổng, chỗ thả dây sau đó mới đúng).
-async function fitView(page: Page) {
-  const before = await viewportOf(page);
-  await page.locator(".react-flow__controls-fitview").click();
-  await expect.poll(() => viewportOf(page)).not.toBe(before);
-}
+import { clickEmptyPane, fitView, readGraph, viewportOf } from "./helpers";
 
 const centerOf = async (page: Page, testid: string) => {
   const box = await page.getByTestId(testid).boundingBox();

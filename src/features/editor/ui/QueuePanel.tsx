@@ -1,9 +1,9 @@
 import { RUN_LABEL } from "./run-view";
 import { queueSummary } from "./queue-view";
-import type { RunView } from "./use-run";
+import type { RunPanelApi } from "./use-run";
 
 type Props = {
-  run: RunView;
+  run: RunPanelApi;
   // Tên hiện trên thẻ của node (Cảnh 3, Nhân vật...).
   titleOf: (nodeId: string) => string;
   // "panel": ô trong khung bên phải (khi đang chạy). "floating": một dòng nhỏ nổi ở góc dưới trái canvas (khi rảnh), không đẩy

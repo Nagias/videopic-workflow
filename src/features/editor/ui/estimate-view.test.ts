@@ -3,7 +3,7 @@ import type { EstimateNode, EstimateResponse } from "../../../shared/api";
 import { callsText, estimateText, isFirmEstimate, needsConfirm, rowText } from "./estimate-view";
 
 const none = { image: 0, video: 0, text: 0 };
-const est = (over: Partial<EstimateResponse> = {}): EstimateResponse => ({ nodes: [], total: none, museTotal: none, waitsOnWriter: false, warnings: [], ...over });
+const est = (over: Partial<EstimateResponse> = {}): EstimateResponse => ({ nodes: [], total: none, museTotal: none, waitsOnWriter: false, warnings: [], problems: [], ...over });
 const node = (over: Partial<EstimateNode> = {}): EstimateNode => ({ id: "n", label: "Cảnh 1", provider: "muse", status: "run", calls: none, ...over });
 
 describe("estimateText", () => {
@@ -62,6 +62,12 @@ describe("needsConfirm", () => {
 
   it("dịch vụ giả tốn lượt giả nhưng không phải lượt Muse: chạy một node không hỏi", () => {
     expect(needsConfirm(one, est({ total: { image: 0, video: 1, text: 0 }, nodes: [node({ provider: "fake", calls: { image: 0, video: 1, text: 0 } })] }))).toBe(false);
+  });
+
+  it("còn lỗi kiểm luật chặn chạy thì luôn hiện hộp (để liệt kê lỗi), kể cả chạy một node 0 lượt", () => {
+    const problems = [{ nodeId: "n", message: "Cảnh 2: chưa tả chuyển động" }];
+    expect(needsConfirm(one, est({ problems, nodes: [node({ provider: null, status: "run" })] }))).toBe(true);
+    expect(needsConfirm({ mode: "downstream", nodeId: "n" }, est({ problems }))).toBe(true);
   });
 });
 

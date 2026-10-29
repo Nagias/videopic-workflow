@@ -33,9 +33,10 @@ export function estimateText(e: EstimateResponse): string {
 }
 
 // Phải hiện hộp xác nhận không? Chạy cả workflow luôn hỏi. Chạy một node / từ đây trở đi chỉ hỏi khi có lượt Muse hoặc có node
-// chưa biết (ước tính không bao giờ coi "chưa biết" là 0 lượt, nên cũng không im lặng chạy).
+// chưa biết (ước tính không bao giờ coi "chưa biết" là 0 lượt, nên cũng không im lặng chạy). Còn lỗi kiểm luật chặn chạy thì
+// luôn hiện hộp (hộp liệt kê lỗi và khoá "▶ Chạy"): không chạy, và người dùng thấy vì sao.
 export function needsConfirm(scope: RunScope, e: EstimateResponse): boolean {
-  return scope.mode === "all" || !isZero(e.museTotal) || unknownCount(e) > 0;
+  return scope.mode === "all" || !isZero(e.museTotal) || unknownCount(e) > 0 || e.problems.length > 0;
 }
 
 // Một dòng của bảng trong hộp xác nhận.

@@ -2,6 +2,46 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 type Graph = { nodes: { id: string; params: Record<string, unknown> }[] };
 
+// Đồ thị đang lưu của một workflow, đúng phần các spec đọc.
+export type SavedGraph = {
+  nodes: { id: string; type: string; position: { x: number; y: number }; params: Record<string, unknown> }[];
+  edges: { id: string; source: string; sourceHandle: string; target: string; targetHandle: string }[];
+  groups: { id: string; label: string; nodeIds: string[]; manual?: boolean; source?: unknown }[];
+};
+
+// Ghi thẳng đồ thị của workflow `id` qua API (chưa có thì tạo).
+export async function putWorkflow(page: Page, id: string, graph: unknown): Promise<void> {
+  expect((await page.request.put(`/api/workflows/${id}`, { data: { graph } })).ok()).toBe(true);
+}
+
+export const readGraph = async (page: Page, id: string): Promise<SavedGraph> =>
+  ((await (await page.request.get(`/api/workflows/${id}`)).json()) as { graph: SavedGraph }).graph;
+
+export type LatestRun = { run: { id: string; status: string } | null; nodes: Record<string, { status: string; output: unknown }> };
+export const latestRun = async (page: Page, wfId: string): Promise<LatestRun> =>
+  (await (await page.request.get(`/api/workflows/${wfId}/runs/latest`)).json()) as LatestRun;
+export const latestRunId = async (page: Page, wfId: string): Promise<string | null> => (await latestRun(page, wfId)).run?.id ?? null;
+
+// Khung nhìn của canvas dạng chữ (transform của .react-flow__viewport): so trước/sau khi kéo, phóng, vừa màn hình.
+export const viewportOf = (page: Page): Promise<string> => page.locator(".react-flow__viewport").evaluate((el) => (el as HTMLElement).style.transform);
+
+// Bấm nút "vừa màn hình" của xyflow rồi đợi khung nhìn đứng yên (đo cổng, toạ độ thẻ, chỗ thả dây sau đó mới đúng): khung nhìn đổi
+// thì đợi tới khi hai lần đọc liền nhau giống nhau; đã vừa sẵn (không đổi) thì đợi ít nhất 500 ms rồi coi là xong.
+export async function fitView(page: Page): Promise<void> {
+  const before = await viewportOf(page);
+  const clicked = Date.now();
+  await page.locator(".react-flow__controls-fitview").click();
+  let last = before;
+  await expect
+    .poll(async () => {
+      const now = await viewportOf(page);
+      const still = now === last && (now !== before || Date.now() - clicked >= 500);
+      last = now;
+      return still;
+    })
+    .toBe(true);
+}
+
 // Đổi workflow mẫu Sinh tồn Sơn La (đã mở từ mẫu) sang dịch vụ giả để chạy được mà không tốn Muse, và làm cho kết quả của lần chạy này
 // KHÁC mọi spec khác: cache node dùng chung cả lần chạy Playwright (cùng DATA_DIR, khoá chỉ theo loại + tham số + khoá nguồn, không theo
 // workflow), nên mẫu giống hệt đã chạy ở spec trước thì node hiện "Dùng lại kết quả" thay vì "Xong". Mọi Cảnh nối với character-1 nên thêm một

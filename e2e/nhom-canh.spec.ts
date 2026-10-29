@@ -1,22 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { runAllConfirmed, useFakeSonLa } from "./helpers";
+import { fitView, readGraph, runAllConfirmed, useFakeSonLa, type SavedGraph } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-
-type SavedGraph = {
-  graph: {
-    nodes: { id: string; type: string; position: { x: number; y: number } }[];
-    edges: { id: string; source: string; target: string }[];
-    groups: { id: string; nodeIds: string[]; manual?: boolean; source?: unknown }[];
-  };
-};
-const readGraph = async (page: Page, id: string) => ((await (await page.request.get(`/api/workflows/${id}`)).json()) as SavedGraph).graph;
-
-// Thẻ mới hiện sau lúc mở (máy chủ tạo thẻ cảnh) nằm ngoài vùng nhìn: bấm "vừa màn hình" trước khi đo và kéo.
-async function fit(page: Page) {
-  await page.locator(".react-flow__controls-fitview").click();
-  await page.waitForTimeout(500);
-}
 
 // Kéo tiêu đề nhóm sang phải `dx` điểm ảnh trên màn hình.
 async function dragTitle(page: Page, groupId: string, dx: number) {
@@ -59,7 +44,8 @@ test("kéo tiêu đề nhóm 200px → cả 12 thẻ dời, lưu, chọn khung k
 
   const ids = before.groups[0]!.nodeIds;
   expect(ids).toHaveLength(12);
-  await fit(page);
+  // Thẻ có thể nằm ngoài vùng nhìn: vừa màn hình trước khi đo và kéo.
+  await fitView(page);
   const cardBefore = await page.getByTestId("node-scene-g1-1").boundingBox();
   const outsideBefore = await page.getByTestId("node-character-1").boundingBox();
   await dragTitle(page, "g1", 200);
@@ -111,7 +97,7 @@ test("xoá node đang có dây bị gộp (nguồn Nhân vật, đích một c�
   await expect(page.getByTestId("node-scene-g1-12")).toBeVisible();
   await expect(page.locator('.react-flow__edge[data-id^="bundle-g1-"]')).toHaveCount(3);
   const before = await readGraph(page, wfId);
-  const missing = (g: SavedGraph["graph"]) => {
+  const missing = (g: SavedGraph) => {
     const ids = new Set(g.nodes.map((n) => n.id));
     return g.edges.filter((e) => !ids.has(e.source) || !ids.has(e.target)).map((e) => e.id);
   };
@@ -157,7 +143,7 @@ test("kéo nhóm không phải là sửa tay: Biên kịch ra bộ cảnh mới 
   await expect(page.getByTestId("node-scene-g1-8")).toBeVisible();
   await expect(page.getByTestId("group-title-g1")).toHaveText(/^▢ Phân cảnh · 8 cảnh · [\d,]+ giây$/);
 
-  await fit(page);
+  await fitView(page);
   const cardBefore = (await page.getByTestId("node-scene-g1-1").boundingBox())!;
   await dragTitle(page, "g1", 200);
   await expect.poll(async () => (await page.getByTestId("node-scene-g1-1").boundingBox())!.x - cardBefore.x).toBeGreaterThan(170);

@@ -65,11 +65,12 @@ const nodeTypes = { ...Object.fromEntries(Object.keys(webNodes).map((t) => [t, G
 
 export function Editor() {
   const wf = useWorkflow();
-  const run = useRun(wf);
+  // Đang kiểm ước tính / hộp xác nhận đang mở: cũng tính là bận, để mọi đường chạy (nút, phím, menu) đứng yên, và useRun không
+  // tải lại kết quả trong lúc đó (lần lưu của bước kiểm cũng báo "Đã lưu").
+  const [checking, setChecking] = useState(false);
+  const run = useRun(wf, checking);
   const { workflowId, nodes, edges, setNodes, setEdges, setProblem, latest, groups, groupList, setGroups } = wf;
   const { nodeStates, outdated, expandScenes } = run;
-  // Đang kiểm ước tính / hộp xác nhận đang mở: cũng tính là bận, để mọi đường chạy (nút, phím, menu) đứng yên.
-  const [checking, setChecking] = useState(false);
   const busy = run.active || run.starting || run.syncing || checking;
   const estimateView = useEstimate(workflowId, wf.saveState, !busy);
   const flow = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null);
@@ -196,6 +197,7 @@ export function Editor() {
         edges: bundles.visible,
         // Chưa có ước tính (đang tính, lỗi) thì khung không ghi dòng luật nào, chứ không ghi "✓" giả.
         warnings: estimateView.estimate?.warnings,
+        problems: estimateView.estimate?.problems,
       }),
     );
     shownFrames.current = next;
@@ -406,7 +408,8 @@ export function Editor() {
     const el = document.activeElement;
     const typing = el instanceof HTMLElement && el.matches("input, textarea, select, [contenteditable]:not([contenteditable=false])");
     const onControl = el instanceof HTMLElement && el.matches("button, a, summary, [role=button]");
-    const action = actionFor(e, typing, onControl);
+    const inPanel = el instanceof HTMLElement && el.closest(".right-panel, .queue-panel") !== null;
+    const action = actionFor(e, typing, onControl, inPanel);
     if (!action) return;
     if (sheetOpen && action !== "escape" && action !== "help") return;
     e.preventDefault();

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "./api-client";
+import { api, SaveTimeoutError, WorkflowConflictError } from "./api-client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -11,6 +11,27 @@ function hangingFetch() {
     });
   });
 }
+
+describe("api.saveWorkflow — hạn chờ", () => {
+  const body = { graph: { nodes: [], edges: [] } };
+
+  it("máy chủ không trả lời trong hạn: huỷ yêu cầu (tín hiệu abort tới fetch), ném SaveTimeoutError tiếng Việt", async () => {
+    const fetchMock = hangingFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const err = await api.saveWorkflow("wf", body, 30).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SaveTimeoutError);
+    expect((err as Error).message).toBe("Lưu quá lâu (máy chủ không trả lời sau 20 giây), thử lại");
+    expect(fetchMock.mock.calls[0]![1]?.signal?.aborted).toBe(true);
+  });
+
+  it("409 trong hạn vẫn là WorkflowConflictError kèm bản máy chủ, không bị đổi thành 'quá lâu'", async () => {
+    const workflow = { id: "wf", name: "Thử", graph: { nodes: [], edges: [], groups: [] }, updatedAt: 5 };
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(JSON.stringify({ error: "Workflow vừa được cập nhật ở nơi khác", workflow }), { status: 409 }))));
+    const err = await api.saveWorkflow("wf", body, 1000).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WorkflowConflictError);
+    expect((err as WorkflowConflictError).workflow.updatedAt).toBe(5);
+  });
+});
 
 describe("api.estimate — hạn chờ", () => {
   it("máy chủ không trả lời trong hạn thì báo tiếng Việt rõ ràng (không treo mãi, không nuốt lỗi)", async () => {

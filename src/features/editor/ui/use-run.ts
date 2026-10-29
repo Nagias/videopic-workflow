@@ -16,8 +16,8 @@ const NO_IDS: readonly string[] = [];
 const NO_OUTDATED: ReadonlySet<string> = new Set();
 
 // Lượt chạy của workflow đang mở: bắt đầu, hỏi tiến độ, gộp kết quả vào các node, tải lại đồ thị giữa và cuối lượt chạy, huỷ,
-// và trả lời hộp hỏi Thay/Giữ của Biên kịch.
-export function useRun(wf: WorkflowApi) {
+// và trả lời hộp hỏi Thay/Giữ của Biên kịch. `checking`: Editor đang kiểm ước tính hoặc hộp xác nhận đang mở.
+export function useRun(wf: WorkflowApi, checking: boolean) {
   const { workflowId, shownWorkflow, saveState, groups, onShown, save, flushEdits, applyGraph, reloadGraph, setProblem } = wf;
   const [run, setRun] = useState<RunResponse | null>(null);
   // true khi `run` là lần chạy cũ tải lại lúc mở workflow (chưa xem trực tiếp trong phiên này).
@@ -155,8 +155,9 @@ export function useRun(wf: WorkflowApi) {
   const active = isActive(run);
 
   // Sửa tay một thẻ thì kết quả cũ của nó (và Ghép phim phía sau) không còn đúng: lưu xong thì tải lại kết quả, ô ước tính cũng làm vậy.
-  // Không tải trong lúc chạy / xin chạy / đồng bộ (lần chạy tự tải lại khi xong).
-  const idle = !active && !starting && !syncing;
+  // Không tải trong lúc chạy / xin chạy / đồng bộ (lần chạy tự tải lại khi xong), cũng không trong lúc kiểm ước tính hay hộp xác
+  // nhận đang mở (bấm Huỷ thì hết `checking`, lần tải chạy lúc đó).
+  const idle = !active && !starting && !syncing && !checking;
   useEffect(() => {
     if (!workflowId || saveState !== "saved" || !idle) return;
     const t = setTimeout(() => void showServerResults(workflowId), RESULTS_DELAY_MS);
@@ -279,4 +280,4 @@ function expandedNodeIds(graph: WorkflowGraph, writerId: string): string[] {
 export type RunApi = ReturnType<typeof useRun>;
 // Phần của lượt chạy mà các thành phần giao diện (thanh trên, dải báo) được dùng: không có startRun. Muốn chạy thì gọi Editor.runScope,
 // chỗ duy nhất xin chạy, để không ai vô tình đi vòng qua nó.
-export type RunView = Omit<RunApi, "startRun">;
+export type RunPanelApi = Omit<RunApi, "startRun">;

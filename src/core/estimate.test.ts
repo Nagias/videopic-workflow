@@ -98,6 +98,30 @@ describe("ước tính lượt trước khi chạy (POST /api/workflows/:id/esti
     expect(await run()).toEqual({ image: 24, video: 12, text: 0 });
   });
 
+  it("chỉ có lỗi chặn (cảnh 2 chưa tả chuyển động): problems gắn mã cảnh, warnings rỗng; lần chạy bị từ chối đúng lỗi đó, 0 lượt", async () => {
+    await save(sonLa("fake"));
+    expect((await estimate()).problems).toEqual([]);
+    const graph = (await open()).graph;
+    const ids = sceneIds(graph);
+    await save(setParam(graph, ids[1]!, "motion", ""));
+    const e = await estimate();
+    expect(e.warnings).toEqual([]);
+    expect(e.problems).toHaveLength(1);
+    expect(e.problems[0]!.nodeId).toBe(ids[1]);
+    expect(e.problems[0]!.message).toContain(`Cảnh "${ids[1]}" (clip 2): chưa tả chuyển động`);
+    // Cùng hàm với executor: lần chạy thật dừng ở kiểm luật với đúng lỗi đó, chưa tốn lượt nào.
+    const before = counts();
+    const start = await s.app.inject({ method: "POST", url: `/api/workflows/${wf}/runs`, payload: {} });
+    expect(start.statusCode, start.body).toBe(202);
+    while (await s.deps.queue.processNext());
+    const done = RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${start.json<{ runId: string }>().runId}` })).json());
+    expect(done.status).toBe("failed");
+    expect(done.error).toContain(e.problems[0]!.message);
+    expect(counts()).toEqual(before);
+    // Phạm vi không chứa Ghép phim (chạy riêng Nhân vật): luật giữa các cảnh không thuộc lần chạy đó, không chặn.
+    expect((await estimate({ mode: "node", nodeId: "character-1" })).problems).toEqual([]);
+  });
+
   it("nhóm tay (manual, không source) chỉ là khung nhìn: thêm vào Sơn La — kể cả bó cảnh theo thứ tự ngược — ước tính và tên node không đổi", async () => {
     await save(sonLa("fake"));
     const plain = await estimate();

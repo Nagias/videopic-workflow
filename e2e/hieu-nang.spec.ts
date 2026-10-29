@@ -10,6 +10,11 @@ import { findEmptyPane, runAllConfirmed, useFakeSonLa } from "./helpers";
 // Chỉ chạy khi đặt PERF=1 (đo thời gian phụ thuộc máy, không đưa vào verify:full và CI): PERF=1 npx playwright test e2e/hieu-nang.spec.ts
 
 const THRESHOLD_MS = 50;
+// Một bước đơn lẻ (vd khung hình qua ngưỡng thu nhỏ) được chậm hơn trung bình, nhưng quá ngần này là giật thấy rõ.
+const MAX_STEP_MS = 250;
+// Ngưỡng thu nhỏ của thẻ (COMPACT_ZOOM ở src/features/editor/ui/NodeCard.tsx, file đó kéo theo React nên không import vào đây):
+// lượt cuộn phải đi qua ngưỡng này để đo cả khung hình thẻ đổi chế độ.
+const COMPACT_ZOOM = 0.45;
 const DRAG_STEPS = 20;
 const ZOOM_STEPS = 10;
 
@@ -107,6 +112,10 @@ test("hiệu năng canvas ~30 node: kéo nền và cuộn phóng to trung bình 
 
   expect(drag.n).toBeGreaterThanOrEqual(DRAG_STEPS);
   expect(zoom.n).toBe(ZOOM_STEPS);
+  // Lượt cuộn đi qua ngưỡng thu nhỏ (có lúc ở trên, có lúc ở dưới): khung hình đổi chế độ thẻ nằm trong số đo.
+  expect(Math.max(zoomStart, zoomEnd)).toBeGreaterThanOrEqual(COMPACT_ZOOM);
+  expect(zoomLow).toBeLessThan(COMPACT_ZOOM);
   expect(drag.avg).toBeLessThan(THRESHOLD_MS);
   expect(zoom.avg).toBeLessThan(THRESHOLD_MS);
+  expect(zoom.max).toBeLessThan(MAX_STEP_MS);
 });

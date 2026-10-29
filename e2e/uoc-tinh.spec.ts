@@ -1,12 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { clickEmptyPane, runAllConfirmed, useFakeSonLa } from "./helpers";
+import { clickEmptyPane, fitView, latestRunId, putWorkflow, readGraph, runAllConfirmed, useFakeSonLa } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const at = (x: number, y: number) => ({ x, y });
 
-type SavedNode = { id: string; params: Record<string, unknown> };
-const readNodes = async (page: Page, id: string) => ((await (await page.request.get(`/api/workflows/${id}`)).json()) as { graph: { nodes: SavedNode[] } }).graph.nodes;
-const latestRunId = async (page: Page, id: string) => ((await (await page.request.get(`/api/workflows/${id}/runs/latest`)).json()) as { run: { id: string } | null }).run?.id ?? null;
+const readNodes = async (page: Page, id: string) => (await readGraph(page, id)).nodes;
 
 // Mọi yêu cầu xin chạy (POST .../runs) của trang này: đếm lại để biết có lần chạy nào được xin hay không.
 function watchRunRequests(page: Page): { count: () => number } {
@@ -17,30 +15,22 @@ function watchRunRequests(page: Page): { count: () => number } {
   return { count: () => n };
 }
 
-async function putWorkflow(page: Page, id: string, nodes: unknown[], edges: unknown[] = []) {
-  expect((await page.request.put(`/api/workflows/${id}`, { data: { graph: { nodes, edges } } })).ok()).toBe(true);
-}
-
 // Prompt → Tạo video (dịch vụ giả), thêm một Prompt riêng lẻ q.
 async function putFakeVideo(page: Page, id: string) {
-  await putWorkflow(
-    page,
-    id,
-    [
+  await putWorkflow(page, id, {
+    nodes: [
       { id: "p", type: "prompt", position: at(0, 0), params: { text: `Rừng sương sớm ${id}` } },
       { id: "v", type: "generate-video", position: at(420, 0), params: { provider: "fake", durationSec: 5 } },
       { id: "q", type: "prompt", position: at(0, 300), params: { text: "Một chiếc lều bên suối" } },
     ],
-    [{ id: "e1", source: "p", sourceHandle: "text", target: "v", targetHandle: "prompt" }],
-  );
+    edges: [{ id: "e1", source: "p", sourceHandle: "text", target: "v", targetHandle: "prompt" }],
+  });
 }
 
 // Nhân vật + Không gian (giả) → Cảnh dùng MUSE: chỉ để xem ước tính và hộp xác nhận. Không bao giờ bấm "▶ Chạy" ở workflow này.
 async function putMuseScene(page: Page, id: string) {
-  await putWorkflow(
-    page,
-    id,
-    [
+  await putWorkflow(page, id, {
+    nodes: [
       { id: "c", type: "character", position: at(0, 0), params: { name: "Mai", description: "cô gái tóc đen buộc đuôi ngựa, áo khoác xám, dáng nhỏ nhắn", provider: "fake" } },
       { id: "l", type: "location", position: at(0, 400), params: { description: "bãi cỏ rộng bên suối đá, cây cối thưa, ánh nắng chiều xiên qua tán lá", provider: "fake" } },
       {
@@ -50,11 +40,11 @@ async function putMuseScene(page: Page, id: string) {
         params: { size: "MS", angle: "eye", move: "static", subject: "character", start: "cô gái đứng bên suối", motion: "cô đi về phía lều", props: "", provider: "muse" },
       },
     ],
-    [
+    edges: [
       { id: "e1", source: "c", sourceHandle: "character", target: "s", targetHandle: "character" },
       { id: "e2", source: "l", sourceHandle: "location", target: "s", targetHandle: "location" },
     ],
-  );
+  });
 }
 
 test("bấm Chạy cả workflow → hộp xác nhận (tiêu điểm ở Huỷ) → Enter / Escape đều là Huỷ → không có lượt chạy nào", async ({ page }) => {
@@ -270,4 +260,48 @@ test("đang chạy: ô hàng chờ có dòng node đang chạy, bấm Huỷ tron
   await expect(page.getByTestId("queue-last")).toContainText("Lỗi");
   await expect(page.getByTestId("queue-last")).toContainText("Đã huỷ");
   await expect(page.getByTestId("inspector")).toHaveCount(0);
+});
+
+test("lỗi chặn chạy (cảnh 2 chưa tả chuyển động): khung nhóm không ghi '✓', hộp liệt kê lỗi và khoá '▶ Chạy', kể cả chạy một node 0 lượt", async ({ page }) => {
+  await page.setViewportSize({ width: 1700, height: 1000 });
+  const created = (await (await page.request.post("/api/workflows/from-template/sinh-ton-son-la", { data: {} })).json()) as { id: string };
+  const wfId = created.id;
+  await useFakeSonLa(page, wfId);
+  const graph = await readGraph(page, wfId);
+  const scene2 = graph.groups[0]!.nodeIds[1]!;
+  const combine = graph.nodes.find((n) => n.type === "film-combine")!.id;
+  await putWorkflow(page, wfId, { ...graph, nodes: graph.nodes.map((n) => (n.id === scene2 ? { ...n, params: { ...n.params, motion: "" } } : n)) });
+  const runs = watchRunRequests(page);
+  await page.goto(`/?wf=${wfId}`);
+  await expect(page.getByTestId("node-scene-g1-12")).toBeVisible();
+
+  // Chỉ có lỗi chặn, không có cảnh báo: khung ghi lỗi, không bao giờ "✓".
+  const rule = page.getByTestId("group-rule-g1");
+  await expect(rule).toContainText(`Cảnh "${scene2}" (clip 2): chưa tả chuyển động`);
+  await expect(rule).not.toContainText("✓");
+
+  // Chạy cả workflow: hộp hiện lỗi, "▶ Chạy" khoá (cả sau nhịp lên nòng), Huỷ vẫn đóng hộp, không xin chạy lần nào.
+  await page.getByTestId("run-button").click();
+  await expect(page.getByTestId("run-confirm")).toBeVisible();
+  await expect(page.getByTestId("run-confirm-problems")).toContainText("Sửa lỗi trước khi chạy");
+  await expect(page.getByTestId("run-confirm-problems")).toContainText(`Cảnh "${scene2}" (clip 2): chưa tả chuyển động`);
+  await page.waitForTimeout(600);
+  await expect(page.getByTestId("run-confirm-ok")).toBeDisabled();
+  await page.getByTestId("run-confirm-cancel").click();
+  await expect(page.getByTestId("run-confirm")).toHaveCount(0);
+
+  // Chạy riêng Ghép phim (dịch vụ giả: 0 lượt Muse, trước đây không hỏi mà chạy luôn): vẫn hiện hộp với lỗi, không chạy.
+  // (Vừa màn hình có thể rơi vào chế độ thu nhỏ, nút ▶ trên thẻ ẩn: chọn thẻ rồi Shift+Enter, cùng đường runScope chạy một node.)
+  await fitView(page);
+  await page.getByTestId(`card-${combine}`).click();
+  await page.keyboard.press("Shift+Enter");
+  await expect(page.getByTestId("run-confirm")).toBeVisible();
+  await expect(page.getByTestId("run-confirm-problems")).toContainText("chưa tả chuyển động");
+  await page.waitForTimeout(600);
+  await expect(page.getByTestId("run-confirm-ok")).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("run-confirm")).toHaveCount(0);
+  await expect(page.getByTestId("run-button")).toBeEnabled();
+  expect(runs.count()).toBe(0);
+  expect(await latestRunId(page, wfId)).toBeNull();
 });

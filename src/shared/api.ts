@@ -62,6 +62,9 @@ export const EstimateResponseSchema = z.object({
   waitsOnWriter: z.boolean(),
   // Cảnh báo luật đạo diễn (không chặn chạy), mỗi cảnh báo gắn mã node cảnh liên quan.
   warnings: z.array(z.object({ nodeId: z.string(), message: z.string() })),
+  // Lỗi kiểm luật CHẶN chạy của các node trong phạm vi (preflightErrors(), đúng hàm executor gọi trước node đầu tiên): còn lỗi thì
+  // lần chạy sẽ bị từ chối, nên hộp xác nhận không cho bấm "▶ Chạy" và khung nhóm không ghi "✓".
+  problems: z.array(z.object({ nodeId: z.string(), message: z.string() })),
 });
 export type EstimateResponse = z.infer<typeof EstimateResponseSchema>;
 export type EstimateNode = EstimateResponse["nodes"][number];

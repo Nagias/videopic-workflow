@@ -591,8 +591,9 @@ button.primary {
   }
 }
 
-/* Thu nhỏ quá mức: chỉ còn ảnh và tên. Chân thẻ và dòng lỗi chỉ ẩn (visibility), không gỡ (display): gỡ làm thẻ đổi chiều cao khi
-   phóng qua ngưỡng, xyflow đo lại cả chục thẻ rồi vẽ lại dây, khung nhóm, minimap (đo với 29 node: khung hình đó mất ~180 ms thay vì ~40 ms). */
+/* Thu nhỏ quá mức: chỉ còn ảnh và tên. Chữ trong chân thẻ và dòng lỗi chỉ ẩn (visibility), không gỡ (display): gỡ làm thẻ đổi chiều cao
+   khi phóng qua ngưỡng, xyflow đo lại cả chục thẻ rồi vẽ lại dây, khung nhóm, minimap (đo với 29 node: khung hình đó mất ~180 ms thay vì
+   ~40 ms). Chân thẻ vẫn hiện (giữ viền trên), chỉ chữ bên trong ẩn: dải giữ chỗ là một phần nền thẻ, không thành khoảng trống lạc. */
 .nlabel.compact .st,
 .card.compact .runbtn,
 .card.compact .prog,
@@ -600,9 +601,27 @@ button.primary {
   display: none;
 }
 
-.card.compact .cfoot,
+.card.compact .cfoot > *,
 .card.compact .cerr {
   visibility: hidden;
+}
+
+/* Thẻ chữ (Prompt, Biên kịch...) khi thu nhỏ: vẫn là đúng hộp .ctext (cùng chữ, cùng số dòng nên cùng chiều cao), chữ ẩn đi và biểu
+   tượng loại node phủ lên giữa hộp như ô trống của thẻ ảnh. */
+.ctext.compact {
+  position: relative;
+  color: transparent;
+}
+
+.ctext.compact::after {
+  content: attr(data-icon);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 28px;
 }
 
 .plabel {
@@ -1365,6 +1384,27 @@ button.icon {
   margin: 10px 0 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Lỗi kiểm luật chặn chạy: nằm dưới bảng node, giới hạn chiều cao để nút Huỷ luôn thấy được. */
+.confirm-problems {
+  max-height: 30vh;
+  margin-top: 10px;
+  padding: 8px 12px;
+  overflow-y: auto;
+  border: 1px solid var(--err);
+  border-radius: 10px;
+  color: var(--err);
+  font-size: 12.5px;
+}
+
+.confirm-problems p {
+  margin: 0 0 6px;
+}
+
+.confirm-problems ul {
+  margin: 0;
+  padding-left: 18px;
 }
 
 .confirm-actions {

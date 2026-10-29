@@ -1,11 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
-import { clickEmptyPane, runAllConfirmed } from "./helpers";
+import { expect, test } from "@playwright/test";
+import { clickEmptyPane, putWorkflow, runAllConfirmed } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-
-async function putWorkflow(page: Page, id: string, graph: unknown) {
-  expect((await page.request.put(`/api/workflows/${id}`, { data: { graph } })).ok()).toBe(true);
-}
 
 const at = (x: number, y: number) => ({ x, y });
 
@@ -171,13 +167,29 @@ test("sửa trong khung phải lúc máy chủ đã có bản mới hơn (409): 
 
 test("thu nhỏ dưới 0.45: thẻ chỉ còn ảnh và tên, phóng lại thì đủ trạng thái", async ({ page }) => {
   const id = `thu-nho-${uid()}`;
-  await putWorkflow(page, id, { nodes: [{ id: "p", type: "prompt", position: at(0, 0), params: { text: "chữ" } }], edges: [] });
+  // Tạo video dùng Muse: trong test máy chủ từ chối gọi Muse thật nên thẻ v có dòng lỗi (.cerr) để kiểm nó cũng ẩn khi thu nhỏ.
+  await putWorkflow(page, id, {
+    nodes: [
+      { id: "p", type: "prompt", position: at(0, 0), params: { text: "chữ" } },
+      { id: "v", type: "generate-video", position: at(340, 0), params: { provider: "muse", durationSec: 5 } },
+    ],
+    edges: [{ id: "e", source: "p", sourceHandle: "text", target: "v", targetHandle: "prompt" }],
+  });
   await page.goto(`/?wf=${id}`);
   await expect(page.getByTestId("node-status-p")).toBeVisible();
+  await runAllConfirmed(page);
+  await expect(page.getByTestId("node-error-v")).toBeVisible();
+  // Chiều cao bố cục (không tính phóng/thu) của thẻ chữ trước khi thu nhỏ.
+  const textCardHeight = () => page.getByTestId("card-p").evaluate((el) => (el as HTMLElement).offsetHeight);
+  const fullHeight = await textCardHeight();
   const zoomOut = page.locator(".react-flow__controls-zoomout");
   for (let i = 0; i < 12; i++) await zoomOut.click();
   await expect(page.getByTestId("card-label-p")).toBeVisible();
   await expect(page.getByTestId("node-status-p")).toBeHidden();
+  // Chữ chân thẻ và dòng lỗi ẩn (chỉ ẩn, vẫn giữ chỗ); thẻ chữ giữ đúng chiều cao như lúc chưa thu nhỏ.
+  await expect(page.locator('[data-testid="card-v"] .cfoot .cm')).toBeHidden();
+  await expect(page.getByTestId("node-error-v")).toBeHidden();
+  expect(await textCardHeight()).toBe(fullHeight);
   const zoomIn = page.locator(".react-flow__controls-zoomin");
   for (let i = 0; i < 12; i++) await zoomIn.click();
   await expect(page.getByTestId("node-status-p")).toBeVisible();

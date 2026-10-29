@@ -1,10 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { putWorkflow } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-
-async function putWorkflow(page: Page, id: string, graph: unknown) {
-  expect((await page.request.put(`/api/workflows/${id}`, { data: { graph } })).ok()).toBe(true);
-}
 
 async function drag(page: Page, from: string, to: string) {
   const a = await page.locator(from).boundingBox();

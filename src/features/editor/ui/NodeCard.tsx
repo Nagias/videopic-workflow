@@ -61,7 +61,12 @@ function Media({ media, compact, icon }: { media: CardMedia; compact: boolean; i
         </div>
       );
     case "text":
-      return compact ? <div className="cmedia cempty">{icon}</div> : <div className="ctext">{media.text}</div>;
+      // Thu nhỏ vẫn vẽ đúng hộp chữ (chữ ẩn, biểu tượng phủ lên: styles.css .ctext.compact) để thẻ không đổi chiều cao khi qua ngưỡng.
+      return (
+        <div className={`ctext${compact ? " compact" : ""}`} data-icon={icon}>
+          {media.text}
+        </div>
+      );
     case "empty":
       return <div className="cmedia cempty">{icon}</div>;
   }

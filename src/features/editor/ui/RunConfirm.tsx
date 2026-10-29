@@ -27,6 +27,8 @@ export function RunConfirm({ scope, estimate, onOk, onCancel }: Props) {
   const [armed, setArmed] = useState(false);
   // Câu "không thấp hơn thực tế" chỉ đúng khi mọi node đều ước được: còn node chưa biết hay Biên kịch sắp viết lại thì không hứa.
   const exact = isFirmEstimate(estimate);
+  // Còn lỗi kiểm luật chặn chạy: máy chủ sẽ từ chối lần chạy, nên không cho bấm "▶ Chạy" (Huỷ vẫn được).
+  const blocked = estimate.problems.length > 0;
 
   useEffect(() => {
     cancelRef.current?.focus();
@@ -76,7 +78,19 @@ export function RunConfirm({ scope, estimate, onOk, onCancel }: Props) {
             </li>
           ))}
         </ul>
-        {exact ? (
+        {blocked ? (
+          <div className="confirm-problems" data-testid="run-confirm-problems" role="alert">
+            <p>
+              <b>Sửa lỗi trước khi chạy</b> — kiểm luật trước khi chạy có {estimate.problems.length} lỗi, lần chạy sẽ bị từ chối (chưa tốn lượt nào):
+            </p>
+            <ul>
+              {estimate.problems.map((p, i) => (
+                <li key={`${p.nodeId}-${i}`}>{p.message}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {exact && !blocked ? (
           <p className="confirm-note" data-testid="run-confirm-note">
             Ước tính không bao giờ thấp hơn thực tế: bước con đã có sẵn kết quả thì lúc chạy không gọi lại.
           </p>
@@ -85,7 +99,15 @@ export function RunConfirm({ scope, estimate, onOk, onCancel }: Props) {
           <button type="button" ref={cancelRef} data-testid="run-confirm-cancel" onClick={onCancel}>
             Huỷ
           </button>
-          <button type="button" ref={okRef} className="primary" data-testid="run-confirm-ok" disabled={!armed} onClick={onOk}>
+          <button
+            type="button"
+            ref={okRef}
+            className="primary"
+            data-testid="run-confirm-ok"
+            disabled={!armed || blocked}
+            title={blocked ? "Sửa lỗi trước khi chạy" : undefined}
+            onClick={onOk}
+          >
             ▶ Chạy
           </button>
         </div>

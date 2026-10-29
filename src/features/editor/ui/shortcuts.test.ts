@@ -46,6 +46,15 @@ describe("actionFor — bảng phím tắt", () => {
     expect(actionFor(key("/"), false, true)).toBe("spotlight");
   });
 
+  it("tiêu điểm trong khung bên phải / ô hàng chờ (vd trên một nút ở đó): Delete và Backspace không xoá node; phím khác vẫn chạy", () => {
+    expect(actionFor(key("Delete"), false, true, true)).toBeNull();
+    expect(actionFor(key("Backspace"), false, false, true)).toBeNull();
+    expect(actionFor(key("Escape"), false, true, true)).toBe("escape");
+    expect(actionFor(key("f"), false, false, true)).toBe("fit");
+    // Ngoài khung: Delete trên canvas vẫn xoá.
+    expect(actionFor(key("Delete"), false, false, false)).toBe("delete");
+  });
+
   it("Ctrl/Alt đi kèm / hoặc Space thì không phải phím tắt", () => {
     expect(actionFor(key("/", { ctrlKey: true }), false)).toBeNull();
     expect(actionFor(key(" ", { altKey: true }), false)).toBeNull();

@@ -1,9 +1,9 @@
 import { useEdgesState, useNodesState, type Edge } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, WorkflowConflictError } from "../../../app/api-client";
+import { api, SaveTimeoutError, WorkflowConflictError } from "../../../app/api-client";
 import type { LatestRunResponse, WorkflowListResponse, WorkflowResponse } from "../../../shared/api";
 import type { WorkflowGroup } from "../../../shared/workflow";
-import { fromFlow, toFlow } from "./graph-convert";
+import { fromFlow, graphText, toFlow } from "./graph-convert";
 import { GraphReplacedError, graphWasReplaced, reloadFromServer } from "./reload-graph";
 import type { FlowNode } from "./GraphNode";
 
@@ -39,6 +39,9 @@ export function useWorkflow() {
   const baseUpdatedAt = useRef<number | undefined>(undefined);
   // Tăng mỗi khi canvas bị thay bằng đồ thị máy chủ: lần lưu xếp hàng từ trước đó không được gửi canvas cũ lên nữa.
   const graphVersion = useRef(0);
+  // Chữ đồ thị của lần lưu gần nhất bị huỷ vì quá hạn (SaveTimeoutError): máy chủ có thể vẫn đã ghi nó. Lần lưu sau bị từ chối 409 mà
+  // bản máy chủ đúng là bản này thì đó là bản của chính mình: nhận updatedAt của nó làm nền và gửi lại, không thay canvas.
+  const unconfirmed = useRef<string | null>(null);
   const latest = useRef({ nodes, edges });
   // Gán ngay trong lúc render (không đợi useEffect): save() và "Chạy lại (bản mới)" (Editor.rerunNode: flushSync rồi startRun → save()) đọc
   // `latest.current` ngay sau khi canvas đổi, nên nó phải đã mang đồ thị vừa render.
@@ -63,7 +66,7 @@ export function useWorkflow() {
       graphVersion.current++;
       const flow = toFlow(wf.graph);
       setGroups(wf.graph.groups);
-      savedGraph.current = JSON.stringify(fromFlow(flow.nodes, flow.edges, wf.graph.groups));
+      savedGraph.current = graphText(wf.graph);
       // Cùng workflow được tải lại (sau lần chạy, sau 409): node đang chọn vẫn chọn, khung bên phải không đóng. Mở workflow khác thì bỏ chọn.
       const sameWorkflow = shownWorkflow.current === wf.id;
       setNodes((prev) => {
@@ -86,6 +89,7 @@ export function useWorkflow() {
 
   const showWorkflow = useCallback(
     (wf: WorkflowResponse) => {
+      unconfirmed.current = null;
       applyGraph(wf);
       setWorkflowId(wf.id);
       shownWorkflow.current = wf.id;
@@ -128,11 +132,23 @@ export function useWorkflow() {
       const before = savedGraph.current;
       const sent = JSON.stringify(graph);
       savedGraph.current = sent;
+      const send = () => api.saveWorkflow(workflowId, { graph, ...(baseUpdatedAt.current === undefined ? {} : { baseUpdatedAt: baseUpdatedAt.current }) });
       try {
-        const saved = await api.saveWorkflow(workflowId, { graph, ...(baseUpdatedAt.current === undefined ? {} : { baseUpdatedAt: baseUpdatedAt.current }) });
+        let saved: WorkflowResponse;
+        try {
+          saved = await send();
+        } catch (e) {
+          // Bản máy chủ "mới hơn" chính là lần lưu quá hạn trước của canvas này (đã tới nơi, chỉ câu trả lời bị huỷ): gửi lại trên nền đó.
+          if (!(e instanceof WorkflowConflictError) || unconfirmed.current === null || graphText(e.workflow.graph) !== unconfirmed.current) throw e;
+          baseUpdatedAt.current = e.workflow.updatedAt;
+          unconfirmed.current = null;
+          saved = await send();
+        }
+        unconfirmed.current = null;
         if (baseUpdatedAt.current === undefined || saved.updatedAt >= baseUpdatedAt.current) baseUpdatedAt.current = saved.updatedAt;
         setSaveState("saved");
       } catch (e) {
+        if (e instanceof SaveTimeoutError) unconfirmed.current = sent;
         if (e instanceof WorkflowConflictError) {
           if (saveTimer.current) clearTimeout(saveTimer.current);
           saveTimer.current = null;

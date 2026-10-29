@@ -1,17 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { useFakeSonLa } from "./helpers";
+import { latestRun, readGraph, useFakeSonLa, viewportOf, type LatestRun } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const at = (x: number, y: number) => ({ x, y });
 
-type SavedNode = { id: string; type: string; position: { x: number; y: number }; params: Record<string, unknown> };
-type SavedGraph = { nodes: SavedNode[]; edges: { source: string; target: string }[]; groups: { id: string; nodeIds: string[]; manual?: boolean }[] };
-const readGraph = async (page: Page, id: string) => ((await (await page.request.get(`/api/workflows/${id}`)).json()) as { graph: SavedGraph }).graph;
-
-type RunNodes = Record<string, { status: string; output: unknown }>;
-const latestRun = async (page: Page, wfId: string) =>
-  (await (await page.request.get(`/api/workflows/${wfId}/runs/latest`)).json()) as { run: { id: string; status: string } | null; nodes: RunNodes };
-const runNodes = async (page: Page, runId: string) => ((await (await page.request.get(`/api/runs/${runId}`)).json()) as { nodes: RunNodes }).nodes;
+const runNodes = async (page: Page, runId: string) => ((await (await page.request.get(`/api/runs/${runId}`)).json()) as { nodes: LatestRun["nodes"] }).nodes;
 
 // Chờ một lần chạy MỚI (khác lần `previousId`) chạy xong.
 async function waitNewRun(page: Page, wfId: string, previousId: string | undefined, timeout = 240_000) {
@@ -56,8 +49,6 @@ async function panCanvas(page: Page) {
   await page.mouse.move(from.x - 90, from.y - 50, { steps: 6 });
   await page.mouse.up();
 }
-
-const viewportOf = (page: Page) => page.locator(".react-flow__viewport").evaluate((el) => (el as HTMLElement).style.transform);
 
 test("chuột phải Cảnh 3 → Chạy node này → chỉ Cảnh 3 và node phía trước có trạng thái mới", async ({ page }) => {
   test.setTimeout(420_000);

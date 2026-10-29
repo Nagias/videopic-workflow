@@ -6,12 +6,12 @@ import { WORKFLOW_TEMPLATES } from "../../../shared/templates";
 import { estimateText } from "./estimate-view";
 import { RUN_LABEL } from "./run-view";
 import type { EstimateView } from "./use-estimate";
-import type { RunView } from "./use-run";
+import type { RunPanelApi } from "./use-run";
 import type { WorkflowApi } from "./use-workflow";
 
 type Props = {
   wf: WorkflowApi;
-  run: RunView;
+  run: RunPanelApi;
   onAddNode: (type: string) => void;
   // Bấm Chạy cả workflow: Editor lo (mọi đường chạy đi qua một chỗ).
   onRun: () => void;

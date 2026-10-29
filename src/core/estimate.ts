@@ -3,7 +3,7 @@ import type { EstimateNode, EstimateResponse, RunScope } from "../shared/api";
 import type { Calls, EstimateKnown } from "../shared/node-definition";
 import { NodeOutputsSchema, type NodeOutputs } from "../shared/ports";
 import { PROVIDER_IDS, type ProviderId } from "../shared/providers";
-import { groupEdited, rebuildWriterGroup, writerGroups } from "../shared/scenes";
+import { groupCombineId, groupEdited, rebuildWriterGroup, writerGroups } from "../shared/scenes";
 import type { WorkflowGraph } from "../shared/workflow";
 import type { Db } from "./db/client";
 import { nodeCache } from "./db/schema";
@@ -22,7 +22,7 @@ import {
 } from "./executor";
 import { labelOf } from "./node-label";
 import type { ServerNode } from "./node-runtime";
-import { nodeWarnings } from "./preflight";
+import { nodeWarnings, preflightErrors } from "./preflight";
 import type { Storage } from "./storage";
 
 export type EstimateDeps = { db: Db; storage: Storage; nodes: Record<string, ServerNode> };
@@ -143,11 +143,40 @@ export function estimateRun(deps: EstimateDeps, graph: WorkflowGraph, scope: Run
   const waitsOnWriter = [...writing].some((id) => writerGroups(current, id).length > 0) || fromWriter.size > 0;
   // Cảnh báo luật đạo diễn (không chặn chạy) trên đồ thị sau khi nhóm cảnh được tạo lại, của các node trong phạm vi.
   const planned = new Map(order.map((p) => [p.node.id, p]));
+  const sourceOrder = (p: PlannedNode, port: string) => orderSources(p, port, current);
   const warnings = nodeWarnings(
     order.filter((p) => inScope.has(p.node.id)),
     planned,
     current,
-    (p, port) => orderSources(p, port, current),
+    sourceOrder,
   );
-  return { nodes, total, museTotal, waitsOnWriter, warnings };
+
+  // Lỗi kiểm luật CHẶN chạy: đúng preflightErrors() mà executeRun() gọi, nên lần chạy bị từ chối vì lỗi nào thì ước tính báo đúng lỗi đó.
+  // Như executor, node chờ một Biên kịch SẼ VIẾT (cảnh, Ghép phim của nhóm và mọi node phía sau) được hoãn kiểm: bộ cảnh chưa biết.
+  // Biên kịch dùng lại kết quả thì executor kiểm các node đó ngay khi nó xong, trên bộ cảnh đã tạo lại (chính là `current` ở đây,
+  // trước khi cảnh nào chạy), nên ở đây kiểm luôn; trừ nhóm đã sửa tay mà lệch kết quả: lần chạy dừng hỏi Thay/Giữ, không kiểm.
+  const held = new Set<string>();
+  for (const p of order) {
+    const id = p.node.id;
+    if (!inScope.has(id) || status.get(id) !== "cached") continue;
+    for (const g of writerGroups(current, id)) {
+      if (g.source?.resultKey === keys.get(id)) continue;
+      for (const member of g.nodeIds) held.add(member);
+      const combine = groupCombineId(current, g.id);
+      if (combine !== undefined) held.add(combine);
+    }
+  }
+  const deferred = new Set<string>();
+  for (const p of order) {
+    if (!inScope.has(p.node.id)) continue;
+    const afterWritingWriter = p.after.some((w) => inScope.has(w) && status.get(w) !== "cached");
+    if (held.has(p.node.id) || afterWritingWriter || sourcesOf(p).some((s) => deferred.has(s))) deferred.add(p.node.id);
+  }
+  const problems = preflightErrors(
+    order.filter((p) => inScope.has(p.node.id) && !deferred.has(p.node.id)),
+    planned,
+    current,
+    sourceOrder,
+  );
+  return { nodes, total, museTotal, waitsOnWriter, warnings, problems };
 }

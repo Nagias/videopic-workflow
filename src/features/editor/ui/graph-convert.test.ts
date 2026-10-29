@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Edge } from "@xyflow/react";
-import { acceptersOf, connectionProblem, droppedConnectionProblem, edgeKindClass, replaceTargetEdges, targetAcceptsMany, toFlow } from "./graph-convert";
+import { WORKFLOW_TEMPLATES } from "../../../shared/templates";
+import { WorkflowGraphSchema } from "../../../shared/workflow";
+import { acceptersOf, connectionProblem, droppedConnectionProblem, edgeKindClass, fromFlow, graphText, replaceTargetEdges, targetAcceptsMany, toFlow } from "./graph-convert";
 import type { FlowNode } from "./GraphNode";
 
 const node = (id: string, type: string): FlowNode => ({ id, type, position: { x: 0, y: 0 }, data: { params: {} } });
@@ -97,5 +99,16 @@ describe("nối vào cổng nhận nhiều dây", () => {
     expect(one.map((e) => e.id)).toEqual(["b-one"]);
     expect(targetAcceptsMany({ source: "a", sourceHandle: "out", target: "t", targetHandle: "many" }, sinkNodes, defs)).toBe(true);
     expect(targetAcceptsMany({ source: "a", sourceHandle: "out", target: "t", targetHandle: "one" }, sinkNodes, defs)).toBe(false);
+  });
+});
+
+describe("graphText — nhận ra bản canvas đã gửi", () => {
+  it("đồ thị máy chủ trả về đúng bản canvas đã gửi thì graphText trùng chữ đã gửi; khác một tham số thì khác", () => {
+    const graph = WorkflowGraphSchema.parse(WORKFLOW_TEMPLATES.find((t) => t.id === "sinh-ton-son-la")!.graph);
+    const flow = toFlow(graph);
+    const sent = JSON.stringify(fromFlow(flow.nodes, flow.edges, graph.groups));
+    expect(graphText(WorkflowGraphSchema.parse(JSON.parse(sent)))).toBe(sent);
+    const changed = { ...graph, nodes: graph.nodes.map((n, i) => (i === 0 ? { ...n, params: { ...n.params, extra: 1 } } : n)) };
+    expect(graphText(changed)).not.toBe(sent);
   });
 });
