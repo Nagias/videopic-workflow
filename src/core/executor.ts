@@ -11,7 +11,8 @@ import type { Ffmpeg } from "./ffmpeg";
 import type { NodeInputs, ServerNode, StepValue } from "./node-runtime";
 import { recordAsset } from "../features/assets/store";
 import { collectMediaIds } from "./media-ids";
-import { createRunShared, SERVICE_FAILURE_LIMIT, type ChatLocks } from "./run-shared";
+import { SERVICE_FAILURE_LIMIT } from "../shared/service-failure";
+import { createRunShared, type ChatLocks } from "./run-shared";
 import type { Storage } from "./storage";
 
 export class GraphError extends Error {
@@ -198,6 +199,17 @@ export function scopeNodes(order: PlannedNode[], scope: RunScope): Set<string> {
 
 type NodeState = "pending" | "running" | "done" | "failed" | "skipped";
 
+// Kết quả node đang chạy, cho node giống hệt chờ dùng lại. Không bao giờ reject: lỗi đi theo node gốc.
+type TwinResult = { ok: true; json: string } | { ok: false; label: string };
+
+// Node giống hệt node lỗi: không chạy lại, bị bỏ qua và nêu tên node lỗi.
+class SkippedBecause extends Error {
+  constructor(readonly culprit: string) {
+    super(`Bỏ qua vì "${culprit}" lỗi`);
+    this.name = "SkippedBecause";
+  }
+}
+
 // Lập lịch: node nào đủ nguồn (đã xong hoặc dùng lại) thì chạy ngay; giới hạn chỉ nằm ở ctx.shared.slot theo dịch vụ.
 export async function executeRun(
   deps: ExecuteDeps,
@@ -232,6 +244,7 @@ export async function executeRun(
   const shared = createRunShared({ providers: deps.providers, chatLocks: deps.chatLocks, failureLimit: SERVICE_FAILURE_LIMIT });
   const outputs = new Map<string, NodeOutputs>();
   const keys = new Map<string, string>();
+  const inflight = new Map<string, Promise<TwinResult>>();
   const remember = (p: PlannedNode, key: string, out: NodeOutputs) => {
     const kind = p.impl.definition.library;
     if (kind) recordAsset(db, { cacheKey: key, kind, params: p.params, outputs: out });
@@ -257,6 +270,19 @@ export async function executeRun(
     const key = cacheKeyOf(p.node.type, p.params, upstream, p.impl.definition.cacheVersion);
     keys.set(id, key);
 
+    // Node giống hệt (cùng khoá) đang chạy: chờ nó rồi dùng lại, không gọi dịch vụ lần hai.
+    const twin = inflight.get(key);
+    if (twin) {
+      setNode(id, { status: "running", cacheKey: key, message: "Chờ node giống hệt đang chạy…", error: null });
+      const done = await twin;
+      if (!done.ok) throw new SkippedBecause(done.label);
+      const parsed = NodeOutputsSchema.parse(JSON.parse(done.json));
+      outputs.set(id, parsed);
+      remember(p, key, parsed);
+      setNode(id, { status: "cached", cacheKey: key, outputJson: done.json, message: "Dùng lại kết quả trước", error: null });
+      return;
+    }
+
     const cached = db.select().from(nodeCache).where(eq(nodeCache.cacheKey, key)).get();
     if (cached) {
       const parsed = NodeOutputsSchema.parse(JSON.parse(cached.outputJson));
@@ -269,6 +295,21 @@ export async function executeRun(
       db.delete(nodeCache).where(eq(nodeCache.cacheKey, key)).run();
     }
 
+    // Đăng ký trước lần await đầu tiên, để node giống hệt khởi chạy cùng lượt thấy ngay.
+    let settle!: (r: TwinResult) => void;
+    inflight.set(key, new Promise<TwinResult>((r) => (settle = r)));
+    try {
+      const json = await produce(p, id, key, inputs, take, stepScope);
+      settle({ ok: true, json });
+    } catch (err) {
+      settle({ ok: false, label: p.impl.definition.label });
+      throw err;
+    } finally {
+      inflight.delete(key);
+    }
+  };
+
+  const produce = async (p: PlannedNode, id: string, key: string, inputs: NodeInputs, take: number, stepScope: string): Promise<string> => {
     setNode(id, { status: "running", cacheKey: key, message: "Đang chạy…", error: null });
     const result = await p.impl.run(
       {
@@ -301,6 +342,7 @@ export async function executeRun(
     outputs.set(id, result);
     remember(p, key, result);
     setNode(id, { status: "succeeded", outputJson: json, message: "Xong" });
+    return json;
   };
 
   const state = new Map<string, NodeState>(plan.map((p) => [p.node.id, "pending"]));
@@ -332,6 +374,12 @@ export async function executeRun(
               state.set(id, "done");
             },
             (err: unknown) => {
+              if (err instanceof SkippedBecause) {
+                state.set(id, "skipped");
+                culprit.set(id, err.culprit);
+                setNode(id, { status: "skipped", error: err.message, message: null });
+                return;
+              }
               state.set(id, "failed");
               culprit.set(id, p.impl.definition.label);
               errors.set(id, err);

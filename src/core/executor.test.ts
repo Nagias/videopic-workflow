@@ -329,6 +329,50 @@ describe("lập lịch chạy song song và phạm vi chạy", () => {
     expect(rows.get("solo")?.status).toBe("succeeded");
   });
 
+  it("hai node giống hệt sẵn sàng cùng lúc: chỉ chạy một lần, node kia dùng lại (cached)", async () => {
+    let calls = 0;
+    const once = probeNode({
+      type: "once",
+      inputs: [],
+      run: async () => {
+        calls++;
+        await sleep(30);
+        return { out: { kind: "text", text: "kết quả" } };
+      },
+    });
+    const runId = randomUUID();
+    const twin = (id: string, x: number) => ({ id, type: "once", position: { x, y: 0 }, params: { same: true } });
+    await executeRun(deps({ once }), runId, "wf", { nodes: [twin("t1", 0), twin("t2", 100)], edges: [] }, new AbortController().signal, { mode: "all" });
+    expect(calls).toBe(1);
+    const rows = rowsOf(runId);
+    expect(rows.get("t1")?.status).toBe("succeeded");
+    expect(rows.get("t2")).toMatchObject({ status: "cached", message: "Dùng lại kết quả trước", outputJson: rows.get("t1")?.outputJson, cacheKey: rows.get("t1")?.cacheKey });
+  });
+
+  it("hai node giống hệt mà node chạy lỗi: node kia bị skipped nêu tên node lỗi, chỉ gọi một lần, run báo 1 node lỗi", async () => {
+    let calls = 0;
+    const broken = probeNode({
+      type: "broken-twin",
+      label: "Hỏng",
+      inputs: [],
+      run: async () => {
+        calls++;
+        await sleep(10);
+        throw new Error("dịch vụ sập");
+      },
+    });
+    const runId = randomUUID();
+    const twin = (id: string, x: number) => ({ id, type: "broken-twin", position: { x, y: 0 }, params: {} });
+    await expect(
+      executeRun(deps({ "broken-twin": broken, pass }), runId, "wf", { nodes: [twin("t1", 0), twin("t2", 100), at("after", "pass", 200)], edges: [wire("t2", "after")] }, new AbortController().signal, { mode: "all" }),
+    ).rejects.toThrow(/^1 node lỗi\. Node "Hỏng" lỗi: dịch vụ sập$/);
+    expect(calls).toBe(1);
+    const rows = rowsOf(runId);
+    expect(rows.get("t1")).toMatchObject({ status: "failed", error: "dịch vụ sập" });
+    expect(rows.get("t2")).toMatchObject({ status: "skipped", error: 'Bỏ qua vì "Hỏng" lỗi' });
+    expect(rows.get("after")).toMatchObject({ status: "skipped", error: 'Bỏ qua vì "Hỏng" lỗi' });
+  });
+
   // a → b → c ← x ; d đứng riêng
   const chainGraph: WorkflowGraph = {
     nodes: [at("a", "pass", 0), at("b", "pass", 100), at("c", "pass", 200), at("x", "pass", 100), at("d", "pass", 300)],

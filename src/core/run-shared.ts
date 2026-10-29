@@ -1,10 +1,7 @@
 import { ProviderError, type ChatSessionRef, type ProviderRegistry } from "../providers/types";
 import type { ProviderId } from "../shared/providers";
+import { SERVICE_FAILURE_CODES } from "../shared/service-failure";
 import { semaphore } from "./semaphore";
-
-// Số lần dịch vụ báo lỗi máy chủ trong một lần chạy thì ngắt cầu dao.
-export const SERVICE_FAILURE_LIMIT = 3;
-const SERVICE_FAILURE_CODES = new Set(["MUSE_FAILED", "NO_MEDIA"]);
 
 export class ServiceBreakerOpen extends Error {
   constructor(limit: number) {

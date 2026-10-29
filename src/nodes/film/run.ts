@@ -5,9 +5,8 @@ import { ProviderError, type ChatSessionRef, type ImageReference, type MediaProv
 import { checkShotList, MAX_PROP_REFS, parsePropLines, type Shot } from "../../shared/director";
 import type { ImageSetValue, PropSetValue, StoryboardShot } from "../../shared/ports";
 import { DEFAULT_LOOK, keyframePrompt, motionPrompt, textVideoPrompt, type KeyframeCtx } from "../../shared/prompts";
-import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC, SERVICE_FAILURE_LIMIT, SHOT_SECONDS, type FilmParams } from "./definition";
-
-const SERVICE_FAILURE_CODES = new Set(["MUSE_FAILED", "NO_MEDIA"]);
+import { SERVICE_FAILURE_CODES, SERVICE_FAILURE_LIMIT } from "../../shared/service-failure";
+import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC, SHOT_SECONDS, type FilmParams } from "./definition";
 
 type Brightness = { startLuma: number; endLuma: number; clipSec: number };
 type FinishedShot = { clipId: string; durationSec: number; trimStartSec: number; hasAudio: boolean; brightness?: Brightness };

@@ -1,6 +1,7 @@
 import type { Ffmpeg } from "../../src/core/ffmpeg";
 import type { NodeRunContext, ServerNode, StepValue } from "../../src/core/node-runtime";
-import { createChatLocks, createRunShared, SERVICE_FAILURE_LIMIT } from "../../src/core/run-shared";
+import { createChatLocks, createRunShared } from "../../src/core/run-shared";
+import { SERVICE_FAILURE_LIMIT } from "../../src/shared/service-failure";
 import type { Storage } from "../../src/core/storage";
 import type { NodeOutputs } from "../../src/shared/ports";
 import { serverNodes } from "../../src/nodes/registry.server";
