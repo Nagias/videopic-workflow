@@ -64,9 +64,33 @@ describe("nối vào cổng nhận nhiều dây", () => {
     expect(replaceTargetEdges(existing, conn, true)).toEqual(existing);
   });
 
-  it("connectionProblem vẫn trả null cho cổng nhận nhiều dây; node hiện có chưa có cổng nào như vậy", () => {
+  it("registry thật hiện chưa có cổng multiple: nối vào cổng Prompt vẫn thay dây cũ", () => {
     const toPrompt = { source: "p", sourceHandle: "text", target: "v", targetHandle: "prompt" };
     expect(connectionProblem(toPrompt, nodes)).toBeNull();
     expect(targetAcceptsMany(toPrompt, nodes)).toBe(false);
+  });
+
+  it("đường onConnect dùng: cổng multiple giữ cả hai dây, cổng thường thay dây cũ", () => {
+    const defs = {
+      sink: {
+        definition: {
+          inputs: [
+            { name: "many", kind: "text" as const, label: "Nhiều", multiple: true },
+            { name: "one", kind: "text" as const, label: "Một" },
+          ],
+        },
+      },
+    };
+    const sinkNodes = [node("t", "sink"), node("a", "prompt"), node("b", "prompt")];
+    const connect = (eds: Edge[], source: string, targetHandle: string): Edge[] => {
+      const c = { source, sourceHandle: "out", target: "t", targetHandle };
+      return [...replaceTargetEdges(eds, c, targetAcceptsMany(c, sinkNodes, defs)), { ...c, id: `${source}-${targetHandle}` }];
+    };
+    const many = connect(connect([], "a", "many"), "b", "many");
+    expect(many.map((e) => e.id)).toEqual(["a-many", "b-many"]);
+    const one = connect(connect([], "a", "one"), "b", "one");
+    expect(one.map((e) => e.id)).toEqual(["b-one"]);
+    expect(targetAcceptsMany({ source: "a", sourceHandle: "out", target: "t", targetHandle: "many" }, sinkNodes, defs)).toBe(true);
+    expect(targetAcceptsMany({ source: "a", sourceHandle: "out", target: "t", targetHandle: "one" }, sinkNodes, defs)).toBe(false);
   });
 });

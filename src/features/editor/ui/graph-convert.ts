@@ -1,6 +1,6 @@
 import type { Connection, Edge } from "@xyflow/react";
 import { webNodes } from "../../../nodes/registry.web";
-import { PORT_KIND_LABEL, type PortKind } from "../../../shared/ports";
+import { PORT_KIND_LABEL, type PortDef, type PortKind } from "../../../shared/ports";
 import type { WorkflowGraph } from "../../../shared/workflow";
 import type { FlowNode } from "./GraphNode";
 
@@ -48,9 +48,14 @@ function hintFor(kind: PortKind): string {
 }
 
 // Cổng vào có nhận nhiều dây (multiple) không: nối thêm thì giữ dây cũ.
-export function targetAcceptsMany(conn: Connection | Edge, nodes: FlowNode[]): boolean {
+// `defs` mặc định là registry thật; test truyền bảng riêng để thử cổng multiple.
+export function targetAcceptsMany(
+  conn: Connection | Edge,
+  nodes: FlowNode[],
+  defs: Record<string, { definition: { inputs: PortDef[] } }> = webNodes,
+): boolean {
   const dst = nodes.find((n) => n.id === conn.target);
-  return webNodes[dst?.type ?? ""]?.definition.inputs.find((p) => p.name === conn.targetHandle)?.multiple === true;
+  return defs[dst?.type ?? ""]?.definition.inputs.find((p) => p.name === conn.targetHandle)?.multiple === true;
 }
 
 // Cổng thường: dây mới THAY dây cũ ở cùng cổng (như ComfyUI). Cổng multiple: giữ nguyên các dây cũ.
