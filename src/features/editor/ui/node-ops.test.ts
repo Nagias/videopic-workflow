@@ -2,7 +2,7 @@ import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import { webNodes } from "../../../nodes/registry.web";
 import type { FlowNode } from "./GraphNode";
-import { duplicateNode, nextTake, paramsHaveTake } from "./node-ops";
+import { duplicateNode, nextTake, paramsHaveTake, restoreTake } from "./node-ops";
 
 const node = (id: string, x: number, y: number, params: Record<string, unknown> = {}, selected = false): FlowNode => ({
   id,
@@ -62,5 +62,17 @@ describe("take (lần tạo)", () => {
       .filter(([, impl]) => !(impl.definition.params instanceof z.ZodObject))
       .map(([type]) => type);
     expect(wrapped).toEqual([]);
+  });
+});
+
+describe("restoreTake", () => {
+  it("trả take về số cũ", () => {
+    expect(restoreTake({ a: 1, take: 3 }, { had: true, value: 2 })).toEqual({ a: 1, take: 2 });
+  });
+
+  it("take trước đó chưa có thì bỏ hẳn khoá take (lưu ra giống hệt bản cũ)", () => {
+    const out = restoreTake({ a: 1, take: 2 }, { had: false, value: undefined });
+    expect(out).toEqual({ a: 1 });
+    expect("take" in out).toBe(false);
   });
 });

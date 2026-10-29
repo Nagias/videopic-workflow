@@ -104,9 +104,9 @@ Tổng lượt Muse thật Đợt 1A: 1.
 
 ### Việc chuyển sang Đợt 1B (từ soát cuối 1A)
 
-- [ ] Bảng ước tính hiện "chưa biết" cho node unknown và không cộng 0 vào tổng
+- [x] Bảng ước tính hiện "chưa biết" cho node unknown và không cộng 0 vào tổng (Task 7: `rowText()`, `estimateText()` không ghi "dùng lại hết" khi còn node chưa biết)
 - [ ] `snapshotGroup` phải tính `order` của Ghép phim trước khi có dải đổi thứ tự
-- [ ] Cảnh báo luật đạo diễn (30°) hiện lại ở nhóm Phân cảnh
+- [x] Cảnh báo luật đạo diễn (30°) hiện lại ở nhóm Phân cảnh (Task 7: `warnings` của ước tính vào `groupFrames()`)
 - [ ] Sau Tạo thẻ cảnh / Thay / Giữ thẻ cùng mã còn kết quả cũ
 - [ ] Kiểm phiên bản khi `PUT /api/workflows/:id` (DEBT N-016)
 - [ ] Đồ vật / Nhân vật / Bối cảnh / Biên kịch / Tạo video chưa qua `ctx.shared.slot` và cầu dao

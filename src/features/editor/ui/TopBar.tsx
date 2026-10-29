@@ -3,7 +3,9 @@ import { api } from "../../../app/api-client";
 import { webNodes } from "../../../nodes/registry.web";
 import type { MuseAccountsResponse } from "../../../shared/api";
 import { WORKFLOW_TEMPLATES } from "../../../shared/templates";
+import { estimateText } from "./estimate-view";
 import { RUN_LABEL } from "./run-view";
+import type { EstimateView } from "./use-estimate";
 import type { RunView } from "./use-run";
 import type { WorkflowApi } from "./use-workflow";
 
@@ -13,9 +15,13 @@ type Props = {
   onAddNode: (type: string) => void;
   // Bấm Chạy cả workflow: Editor lo (mọi đường chạy đi qua một chỗ).
   onRun: () => void;
+  // Đang kiểm ước tính hoặc hộp xác nhận đang mở: chưa cho chạy tiếp, chưa cho đổi workflow.
+  checking: boolean;
+  // Ước tính (cả workflow, bản đã lưu) cho ô "Lần chạy tới".
+  estimate: EstimateView;
 };
 
-export function TopBar({ wf, run, onAddNode, onRun }: Props) {
+export function TopBar({ wf, run, onAddNode, onRun, checking, estimate }: Props) {
   const [muse, setMuse] = useState<MuseAccountsResponse | null>(null);
   useEffect(() => {
     api
@@ -26,11 +32,12 @@ export function TopBar({ wf, run, onAddNode, onRun }: Props) {
   const readyMuse = muse?.accounts.filter((a) => a.loggedIn).length ?? 0;
   const { workflowId, saveState, switchTo } = wf;
   const busy = run.active || run.starting;
+  const pill = estimate.estimate ? estimateText(estimate.estimate) : estimate.error ? "không ước tính được" : "đang tính…";
 
   return (
     <div className="toolbar">
       <h1>VideoPic Workflow</h1>
-      <select data-testid="workflow-select" value={workflowId ?? ""} onChange={(e) => void switchTo(() => api.getWorkflow(e.target.value))}>
+      <select data-testid="workflow-select" value={workflowId ?? ""} disabled={checking} onChange={(e) => void switchTo(() => api.getWorkflow(e.target.value))}>
         {wf.workflowList.map((w) => (
           <option key={w.id} value={w.id}>
             {w.name}
@@ -38,7 +45,7 @@ export function TopBar({ wf, run, onAddNode, onRun }: Props) {
         ))}
       </select>
       {WORKFLOW_TEMPLATES.map((t) => (
-        <button key={t.id} type="button" data-testid={`template-${t.id}`} onClick={() => void switchTo(() => api.createFromTemplate(t.id))}>
+        <button key={t.id} type="button" data-testid={`template-${t.id}`} disabled={checking} onClick={() => void switchTo(() => api.createFromTemplate(t.id))}>
           + Mẫu {t.name}
         </button>
       ))}
@@ -67,20 +74,18 @@ export function TopBar({ wf, run, onAddNode, onRun }: Props) {
       <span className={`run-state ${run.starting ? "queued" : (run.run?.status ?? "")}`} data-testid="run-status">
         {run.starting ? RUN_LABEL.queued : run.runLabel}
       </span>
+      <span className={`estimate-pill ${estimate.error ? "error" : ""}`} data-testid="estimate-pill" title={estimate.error ?? "Ước tính của bản đã lưu, cho lần Chạy cả workflow"}>
+        Lần chạy tới: <b>{pill}</b>
+      </span>
       <button
         type="button"
         className="primary"
         data-testid="run-button"
-        disabled={!workflowId || run.active || run.starting || run.syncing}
+        disabled={!workflowId || run.active || run.starting || run.syncing || checking}
         onClick={onRun}
       >
-        {busy ? "Đang chạy…" : "▶ Chạy"}
+        {busy ? "Đang chạy…" : checking ? "Đang tính lượt…" : "▶ Chạy"}
       </button>
-      {run.active ? (
-        <button type="button" data-testid="cancel-run" disabled={run.cancelling} onClick={() => void run.cancel()}>
-          {run.cancelling ? "Đang huỷ…" : "Huỷ"}
-        </button>
-      ) : null}
     </div>
   );
 }

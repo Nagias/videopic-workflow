@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { runAllConfirmed } from "./helpers";
 
 const duration = (page: Page, id: string) =>
   page.getByTestId(`film-combine-video-${id}`).evaluate((v: HTMLVideoElement) => (v.readyState >= 1 ? Math.round(v.duration) : 0));
@@ -20,7 +21,7 @@ test("Luồng 3/4 — mẫu Ý tưởng → phim: Biên kịch (giả) viết 8 
 
   // Lần 1: Biên kịch viết xong thì máy chủ tạo 8 thẻ cảnh trong lúc chạy; giao diện tải lại đồ thị ngay lúc đó (chưa hết
   // lần chạy), không chờ chạy xong — trạng thái lần chạy đọc cùng lúc thẻ cảnh xuất hiện, trong trang.
-  await page.getByTestId("run-button").click();
+  await runAllConfirmed(page);
   const statusWhenCardsAppear = await page.waitForFunction(
     () => (document.querySelector('[data-testid="node-scene-g1-8"]') ? (document.querySelector('[data-testid="run-status"]')?.textContent ?? "") : false),
     undefined,
@@ -45,7 +46,7 @@ test("Luồng 3/4 — mẫu Ý tưởng → phim: Biên kịch (giả) viết 8 
   await page.getByTestId("writer-idea-writer-1").fill("Cô gái leo lên đỉnh đồi ngắm mây rồi dựng lều, nhóm bếp nấu nước.");
   await page.getByTestId("writer-count-writer-1").fill("10");
   await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
-  await page.getByTestId("run-button").click();
+  await runAllConfirmed(page);
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 240_000 });
   await page.getByTestId("card-writer-1").click();
   await expect(page.getByTestId("writer-result-writer-1").locator("li")).toHaveCount(10);
@@ -62,7 +63,7 @@ test("Luồng 3/4 — mẫu Ý tưởng → phim: Biên kịch (giả) viết 8 
   await page.getByTestId("card-writer-1").click();
   await page.getByTestId("writer-idea-writer-1").fill("Cô gái đi dọc bờ suối tìm củi khô rồi nhóm lửa trước lều.");
   await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
-  await page.getByTestId("run-button").click();
+  await runAllConfirmed(page);
   await expect(page.getByTestId("scenes-decision")).toBeVisible({ timeout: 120_000 });
   await expect(page.getByTestId("run-status")).toHaveText("Lỗi");
   await expect(page.getByTestId("problem-banner")).toContainText("thẻ cảnh đã được sửa tay");
@@ -70,7 +71,7 @@ test("Luồng 3/4 — mẫu Ý tưởng → phim: Biên kịch (giả) viết 8 
   await expect(page.getByTestId("scenes-decision")).toHaveCount(0);
   await page.getByTestId("card-scene-g1-3").click();
   await expect(page.getByTestId("scene-motion-scene-g1-3")).toHaveValue(edited);
-  await page.getByTestId("run-button").click();
+  await runAllConfirmed(page);
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 240_000 });
   await expect(page.getByTestId("scenes-decision")).toHaveCount(0);
   await page.getByTestId("card-scene-g1-3").click();

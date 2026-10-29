@@ -1,13 +1,14 @@
-import { addEdge, Background, Controls, ReactFlow, type Connection, type Edge, type IsValidConnection, type NodeChange, type OnConnectEnd, type ReactFlowInstance } from "@xyflow/react";
+import { addEdge, Background, Controls, MiniMap, Panel, ReactFlow, type Connection, type Edge, type IsValidConnection, type NodeChange, type OnConnectEnd, type ReactFlowInstance } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { api } from "../../../app/api-client";
 import { webNodes } from "../../../nodes/registry.web";
-import type { RunScope } from "../../../shared/api";
+import type { EstimateResponse, RunScope } from "../../../shared/api";
 import type { PortDef } from "../../../shared/ports";
 import { labelOf } from "../../../shared/node-label";
 import { Banners } from "./Banners";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { needsConfirm } from "./estimate-view";
 import { connectionProblem, droppedConnectionProblem, edgeKindClass, replaceTargetEdges, targetAcceptsMany } from "./graph-convert";
 import { videoSecondsOf } from "./card-media";
 import { portFor, type CatalogItem, type PortFilter } from "./catalog";
@@ -18,15 +19,17 @@ import { COMPACT_ZOOM } from "./NodeCard";
 import { Inspector, sourcesOf, type InspectorSources } from "./Inspector";
 import { cardWidthOf, inheritProvider, placeNewNode } from "./new-node";
 import { EditorContext, type EditorApi } from "./node-kit";
-import { duplicateNode, freshNodeId, nextTake, paramsHaveTake } from "./node-ops";
+import { duplicateNode, freshNodeId, nextTake, paramsHaveTake, restoreTake, takeBefore } from "./node-ops";
 import { QueuePanel } from "./QueuePanel";
 import { Rail } from "./Rail";
+import { RunConfirm } from "./RunConfirm";
 import { actionFor } from "./shortcuts";
 import { ShortcutSheet } from "./ShortcutSheet";
 import { Spotlight, type ScreenPoint } from "./Spotlight";
 import { TopBar } from "./TopBar";
+import { useEstimate } from "./use-estimate";
 import { useRun } from "./use-run";
-import { useWorkflow } from "./use-workflow";
+import { errText, useWorkflow } from "./use-workflow";
 
 const EMPTY_SOURCES: InspectorSources = { nodes: [], edges: [] };
 
@@ -43,6 +46,20 @@ type WireOrigin = { nodeId: string; handleId: string; dir: PortFilter["dir"] };
 type SpotState = { at?: ScreenPoint; filter?: PortFilter; origin?: WireOrigin };
 type Placement = { at?: ScreenPoint; wire?: { origin: WireOrigin; port: PortDef } };
 
+// Xin chạy phải qua hộp xác nhận (khi cần): ước tính đã có, đang chờ người dùng bấm. `edit` là sửa đồ thị đã làm ngay trước đó
+// (Chạy lại tăng take) kèm cách hoàn lại nếu không chạy nữa.
+type RunEdit = { apply: () => void; undo: () => void };
+type PendingRun = { scope: RunScope; estimate: EstimateResponse; edit?: RunEdit };
+
+// MiniMap nhỏ gọn hơn mặc định (200x150) để che ít thẻ ở góc dưới phải canvas. Chỉ để nhìn (không kéo/thu phóng trong đó, và
+// không bắt chuột: .minimap-slot trong styles.css): thẻ nằm dưới nó vẫn bấm được, bản đồ không bao giờ chặn việc đang làm.
+const MINIMAP_SIZE = { width: 170, height: 115 };
+
+// MiniMap: thẻ là ô đặc, khung nhóm chỉ là viền (ô đặc sẽ che hết thẻ bên trong).
+const isFrameType = (n: { type?: string }) => n.type === GROUP_FRAME_TYPE;
+const miniNodeColor = (n: { type?: string; selected?: boolean }) => (isFrameType(n) ? "transparent" : n.selected ? "#6c8cff" : "#4a5163");
+const miniNodeStroke = (n: { type?: string }) => (isFrameType(n) ? "#3a4150" : "transparent");
+
 const nodeTypes = { ...Object.fromEntries(Object.keys(webNodes).map((t) => [t, GraphNode])), [GROUP_FRAME_TYPE]: GroupFrame };
 
 export function Editor() {
@@ -50,6 +67,10 @@ export function Editor() {
   const run = useRun(wf);
   const { workflowId, nodes, edges, setNodes, setEdges, setProblem, latest, groups, groupList, setGroups } = wf;
   const { nodeStates, expandScenes } = run;
+  // Đang kiểm ước tính / hộp xác nhận đang mở: cũng tính là bận, để mọi đường chạy (nút, phím, menu) đứng yên.
+  const [checking, setChecking] = useState(false);
+  const busy = run.active || run.starting || run.syncing || checking;
+  const estimateView = useEstimate(workflowId, wf.saveState, !busy);
   const flow = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
@@ -168,11 +189,17 @@ export function Editor() {
   const frames = useMemo(() => {
     const next = reuseFrames(
       shownFrames.current,
-      groupFrames(nodes, groupList, measuredFrom(nodes), { secondsOf: (id) => videoSecondsOf(nodeStates[id]?.output), selected: selectedFrames, edges: bundles.visible }),
+      groupFrames(nodes, groupList, measuredFrom(nodes), {
+        secondsOf: (id) => videoSecondsOf(nodeStates[id]?.output),
+        selected: selectedFrames,
+        edges: bundles.visible,
+        // Chưa có ước tính (đang tính, lỗi) thì khung không ghi dòng luật nào, chứ không ghi "✓" giả.
+        warnings: estimateView.estimate?.warnings,
+      }),
     );
     shownFrames.current = next;
     return next;
-  }, [nodes, groupList, nodeStates, selectedFrames, bundles]);
+  }, [nodes, groupList, nodeStates, selectedFrames, bundles, estimateView.estimate]);
   const displayNodes = useMemo(() => (frames.length > 0 ? [...frames, ...nodes] : nodes), [frames, nodes]);
 
   // Thay đổi canvas báo lên từ xyflow: thay đổi của khung (không có trong state) đổi thành dời cả nhóm / chọn khung; thẻ thành
@@ -223,25 +250,97 @@ export function Editor() {
 
   const runId = run.run?.id ?? "";
   const runStatus = run.run?.status ?? "";
-  const busy = run.active || run.starting || run.syncing;
   const { startRun } = run;
+  const { save } = wf;
 
-  // Mọi đường bấm chạy (nút Chạy, menu chuột phải, Ctrl+Enter, Shift+Enter, nút ▶ trên thẻ) đi qua MỘT hàm này. `beforeRun` chạy
-  // ngay trước khi xin chạy (Chạy lại tăng take ở đó); startRun lưu đồ thị rồi mới gửi lên, nên bản gửi đã có sửa đổi đó.
-  const runScope = useCallback(
-    (scope: RunScope, beforeRun?: () => void) => {
-      if (!workflowId || busy) return;
-      beforeRun?.();
-      void startRun(scope);
+  // Mọi đường bấm chạy (nút Chạy, menu chuột phải, Ctrl+Enter, Shift+Enter, nút ▶ trên thẻ) đi qua MỘT hàm này, và qua đây là qua
+  // hộp xác nhận: lưu đồ thị → hỏi API ước tính (chỉ đọc bản đã lưu) → nếu cần thì hiện hộp, người dùng bấm "▶ Chạy" mới xin chạy.
+  // Ước tính lỗi thì báo lỗi và KHÔNG chạy. `edit` (Chạy lại tăng take) áp trước khi lưu để ước tính tính trên bản đã tăng; không
+  // chạy nữa (Huỷ, lỗi) thì hoàn lại và lưu lại. `gate` chặn bấm lần hai trong lúc state chưa kịp cập nhật: chỉ một hộp, một lần chạy.
+  const gate = useRef(false);
+  const [pending, setPending] = useState<PendingRun | null>(null);
+  const pendingOpen = useRef(false);
+  pendingOpen.current = pending !== null;
+
+  const release = useCallback(() => {
+    gate.current = false;
+    setChecking(false);
+  }, []);
+
+  const revert = useCallback(
+    async (edit: RunEdit | undefined) => {
+      if (!edit) return;
+      flushSync(() => edit.undo());
+      try {
+        await save();
+      } catch (e) {
+        setProblem(`Không lưu lại được bản cũ sau khi bỏ chạy: ${errText(e)}`);
+      }
     },
-    [workflowId, busy, startRun],
+    [save, setProblem],
   );
 
-  // Node `nodeId` sẽ chạy một "bản mới": tăng take ngay (flushSync để canvas, nơi startRun lấy đồ thị để lưu, thấy số mới).
-  const rerunNode = (nodeId: string) =>
-    runScope({ mode: "node", nodeId }, () =>
-      flushSync(() => setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, params: { ...n.data.params, take: nextTake(n.data.params) } } } : n)))),
+  const confirmAndRun = useCallback(
+    async (scope: RunScope, edit?: RunEdit) => {
+      if (!workflowId || busy || gate.current) return;
+      gate.current = true;
+      setChecking(true);
+      setProblem(null);
+      let waiting = false;
+      try {
+        edit?.apply();
+        await save();
+        const estimate = await api.estimate(workflowId, scope);
+        if (needsConfirm(scope, estimate)) {
+          setPending({ scope, estimate, edit });
+          waiting = true;
+          return;
+        }
+        await startRun(scope);
+      } catch (e) {
+        setProblem(errText(e));
+        await revert(edit);
+      } finally {
+        if (!waiting) release();
+      }
+    },
+    [workflowId, busy, save, startRun, setProblem, revert, release],
+  );
+
+  const runScope = useCallback((scope: RunScope, edit?: RunEdit) => void confirmAndRun(scope, edit), [confirmAndRun]);
+
+  const answerPending = async (ok: boolean) => {
+    const p = pending;
+    if (!p) return;
+    setPending(null);
+    try {
+      if (ok) await startRun(p.scope);
+      else await revert(p.edit);
+    } finally {
+      release();
+    }
+  };
+
+  // Node `nodeId` sẽ chạy một "bản mới": tăng take (flushSync để canvas, nơi save() lấy đồ thị, thấy số mới). Huỷ ở hộp xác nhận
+  // thì trả take về đúng giá trị cũ (hoặc bỏ khoá nếu trước đó chưa có).
+  const rerunNode = (nodeId: string) => {
+    const before = takeBefore(latest.current.nodes.find((n) => n.id === nodeId)?.data.params ?? {});
+    const withParams = (change: (params: Record<string, unknown>) => Record<string, unknown>) =>
+      setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, params: change(n.data.params) } } : n)));
+    runScope(
+      { mode: "node", nodeId },
+      {
+        apply: () => flushSync(() => withParams((params) => ({ ...params, take: nextTake(params) }))),
+        undo: () => withParams((params) => restoreTake(params, before)),
+      },
     );
+  };
+
+  // Tên hiện trên thẻ của một node (cho hàng chờ).
+  const nodeTitle = (id: string) => {
+    const n = latest.current.nodes.find((x) => x.id === id);
+    return n ? labelOf({ id, params: n.data.params }, webNodes[n.type ?? ""]?.definition.label ?? id, { groups: groups.current }) : id;
+  };
 
   const fitAll = () => void flow.current?.fitView(FIT_OPTIONS);
 
@@ -280,7 +379,7 @@ export function Editor() {
   // bảng phím tắt đang mở thì chỉ ? và Esc (đóng bảng). Giữ phím (e.repeat) chỉ chặn mặc định, không làm lại việc.
   const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
   onKeyRef.current = (e) => {
-    if (spotOpen.current) return;
+    if (spotOpen.current || pendingOpen.current) return;
     const el = document.activeElement;
     const typing = el instanceof HTMLElement && el.matches("input, textarea, select, [contenteditable]:not([contenteditable=false])");
     const onControl = el instanceof HTMLElement && el.matches("button, a, summary, [role=button]");
@@ -402,7 +501,7 @@ export function Editor() {
   return (
     <EditorContext.Provider value={editorApi}>
       <div className="editor">
-        <TopBar wf={wf} run={run} onAddNode={addNode} onRun={() => runScope({ mode: "all" })} />
+        <TopBar wf={wf} run={run} onAddNode={addNode} onRun={() => runScope({ mode: "all" })} checking={checking} estimate={estimateView} />
         <Banners wf={wf} run={run} />
         <div className="editor-body">
           <Rail onAdd={() => openSpotlight()} />
@@ -432,13 +531,17 @@ export function Editor() {
             >
               <Background gap={24} />
               <Controls />
+              <Panel position="bottom-right" className="minimap-slot" data-testid="minimap">
+                <MiniMap style={MINIMAP_SIZE} nodeColor={miniNodeColor} nodeStrokeColor={miniNodeStroke} nodeStrokeWidth={3} nodeBorderRadius={3} maskColor="rgb(15 17 21 / 0.65)" />
+              </Panel>
             </ReactFlow>
           </div>
           <aside className="right-panel">
+            <QueuePanel run={run} titleOf={nodeTitle} inspectorOpen={selectedNode !== null} />
             <Inspector node={selectedNode} sources={inspectorSources} />
-            <QueuePanel />
           </aside>
         </div>
+        {pending ? <RunConfirm scope={pending.scope} estimate={pending.estimate} onOk={() => void answerPending(true)} onCancel={() => void answerPending(false)} /> : null}
         {spot ? <Spotlight at={spot.at} filter={spot.filter} onPick={onSpotPick} onClose={() => setSpot(null)} /> : null}
         {menu ? <ContextMenu x={menu.x} y={menu.y} items={menuItems()} onClose={closeMenu} /> : null}
         {sheetOpen ? <ShortcutSheet onClose={() => setSheetOpen(false)} /> : null}

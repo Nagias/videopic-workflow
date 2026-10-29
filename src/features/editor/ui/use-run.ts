@@ -8,6 +8,7 @@ import { errText, type WorkflowApi } from "./use-workflow";
 const POLL_MS = 1000;
 
 const NO_STATES: Record<string, RunNodeState> = {};
+const NO_IDS: readonly string[] = [];
 
 // Lượt chạy của workflow đang mở: bắt đầu, hỏi tiến độ, gộp kết quả vào các node, tải lại đồ thị giữa và cuối lượt chạy, huỷ,
 // và trả lời hộp hỏi Thay/Giữ của Biên kịch.
@@ -20,6 +21,8 @@ export function useRun(wf: WorkflowApi) {
   // Đang tải lại đồ thị từ máy chủ (sau lần chạy, sau Tạo thẻ cảnh / Thay / Giữ): chưa cho chạy để không lưu đè bản cũ.
   const [syncing, setSyncing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  // Các node thuộc lần chạy đang theo dõi (khoá của kết quả hỏi tiến độ: chỉ có node trong phạm vi lần chạy), để hàng chờ đếm xong/tổng.
+  const [runNodeIds, setRunNodeIds] = useState<readonly string[]>(NO_IDS);
   // Hướng dẫn bước tiếp theo sau khi chọn Thay/Giữ.
   const [info, setInfo] = useState<string | null>(null);
   const currentRun = useRef<RunResponse | null>(null);
@@ -32,6 +35,7 @@ export function useRun(wf: WorkflowApi) {
     // Xoá ngay (không chờ render): lần hỏi tiến độ về muộn của workflow trước không được gộp vào workflow này.
     currentRun.current = null;
     setRun(null);
+    setRunNodeIds(NO_IDS);
     setRunFromHistory(false);
     setInfo(null);
     api.getLatestRun(id).then(
@@ -114,6 +118,7 @@ export function useRun(wf: WorkflowApi) {
           const merged: RunResponse = { ...r, nodes: { ...prev.nodes, ...r.nodes } };
           currentRun.current = merged;
           setRun(merged);
+          setRunNodeIds(Object.keys(r.nodes));
           setRunFromHistory(false);
           if (!isActive(merged)) {
             void syncAfterRun(merged.id);
@@ -141,6 +146,7 @@ export function useRun(wf: WorkflowApi) {
         await save();
         const { runId } = await api.startRun(workflowId, scope);
         setRun((prev) => ({ id: runId, status: "queued", error: null, decision: null, nodes: prev?.nodes ?? {} }));
+        setRunNodeIds(NO_IDS);
         setRunFromHistory(false);
       } catch (e) {
         setProblem(errText(e));
@@ -181,6 +187,7 @@ export function useRun(wf: WorkflowApi) {
   return {
     run,
     nodeStates: run?.nodes ?? NO_STATES,
+    runNodeIds,
     fromHistory,
     active,
     starting,

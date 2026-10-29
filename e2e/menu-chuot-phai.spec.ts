@@ -377,10 +377,13 @@ test("Chạy từ đây trở đi, Shift+Enter (node đang chọn), Ctrl+Enter (
   await page.getByTestId("prompt-text-q").click();
   await page.keyboard.press("Control+Enter");
   await expect(page.getByTestId("run-button")).toBeEnabled();
+  await expect(page.getByTestId("run-confirm")).toHaveCount(0);
   expect((await latestRun(page, id)).run!.id).toBe(second);
   await page.keyboard.press("Escape");
-  await page.locator(".react-flow__pane").click({ position: { x: 700, y: 520 } });
+  const clear = (await emptySpots(page))[0]!;
+  await page.mouse.click(clear.x, clear.y);
   await page.keyboard.press("Control+Enter");
+  await page.getByTestId("run-confirm-ok").click();
   const third = await waitNewRun(page, id, second);
   expect(Object.keys(await runNodes(page, third)).sort()).toEqual(["p", "q", "v"]);
 });

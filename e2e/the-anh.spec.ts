@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { runAllConfirmed } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -126,7 +127,7 @@ test("tab Kết quả: clip của lần chạy, và lỗi đầy đủ khi chạ
     ],
   });
   await page.goto(`/?wf=${id}`);
-  await page.getByTestId("run-button").click();
+  await runAllConfirmed(page);
   await expect(page.getByTestId("run-status")).toHaveText("Lỗi", { timeout: 60_000 });
   await expect(page.getByTestId("node-status-v")).toHaveText("Xong");
 
@@ -135,7 +136,7 @@ test("tab Kết quả: clip của lần chạy, và lỗi đầy đủ khi chạ
   await page.getByTestId("inspector-tab-result").click();
   await expect(page.getByTestId("result-media-v").locator("video")).toBeVisible();
 
-  await page.getByTestId("card-v2").click();
+  await page.getByTestId("card-label-v2").click();
   await page.getByTestId("inspector-tab-result").click();
   await expect(page.getByTestId("result-error-v2")).toContainText(/Test không được gọi Muse thật|npm run muse:login/);
 });

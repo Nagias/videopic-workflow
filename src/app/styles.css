@@ -1134,3 +1134,183 @@ button.icon {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* Ô "Lần chạy tới" ở thanh trên (ước tính lượt Muse của cả workflow). */
+.estimate-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  max-width: 460px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.estimate-pill b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.estimate-pill.error b {
+  color: var(--err);
+}
+
+/* Ô hàng chờ (QueuePanel): nằm trên cùng khung bên phải, dính khi cuộn khung Inspector bên dưới. */
+.queue-panel {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 10px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.queue-panel.active {
+  border-bottom-color: var(--warn);
+}
+
+.queue-panel .qh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.queue-panel .qh span {
+  flex: 1;
+  color: var(--muted);
+}
+
+.queue-panel .qh button {
+  padding: 3px 12px;
+}
+
+.qlist {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.qlist li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+}
+
+.qlist li span,
+.qlist li.muted {
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.qlast {
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+.qlast .run-succeeded {
+  color: var(--ok);
+}
+
+.qlast .run-failed {
+  color: var(--err);
+}
+
+/* Hộp xác nhận trước khi chạy (RunConfirm). */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.55);
+}
+
+.confirm {
+  width: 560px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.65);
+}
+
+.confirm h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.confirm-total {
+  margin: 0 0 10px;
+}
+
+.confirm-rows {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.confirm-rows li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.confirm-rows li:first-child {
+  border-top: none;
+}
+
+.confirm-rows .row-what {
+  color: var(--muted);
+  text-align: right;
+}
+
+.confirm-rows .row-run .row-what {
+  color: var(--warn);
+}
+
+.confirm-note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* MiniMap: ô bọc trong Panel để có data-testid; MiniMap tự là một Panel nên bỏ vị trí/lề của nó, ô bọc lo vị trí. */
+.minimap-slot,
+.minimap-slot * {
+  pointer-events: none;
+}
+
+.minimap-slot .react-flow__minimap {
+  position: static;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { useFakeSonLa } from "./helpers";
+import { runAllConfirmed, useFakeSonLa } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -49,7 +49,7 @@ test("kéo tiêu đề nhóm 200px → cả 12 thẻ dời, lưu, chọn khung k
   // Khung bao nhóm 12 cảnh, tiêu đề theo bản phác; 36 dây tham chiếu vẽ gộp thành 3 dây tới mép khung.
   await expect(page.getByTestId("group-g1")).toBeVisible();
   await expect(page.getByTestId("group-title-g1")).toHaveText("▢ Phân cảnh · 12 cảnh");
-  await expect(page.getByTestId("group-rule-g1")).toHaveCount(0);
+  await expect(page.getByTestId("group-rule-g1")).toHaveText("✓ Luật đạo diễn đạt");
   await expect(page.locator('.react-flow__edge[data-id^="bundle-g1-"]')).toHaveCount(3);
   await expect(page.locator(".react-flow__edge")).toHaveCount(17);
   const before = await readGraph(page, wfId);
@@ -95,11 +95,11 @@ test("kéo tiêu đề nhóm 200px → cả 12 thẻ dời, lưu, chọn khung k
 
   // Chạy sau khi dời nhóm: chạy được và khung ghi tổng thời lượng 12 clip. (Nhóm của mẫu Sơn La không có Biên kịch nên không có
   // hộp Thay/Giữ để kiểm: việc "dời nhóm không phải sửa tay" kiểm ở test dưới, trên mẫu Ý tưởng → phim.)
-  await page.getByTestId("run-button").click();
+  await runAllConfirmed(page);
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 300_000 });
   await expect(page.getByTestId("node-status-scene-g1-12")).toHaveText("Xong");
   await expect(page.getByTestId("group-title-g1")).toHaveText(/^▢ Phân cảnh · 12 cảnh · [\d,]+ giây$/);
-  await expect(page.getByTestId("group-rule-g1")).toHaveCount(0);
+  await expect(page.getByTestId("group-rule-g1")).toHaveText("✓ Luật đạo diễn đạt");
 });
 
 test("xoá node đang có dây bị gộp (nguồn Nhân vật, đích một cảnh) → dây gốc đi theo, lưu xong không dây nào trỏ tới node không còn", async ({ page }) => {
@@ -152,7 +152,7 @@ test("kéo nhóm không phải là sửa tay: Biên kịch ra bộ cảnh mới 
   }
   await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
 
-  await page.getByTestId("run-button").click();
+  await runAllConfirmed(page);
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 240_000 });
   await expect(page.getByTestId("node-scene-g1-8")).toBeVisible();
   await expect(page.getByTestId("group-title-g1")).toHaveText(/^▢ Phân cảnh · 8 cảnh · [\d,]+ giây$/);
@@ -165,9 +165,9 @@ test("kéo nhóm không phải là sửa tay: Biên kịch ra bộ cảnh mới 
 
   // Đổi ý tưởng rồi chạy lại: nhóm chưa bị sửa tay (chỉ dời chỗ) nên được tạo lại, không dừng hỏi.
   await page.getByTestId("card-writer-1").click();
-  await page.getByTestId("writer-idea-writer-1").fill("Cô gái đi dọc bờ suối tìm củi khô rồi nhóm lửa trước lều.");
+  await page.getByTestId("writer-idea-writer-1").fill(`Cô gái đi dọc bờ suối tìm củi khô rồi nhóm lửa trước lều (nhóm cảnh ${uid()}).`);
   await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
-  await page.getByTestId("run-button").click();
+  await runAllConfirmed(page);
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 240_000 });
   await expect(page.getByTestId("scenes-decision")).toHaveCount(0);
   await expect(page.getByTestId("node-status-scene-g1-8")).toHaveText("Xong");

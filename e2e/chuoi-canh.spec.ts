@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { runAllConfirmed } from "./helpers";
 
 const SCENES = Array.from({ length: 12 }, (_, i) => `scene-g1-${i + 1}`);
 
@@ -28,7 +29,7 @@ test("Luồng 2/4 — mẫu Sinh tồn Sơn La (12 node Cảnh + Ghép phim), ch
   }
   await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
 
-  await page.getByTestId("run-button").click();
+  await runAllConfirmed(page);
   await expect(page.getByTestId("cancel-run")).toBeVisible();
   await page.getByTestId("card-character-1").click();
   await expect(page.getByTestId("gallery-character-1").locator("img")).toHaveCount(4, { timeout: 60_000 });

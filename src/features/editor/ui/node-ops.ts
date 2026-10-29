@@ -42,3 +42,14 @@ export function nextTake(params: Record<string, unknown>): number {
   const take = params.take;
   return (typeof take === "number" && Number.isInteger(take) && take >= 1 ? take : 1) + 1;
 }
+
+// Tham số take trước khi "Chạy lại (bản mới)" tăng nó: có khoá take hay không, và giá trị.
+export type TakeBefore = { had: boolean; value: unknown };
+
+export const takeBefore = (params: Record<string, unknown>): TakeBefore => ({ had: "take" in params, value: params.take });
+
+// Trả take về như cũ (huỷ ở hộp xác nhận): chưa có khoá thì bỏ hẳn khoá, để bản lưu giống hệt trước khi bấm.
+export function restoreTake(params: Record<string, unknown>, before: TakeBefore): Record<string, unknown> {
+  const { take: _bumped, ...rest } = params;
+  return before.had ? { ...rest, take: before.value } : rest;
+}
