@@ -2,13 +2,10 @@ import { describe, expect, it } from "vitest";
 import { ShotSchema, type Shot } from "./director";
 import { expandScenes, groupEdited, keepWriterGroup, SCENE_GRID, snapshotGroup } from "./scenes";
 import { sha256Hex } from "./hash";
-import { WORKFLOW_TEMPLATES } from "./templates";
+import { SON_LA_SHOTS } from "./templates";
 import type { WorkflowGraph } from "./workflow";
 
-const sonLaShots = (): Shot[] => {
-  const graph = WORKFLOW_TEMPLATES.find((t) => t.id === "sinh-ton-son-la")!.graph;
-  return ShotSchema.array().parse(graph.nodes.find((n) => n.type === "shotlist")!.params.shots);
-};
+const sonLaShots = (): Shot[] => ShotSchema.array().parse(SON_LA_SHOTS);
 
 const refsGraph = (): WorkflowGraph => ({
   nodes: [

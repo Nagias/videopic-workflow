@@ -7,6 +7,7 @@ import { fakeTextReply } from "../src/providers/fake/text";
 import { AssetListResponseSchema, LatestRunResponseSchema, RunResponseSchema, WorkflowResponseSchema } from "../src/shared/api";
 import { expandScenes } from "../src/shared/scenes";
 import type { WorkflowGraph } from "../src/shared/workflow";
+import { legacyIdeaGraph, legacySonLaGraph } from "./helpers/legacy";
 import { promptToVideoGraph } from "./helpers/nodes";
 import { createTestServer, type TestServer } from "./helpers/server";
 
@@ -202,28 +203,49 @@ describe("API mẫu workflow", () => {
     await s.cleanup();
   });
 
-  it("tạo từ mẫu Sơn La: 5 node (có Đồ vật), 12 cảnh, có trong danh sách; mẫu lạ trả 404", async () => {
+  it("tạo từ mẫu Sơn La: Nhân vật, Không gian, Đồ vật + 12 Cảnh + Ghép phim, có trong danh sách; mẫu lạ trả 404", async () => {
     const res = await s.app.inject({ method: "POST", url: "/api/workflows/from-template/sinh-ton-son-la", payload: {} });
     expect(res.statusCode).toBe(201);
     const wf = WorkflowResponseSchema.parse(res.json());
-    expect(wf.graph.nodes.map((n) => n.type)).toEqual(["character", "location", "props", "shotlist", "film"]);
-    expect((wf.graph.nodes[3]!.params.shots as unknown[]).length).toBe(12);
+    expect(wf.graph.nodes.map((n) => n.type)).toEqual(["character", "location", "props", ...Array<string>(12).fill("scene"), "film-combine"]);
+    expect(wf.graph.groups.map((g) => g.nodeIds.length)).toEqual([12]);
+    expect(wf.graph.edges.filter((e) => e.targetHandle === "follow")).toHaveLength(2);
     const list = (await s.app.inject({ method: "GET", url: "/api/workflows" })).json<{ workflows: { id: string }[] }>();
     expect(list.workflows.map((w) => w.id)).toContain(wf.id);
     expect((await s.app.inject({ method: "GET", url: `/api/workflows/${wf.id}` })).statusCode).toBe(200);
     expect((await s.app.inject({ method: "POST", url: "/api/workflows/from-template/khong-co", payload: {} })).statusCode).toBe(404);
   });
 
-  it("mọi mẫu đi qua kiểm đồ thị; cảnh Sơn La qua luật đạo diễn với đúng danh sách đồ vật, không cảnh báo", async () => {
-    const { planGraph } = await import("../src/core/executor");
+  it("mọi mẫu đi qua kiểm đồ thị và kiểm luật Ghép phim; cảnh Sơn La qua luật đạo diễn với đúng danh sách đồ vật, không cảnh báo", async () => {
+    const { orderSources, planGraph } = await import("../src/core/executor");
+    const { preflightErrors } = await import("../src/core/preflight");
     const { WORKFLOW_TEMPLATES } = await import("../src/shared/templates");
-    const { checkShotList, ShotSchema } = await import("../src/shared/director");
-    const { rowsToSpec } = await import("../src/nodes/props/definition");
-    for (const t of WORKFLOW_TEMPLATES) expect(() => planGraph(t.graph, s.deps.nodes), t.id).not.toThrow();
-    const sonLa = WORKFLOW_TEMPLATES.find((t) => t.id === "sinh-ton-son-la")!.graph;
-    const items = rowsToSpec(sonLa.nodes.find((n) => n.type === "props")!.params.items as never);
-    const shots = ShotSchema.array().parse(sonLa.nodes.find((n) => n.type === "shotlist")!.params.shots);
-    expect(checkShotList(shots, items.map((i) => ({ name: i.name, states: i.states })))).toEqual({ errors: [], warnings: [] });
+    const { checkShotList } = await import("../src/shared/director");
+    const { scenesFeeding } = await import("../src/nodes/film-combine/definition");
+    const planOf = (raw: WorkflowGraph) => {
+      const graph = WorkflowResponseSchema.shape.graph.parse(raw);
+      const plan = planGraph(graph, s.deps.nodes);
+      const planned = new Map(plan.map((p) => [p.node.id, p]));
+      const order = (p: (typeof plan)[number], port: string) => orderSources(p, port, graph);
+      return { graph, plan, planned, order };
+    };
+    for (const t of WORKFLOW_TEMPLATES) {
+      expect(t.graph.nodes.some((n) => n.type === "film" || n.type === "shotlist"), t.id).toBe(false);
+      const { graph, plan, planned, order } = planOf(t.graph);
+      expect(preflightErrors(plan, planned, graph, order), t.id).toEqual([]);
+    }
+    // Luật đạo diễn trên đúng chuỗi cảnh Ghép phim sẽ ghép, với danh sách đồ vật của node Đồ vật.
+    const { graph, plan, planned, order } = planOf(WORKFLOW_TEMPLATES.find((t) => t.id === "sinh-ton-son-la")!.graph);
+    const combine = plan.find((p) => p.node.type === "film-combine")!;
+    const sources = (nodeId: string, port: string) => {
+      const p = planned.get(nodeId)!;
+      return p.impl.definition.inputs.find((x) => x.name === port)?.multiple ? order(p, port) : [...(p.inputs.get(port) ?? [])];
+    };
+    const fed = scenesFeeding(combine.node.id, { node: combine, graph, planned, sources });
+    expect(fed.shots).toHaveLength(12);
+    expect(fed.known).toHaveLength(6);
+    expect(fed.errors).toEqual([]);
+    expect(checkShotList(fed.shots, fed.known)).toEqual({ errors: [], warnings: [] });
     expect(WORKFLOW_TEMPLATES.map((t) => t.id)).toContain("y-tuong-thanh-phim");
   });
 });
@@ -578,5 +600,154 @@ describe("API nhóm Phân cảnh: Biên kịch sinh cảnh, tự tạo lại, h�
     expect(none.json<{ error: string }>().error).toBe("Biên kịch chưa có kết quả: bấm Chạy trước");
     expect((await s.app.inject({ method: "POST", url: "/api/workflows/khong-co/scenes", payload: { writerId: "writer-1" } })).statusCode).toBe(404);
     expect((await s.app.inject({ method: "POST", url: `/api/workflows/${WF}/scenes`, payload: { choice: "xoa" } })).statusCode).toBe(400);
+  });
+});
+
+describe("API chuyển workflow cũ (Dựng phim → Cảnh + Ghép phim) khi mở, không tốn lượt", () => {
+  const OLD_MESSAGE = "Kết quả cũ từ Dựng phim — bấm Chạy để kiểm lại (0 lượt)";
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await createTestServer();
+  });
+  afterEach(async () => {
+    await s.cleanup();
+  });
+
+  const allCalls = () => ({ video: s.log.video, image: s.log.image, text: s.log.text });
+  const open = async (id: string) => {
+    const res = await s.app.inject({ method: "GET", url: id === "default" ? "/api/workflows/default" : `/api/workflows/${id}` });
+    expect(res.statusCode, res.body).toBe(200);
+    return WorkflowResponseSchema.parse(res.json());
+  };
+  const runOf = async (id: string) => {
+    const start = await s.app.inject({ method: "POST", url: `/api/workflows/${id}/runs`, payload: {} });
+    expect(start.statusCode).toBe(202);
+    while (await s.deps.queue.processNext());
+    return RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${start.json<{ runId: string }>().runId}` })).json());
+  };
+  const latest = async (id: string) => LatestRunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${id}/runs/latest` })).json()).run;
+  const putLegacy = async (id: string, graph: WorkflowGraph, name: string) =>
+    expect((await s.app.inject({ method: "PUT", url: `/api/workflows/${id}`, payload: { graph, name } })).statusCode).toBe(200);
+  const videoId = (v: unknown) => (v && typeof v === "object" && (v as { kind?: string }).kind === "video" ? (v as { mediaId: string }).mediaId : undefined);
+  const runCount = () => s.db.select().from(runs).all().length;
+
+  it("workflow Sơn La cũ chạy xong bằng film; GET → đã chuyển, có bản '-ban-cu'; chạy lại → calls() không tăng, mediaId phim bằng phim cũ", async () => {
+    const legacy = legacySonLaGraph();
+    await putLegacy("son-la", legacy, "Sinh tồn Sơn La");
+    const old = await runOf("son-la");
+    expect(old.status, old.error ?? "").toBe("succeeded");
+    const oldFilm = videoId(old.nodes["film-1"]?.output?.video);
+    expect(oldFilm).toBeTruthy();
+    const board = old.nodes["film-1"]?.output?.storyboard;
+    const boardShots = board?.kind === "storyboard" ? board.shots : [];
+    expect(boardShots).toHaveLength(12);
+    const before = allCalls();
+    const runsBefore = runCount();
+
+    const wf = await open("son-la");
+    expect(wf.name).toBe("Sinh tồn Sơn La");
+    expect(wf.graph.nodes.some((n) => n.type === "film" || n.type === "shotlist")).toBe(false);
+    const sceneIds = wf.graph.groups[0]!.nodeIds;
+    expect(sceneIds).toHaveLength(12);
+    const combineId = wf.graph.nodes.find((n) => n.type === "film-combine")!.id;
+
+    // Bản gốc giữ lại, và không bị chuyển khi mở.
+    const backup = await open("son-la-ban-cu");
+    expect(backup.name).toBe("Sinh tồn Sơn La (bản cũ)");
+    expect(backup.graph).toEqual(WorkflowResponseSchema.shape.graph.parse(legacy));
+
+    // Mở ra thấy ngay ảnh khung và clip cũ (một lần chạy hiển thị), chưa gọi dịch vụ nào.
+    expect(runCount()).toBe(runsBefore + 1);
+    const shown = await latest("son-la");
+    expect(shown?.status).toBe("succeeded");
+    sceneIds.forEach((id, i) => {
+      const st = shown?.nodes[id];
+      expect(st?.status, id).toBe("cached");
+      expect(st?.message).toBe(OLD_MESSAGE);
+      const frame = st?.output?.frame;
+      expect(frame?.kind === "image" ? frame.mediaId : undefined).toBe(boardShots[i]!.keyframeId);
+      const clip = st?.output?.clip;
+      expect(videoId(clip)).toBe(boardShots[i]!.clipId);
+      expect(clip?.kind === "video" ? clip.durationSec : 0).toBeGreaterThan(4);
+      expect(clip?.kind === "video" ? clip.clip : "không phải video").toBeUndefined();
+    });
+    expect(videoId(shown?.nodes[combineId]?.output?.video)).toBe(oldFilm);
+    expect(shown?.nodes["character-1"]?.output).toEqual(old.nodes["character-1"]?.output);
+    expect(shown?.nodes["props-1"]?.output).toEqual(old.nodes["props-1"]?.output);
+    expect(shown?.nodes["film-1"]).toBeUndefined();
+    expect(allCalls()).toEqual(before);
+
+    // Mở lần nữa: không chuyển lại, không ghi gì.
+    expect(await open("son-la")).toEqual(wf);
+    expect(runCount()).toBe(runsBefore + 1);
+    expect(await open("son-la-ban-cu")).toEqual(backup);
+
+    const rerun = await runOf("son-la");
+    expect(rerun.status, rerun.error ?? "").toBe("succeeded");
+    expect(allCalls()).toEqual(before);
+    expect(videoId(rerun.nodes[combineId]?.output?.video)).toBe(oldFilm);
+  });
+
+  it("bản '-ban-cu' vẫn chạy được (cached)", async () => {
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    const old = await runOf("son-la");
+    expect(old.status, old.error ?? "").toBe("succeeded");
+    await open("son-la");
+    const before = allCalls();
+    const backupRun = await runOf("son-la-ban-cu");
+    expect(backupRun.status, backupRun.error ?? "").toBe("succeeded");
+    expect(backupRun.nodes["film-1"]?.status).toBe("cached");
+    expect(videoId(backupRun.nodes["film-1"]?.output?.video)).toBe(videoId(old.nodes["film-1"]?.output?.video));
+    expect(allCalls()).toEqual(before);
+  });
+
+  it("Ý tưởng → phim cũ: cảnh lấy từ Biên kịch của lần ra phim; chạy lại không viết lại, không tạo lại nhóm, 0 lượt", async () => {
+    await putLegacy("y-tuong", legacyIdeaGraph("fake", 4), "Ý tưởng → phim");
+    const old = await runOf("y-tuong");
+    expect(old.status, old.error ?? "").toBe("succeeded");
+    const writerKey = s.db.select().from(runNodes).where(eq(runNodes.runId, old.id)).all().find((r) => r.nodeId === "writer-1")!.cacheKey;
+    const before = allCalls();
+
+    const wf = await open("y-tuong");
+    const group = wf.graph.groups[0]!;
+    expect(group.nodeIds).toHaveLength(4);
+    expect(group.source).toMatchObject({ writerId: "writer-1", resultKey: writerKey });
+    expect(wf.graph.nodes.filter((n) => group.nodeIds.includes(n.id)).every((n) => n.type === "scene")).toBe(true);
+    expect((await latest("y-tuong"))?.nodes["writer-1"]?.output).toEqual(old.nodes["writer-1"]?.output);
+
+    const rerun = await runOf("y-tuong");
+    expect(rerun.status, rerun.error ?? "").toBe("succeeded");
+    expect(allCalls()).toEqual(before);
+    expect(rerun.nodes["writer-1"]?.status).toBe("cached");
+    const combineId = wf.graph.nodes.find((n) => n.type === "film-combine")!.id;
+    expect(videoId(rerun.nodes[combineId]?.output?.video)).toBe(videoId(old.nodes["film-1"]?.output?.video));
+    expect((await open("y-tuong")).graph).toEqual(wf.graph);
+  });
+
+  it("workflow cũ chưa từng chạy: chuyển, có bản cũ, không có lần chạy hiển thị; Biên kịch chưa có kết quả thì nhóm rỗng", async () => {
+    await putLegacy("chua-chay", legacyIdeaGraph(), "Chưa chạy");
+    const wf = await open("chua-chay");
+    expect(wf.graph.nodes.map((n) => n.type)).toEqual(["character", "location", "writer", "props", "film-combine"]);
+    expect(wf.graph.groups[0]?.nodeIds).toEqual([]);
+    expect((await open("chua-chay-ban-cu")).name).toBe("Chưa chạy (bản cũ)");
+    expect(runCount()).toBe(0);
+  });
+
+  it("đã có bản '-ban-cu' thì không ghi đè; đang có lần chạy xếp hàng thì chưa chuyển; workflow không cần chuyển thì mở không ghi gì", async () => {
+    await putLegacy("son-la-ban-cu", promptToVideoGraph("bản cũ của chủ dự án"), "Bản cũ có sẵn");
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    const backupBefore = await open("son-la-ban-cu");
+
+    s.deps.queue.enqueue("son-la", legacySonLaGraph());
+    expect((await open("son-la")).graph.nodes.some((n) => n.type === "film")).toBe(true);
+    while (await s.deps.queue.processNext());
+
+    const wf = await open("son-la");
+    expect(wf.graph.nodes.some((n) => n.type === "film")).toBe(false);
+    expect(await open("son-la-ban-cu")).toEqual(backupBefore);
+    expect(await open("son-la")).toEqual(wf);
+
+    const def = await open("default");
+    expect(await open("default")).toEqual(def);
   });
 });

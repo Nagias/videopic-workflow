@@ -30,6 +30,8 @@ export const definition = defineNode<FilmParams>({
     { name: "storyboard", kind: "storyboard", label: "Storyboard" },
   ],
   cacheVersion: SHOT_CACHE_VERSION,
+  // Thay bằng Cảnh + Ghép phim; workflow cũ tự chuyển khi mở (src/features/workflows/upgrade.ts), bản cũ vẫn chạy được.
+  hidden: true,
   params,
   defaults: { provider: "fake", fixBrightness: true },
 });

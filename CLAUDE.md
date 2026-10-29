@@ -83,7 +83,7 @@ Chi tiết: `docs/ARCHITECTURE.md`. Tóm tắt nơi ghi từng loại dữ liệ
 | Dữ liệu | Ở đâu | Nơi ghi đúng duy nhất |
 |---|---|---|
 | Workflow | `.data/app.db` (SQLite), bảng `workflows` | `src/features/workflows/store.ts` (`saveWorkflowGraph()`), duy nhất |
-| Run, trạng thái node, cache node | `.data/app.db` (SQLite) | `src/core/db/` qua các hàm trong `src/core/queue.ts`, `src/core/executor.ts`, `src/features/*/routes.ts` |
+| Run, trạng thái node, cache node | `.data/app.db` (SQLite) | `src/core/db/` qua các hàm trong `src/core/queue.ts`, `src/core/executor.ts`, `src/features/*/routes.ts`; bảng `workflows` chỉ qua `src/features/workflows/store.ts`; lần chạy hiển thị khi chuyển workflow cũ: `src/features/workflows/upgrade.ts` |
 | File media (clip, ảnh) | `.data/media/YYYY-MM/<id>.<ext>` + bảng `media` | `src/core/storage.ts` (`importFile`) |
 | Cấu hình | biến môi trường | đọc duy nhất ở `src/core/config.ts` |
 | Phiên đăng nhập Muse | `.data/chrome_profiles/muse_vid_0N/` | Chrome (agent không đọc, không sửa) |

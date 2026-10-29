@@ -15,6 +15,8 @@ export const definition = defineNode<ShotListParams>({
   description: "Các cảnh theo thứ tự: cỡ cảnh, góc máy, chuyển động, hành động, cắt hay nối với cảnh trước.",
   inputs: [],
   outputs: [{ name: "shots", kind: "shotlist", label: "Cảnh" }],
+  // Thay bằng nhóm node Cảnh; workflow cũ tự chuyển khi mở (src/features/workflows/upgrade.ts).
+  hidden: true,
   params,
   defaults: { shots: [] },
 });
