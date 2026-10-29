@@ -22,6 +22,9 @@ export type WorkflowListResponse = z.infer<typeof WorkflowListResponseSchema>;
 export const SaveWorkflowBodySchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   graph: WorkflowGraphSchema,
+  // updatedAt của bản giao diện đã tải hoặc lưu gần nhất. Máy chủ đang giữ bản khác (vd Biên kịch vừa tạo lại thẻ cảnh)
+  // thì từ chối 409 kèm bản mới (SaveConflictSchema) thay vì đè. Không gửi thì lưu như cũ.
+  baseUpdatedAt: z.number().int().optional(),
 });
 // Thân gửi lên (kiểu đầu vào của schema): `graph.groups` được bỏ, máy chủ hiểu là không có nhóm.
 export type SaveWorkflowBody = z.input<typeof SaveWorkflowBodySchema>;
@@ -57,6 +60,8 @@ export const EstimateResponseSchema = z.object({
   total: CallsSchema,
   museTotal: CallsSchema,
   waitsOnWriter: z.boolean(),
+  // Cảnh báo luật đạo diễn (không chặn chạy), mỗi cảnh báo gắn mã node cảnh liên quan.
+  warnings: z.array(z.object({ nodeId: z.string(), message: z.string() })),
 });
 export type EstimateResponse = z.infer<typeof EstimateResponseSchema>;
 export type EstimateNode = EstimateResponse["nodes"][number];
@@ -119,5 +124,7 @@ export const AssetListResponseSchema = z.object({ assets: z.array(AssetSummarySc
 export type AssetListResponse = z.infer<typeof AssetListResponseSchema>;
 
 export const ApiErrorSchema = z.object({ error: z.string() });
+// Thân 409 của PUT /api/workflows/:id: bản đang lưu trên máy chủ.
+export const SaveConflictSchema = z.object({ error: z.string(), workflow: WorkflowResponseSchema });
 
 export const mediaUrl = (mediaId: string) => `/api/media/${encodeURIComponent(mediaId)}`;

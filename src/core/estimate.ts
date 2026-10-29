@@ -11,6 +11,7 @@ import {
   computeKeys,
   gatherInputs,
   mediaStillValid,
+  orderSources,
   outputsStillValid,
   planGraph,
   scopeNodes,
@@ -21,6 +22,7 @@ import {
 } from "./executor";
 import { labelOf } from "./node-label";
 import type { ServerNode } from "./node-runtime";
+import { nodeWarnings } from "./preflight";
 import type { Storage } from "./storage";
 
 export type EstimateDeps = { db: Db; storage: Storage; nodes: Record<string, ServerNode> };
@@ -139,5 +141,13 @@ export function estimateRun(deps: EstimateDeps, graph: WorkflowGraph, scope: Run
   const total = nodes.reduce((sum, n) => add(sum, n.calls), ZERO);
   const museTotal = nodes.filter((n) => n.provider === "muse").reduce((sum, n) => add(sum, n.calls), ZERO);
   const waitsOnWriter = [...writing].some((id) => writerGroups(current, id).length > 0) || fromWriter.size > 0;
-  return { nodes, total, museTotal, waitsOnWriter };
+  // Cảnh báo luật đạo diễn (không chặn chạy) trên đồ thị sau khi nhóm cảnh được tạo lại, của các node trong phạm vi.
+  const planned = new Map(order.map((p) => [p.node.id, p]));
+  const warnings = nodeWarnings(
+    order.filter((p) => inScope.has(p.node.id)),
+    planned,
+    current,
+    (p, port) => orderSources(p, port, current),
+  );
+  return { nodes, total, museTotal, waitsOnWriter, warnings };
 }

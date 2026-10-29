@@ -3,7 +3,7 @@ import { fakeTextReply } from "../providers/fake/text";
 import { EstimateResponseSchema, RunResponseSchema, WorkflowResponseSchema, type EstimateResponse } from "../shared/api";
 import type { RunScope } from "../shared/api";
 import { WRITER_MAX_TRIES } from "../nodes/writer/definition";
-import { expandScenes } from "../shared/scenes";
+import { expandScenes, snapshotGroup } from "../shared/scenes";
 import { WORKFLOW_TEMPLATES } from "../shared/templates";
 import type { WorkflowGraph } from "../shared/workflow";
 import { legacySonLaGraph } from "../../tests/helpers/legacy";
@@ -77,6 +77,25 @@ describe("ước tính lượt trước khi chạy (POST /api/workflows/:id/esti
     expect(fake.museTotal).toEqual(ZERO);
     expect(fake.total).toEqual({ image: 24, video: 12, text: 0 });
     expect(await run()).toEqual(fake.total);
+  });
+
+  it("ước tính Sơn La: warnings rỗng; hai cảnh liền nhau cùng góc/cỡ → warnings có cảnh báo 30° gắn mã cảnh sau", async () => {
+    await save(sonLa("fake"));
+    expect((await estimate()).warnings).toEqual([]);
+
+    const graph = (await open()).graph;
+    const ids = sceneIds(graph);
+    const first = graph.nodes.find((n) => n.id === ids[0])!.params;
+    let same: WorkflowGraph = graph;
+    for (const key of ["size", "angle", "subject"]) same = setParam(same, ids[1]!, key, first[key]);
+    await save(same);
+    const { warnings } = await estimate();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.nodeId).toBe(ids[1]);
+    expect(warnings[0]!.message).toMatch(/luật 30°/);
+    expect(warnings[0]!.message).toContain(`Cảnh "${ids[1]}" (clip 2)`);
+    // Cảnh báo không chặn: vẫn chạy được.
+    expect(await run()).toEqual({ image: 24, video: 12, text: 0 });
   });
 
   it("chạy xong rồi ước tính: total 0, mọi node cached", async () => {
@@ -266,6 +285,23 @@ describe("ước tính lượt trước khi chạy (POST /api/workflows/:id/esti
       expect(e.total).toEqual({ image: 0, video: 1, text: 0 });
       expect(e.museTotal).toEqual(ZERO);
       expect(await run()).toEqual(e.total);
+    });
+
+    it("ước tính khi rebuildWriterGroup ném lỗi → 400 có lời báo", async () => {
+      await save(ideaGraph(IDEA_A));
+      await run();
+      const graph = (await open()).graph;
+      await save(setParam(graph, "writer-1", "idea", IDEA_B));
+      await run({ mode: "node", nodeId: "writer-1" });
+      // Nhóm chỉ ghi 2 cảnh đầu (ảnh chụp khớp, coi như chưa sửa tay) trong khi đồ thị còn đủ 4 cảnh: tạo lại nhóm sẽ đụng mã cảnh còn lại.
+      const group = graph.groups[0]!;
+      const shortGroup = { ...group, nodeIds: group.nodeIds.slice(0, 2) };
+      const snapshot = snapshotGroup({ ...graph, groups: [shortGroup] }, group.id);
+      const cut: WorkflowGraph = { ...graph, groups: [{ ...shortGroup, source: { ...group.source!, snapshot } }] };
+      await save(setParam(cut, "writer-1", "idea", IDEA_B));
+      const res = await s.app.inject({ method: "POST", url: `/api/workflows/${wf}/estimate`, payload: {} });
+      expect(res.statusCode, res.body).toBe(400);
+      expect(res.json<{ error: string }>().error).toMatch(/^Không ước tính được: .*đã có trong workflow/);
     });
 
     it("Biên kịch dùng lại kết quả cũ khác nhóm đang giữ: ước tính theo bộ cảnh Biên kịch sẽ tạo lại (mọi cảnh cached)", async () => {

@@ -8,6 +8,7 @@ import {
   LatestRunResponseSchema,
   MuseAccountsResponseSchema,
   RunResponseSchema,
+  SaveConflictSchema,
   StartRunResponseSchema,
   WorkflowListResponseSchema,
   WorkflowResponseSchema,
@@ -15,14 +16,38 @@ import {
   type RunRequestBody,
   type RunScope,
   type SaveWorkflowBody,
+  type WorkflowResponse,
 } from "../shared/api";
+
+// Máy chủ từ chối: lời báo tiếng Việt của máy chủ (hoặc mã lỗi), kèm mã trạng thái và thân trả về.
+class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly data: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+// Lưu workflow bị từ chối vì máy chủ đang giữ bản mới hơn (409): kèm bản đó để giao diện hiện lại.
+export class WorkflowConflictError extends Error {
+  constructor(
+    message: string,
+    readonly workflow: WorkflowResponse,
+  ) {
+    super(message);
+    this.name = "WorkflowConflictError";
+  }
+}
 
 async function call<S extends z.ZodType>(schema: S, url: string, init?: RequestInit): Promise<z.infer<S>> {
   const res = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     const err = ApiErrorSchema.safeParse(body);
-    throw new Error(err.success ? err.data.error : `Máy chủ trả lỗi ${res.status}`);
+    throw new ApiError(err.success ? err.data.error : `Máy chủ trả lỗi ${res.status}`, res.status, body);
   }
   return schema.parse(body);
 }
@@ -35,8 +60,16 @@ export const api = {
   listWorkflows: () => call(WorkflowListResponseSchema, "/api/workflows"),
   createFromTemplate: (templateId: string) =>
     call(WorkflowResponseSchema, `/api/workflows/from-template/${encodeURIComponent(templateId)}`, { method: "POST", body: "{}" }),
-  saveWorkflow: (id: string, body: SaveWorkflowBody) =>
-    call(WorkflowResponseSchema, `/api/workflows/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }),
+  // body.baseUpdatedAt = updatedAt của bản đã tải/lưu gần nhất; máy chủ giữ bản khác thì ném WorkflowConflictError (không ghi gì).
+  saveWorkflow: async (id: string, body: SaveWorkflowBody): Promise<WorkflowResponse> => {
+    try {
+      return await call(WorkflowResponseSchema, `/api/workflows/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) });
+    } catch (e) {
+      const conflict = e instanceof ApiError && e.status === 409 ? SaveConflictSchema.safeParse(e.data) : undefined;
+      if (conflict?.success) throw new WorkflowConflictError(conflict.data.error, conflict.data.workflow);
+      throw e;
+    }
+  },
   // Không truyền scope: chạy cả workflow.
   startRun: (workflowId: string, scope?: RunScope) =>
     call(StartRunResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/runs`, { method: "POST", body: JSON.stringify(runBody(scope)) }),

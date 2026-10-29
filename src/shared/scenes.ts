@@ -40,7 +40,8 @@ export function groupCombineId(graph: WorkflowGraph, groupId: string): string | 
 }
 
 // Ảnh chụp nhóm: tham số từng cảnh theo thứ tự nhóm (không có toạ độ) và các dây chạm vào cảnh trong nhóm (không có mã dây).
-// Kéo node, đổi thứ tự node/dây trong mảng hay vẽ lại một dây y hệt đều không đổi ảnh chụp; sửa chữ, dây, thêm/xoá cảnh thì đổi.
+// Kéo node, đổi thứ tự node/dây trong mảng hay vẽ lại một dây y hệt đều không đổi ảnh chụp; sửa chữ, dây, thêm/xoá cảnh,
+// đổi thứ tự clip trong Ghép phim thì đổi.
 export function snapshotGroup(graph: WorkflowGraph, groupId: string): string {
   const group = groupOf(graph, groupId);
   if (!group) throw new Error(`Không có nhóm "${groupId}" trong workflow`);
@@ -55,7 +56,14 @@ export function snapshotGroup(graph: WorkflowGraph, groupId: string): string {
     .filter((e) => members.has(e.source) || members.has(e.target))
     .map((e) => `${e.source}.${e.sourceHandle}>${e.target}.${e.targetHandle}`)
     .sort();
-  return sha256Hex(stableStringify({ nodes, edges }));
+  // Thứ tự clip trong Ghép phim cũng là nội dung phim: đổi thứ tự là sửa tay nhóm. Chỉ tính khi thứ tự các cảnh của nhóm trong
+  // `order` khác thứ tự lúc tạo (group.nodeIds); còn đúng như lúc tạo thì không ghi vào ảnh chụp, nên ảnh chụp của nhóm
+  // tạo trước khi có quy tắc này (không có thứ tự) vẫn khớp, nhóm chưa sửa không thành "đã sửa".
+  const combine = byId.get(groupCombineId(graph, groupId) ?? "");
+  const rawOrder = Array.isArray(combine?.params.order) ? (combine.params.order as unknown[]) : undefined;
+  const order = rawOrder?.filter((id): id is string => typeof id === "string" && members.has(id));
+  const reordered = order !== undefined && (order.length !== group.nodeIds.length || order.some((id, i) => id !== group.nodeIds[i]));
+  return sha256Hex(stableStringify({ nodes, edges, ...(reordered ? { order } : {}) }));
 }
 
 // Nhóm sinh từ Biên kịch đã bị sửa tay kể từ lần tạo. Nhóm tạo tay (không có source) thì không bao giờ.

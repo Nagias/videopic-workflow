@@ -58,6 +58,37 @@ describe("API luồng 1: lưu → chạy → xem clip", () => {
     expect(res.json<{ error: string }>().error).toMatch(/Workflow không hợp lệ/);
   });
 
+  it("PUT với baseUpdatedAt cũ → 409 kèm workflow mới; đúng baseUpdatedAt → 200", async () => {
+    await s.app.inject({ method: "GET", url: "/api/workflows/default" });
+    const put = (graph: WorkflowGraph, baseUpdatedAt?: number) =>
+      s.app.inject({ method: "PUT", url: "/api/workflows/default", payload: { graph, ...(baseUpdatedAt === undefined ? {} : { baseUpdatedAt }) } });
+    const edit = (text: string) => promptToVideoGraph(text);
+
+    // Thiếu baseUpdatedAt: chạy như cũ.
+    expect((await put(edit("Rừng một"))).statusCode).toBe(200);
+    // Đúng baseUpdatedAt của bản đang lưu → 200 và updatedAt mới.
+    const current = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/workflows/default" })).json());
+    const ok = await put(edit("Rừng hai"), current.updatedAt);
+    expect(ok.statusCode, ok.body).toBe(200);
+    const saved = WorkflowResponseSchema.parse(ok.json());
+    expect(saved.updatedAt).toBeGreaterThanOrEqual(current.updatedAt);
+
+    // Một nơi khác ghi xen vào (vd Biên kịch tạo lại nhóm) làm updatedAt đổi: bản cũ bị từ chối và không ghi gì. (Ép lệch 5 giây để khỏi trùng mili giây.)
+    s.db.update(workflows).set({ updatedAt: saved.updatedAt + 5000 }).where(eq(workflows.id, "default")).run();
+    const stale = await put(edit("Bản cũ đè"), saved.updatedAt);
+    expect(stale.statusCode).toBe(409);
+    const body = stale.json<{ error: string; workflow: unknown }>();
+    expect(body.error).toMatch(/vừa được cập nhật ở nơi khác/);
+    const server = WorkflowResponseSchema.parse(body.workflow);
+    expect(server.updatedAt).toBe(saved.updatedAt + 5000);
+    expect(server.graph.nodes.find((n) => n.id === "p1")?.params.text).toBe("Rừng hai");
+    const after = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/workflows/default" })).json());
+    expect(after.graph.nodes.find((n) => n.id === "p1")?.params.text).toBe("Rừng hai");
+
+    // Lưu lại với updatedAt mới tải về thì được.
+    expect((await put(edit("Rừng ba"), server.updatedAt)).statusCode).toBe(200);
+  });
+
   it("workflow có prompt trống: run thất bại, báo lỗi ở node, không gọi dịch vụ", async () => {
     const graph = promptToVideoGraph("");
     await s.app.inject({ method: "PUT", url: "/api/workflows/default", payload: { graph } });

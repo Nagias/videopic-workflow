@@ -2,7 +2,6 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppDeps } from "../../core/app-deps";
 import { estimateRun } from "../../core/estimate";
-import { GraphError } from "../../core/executor";
 import { runNodes, runs, workflows } from "../../core/db/schema";
 import { ExpandScenesBodySchema, RunRequestBodySchema, SaveWorkflowBodySchema, type RunScope, type WorkflowListResponse } from "../../shared/api";
 import { NodeOutputsSchema } from "../../shared/ports";
@@ -73,6 +72,13 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: AppDeps): voi
   app.put<{ Params: { id: string } }>("/api/workflows/:id", async (req, reply) => {
     const body = SaveWorkflowBodySchema.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: `Workflow không hợp lệ: ${body.error.issues[0]?.message ?? ""}` });
+    // Giao diện gửi kèm updatedAt của bản nó đang giữ: máy chủ đã ghi bản khác từ đó (Biên kịch tạo lại thẻ cảnh, chuyển workflow
+    // cũ) thì không đè, trả bản mới để giao diện hiện lại. Kiểm và ghi liền nhau, không có await xen giữa.
+    const { baseUpdatedAt } = body.data;
+    const current = baseUpdatedAt === undefined ? undefined : get(req.params.id);
+    if (current && baseUpdatedAt !== current.updatedAt) {
+      return reply.code(409).send({ error: "Workflow vừa được cập nhật ở nơi khác (vd Biên kịch tạo lại thẻ cảnh) — đã tải bản mới", workflow: toWorkflowResponse(current) });
+    }
     return toWorkflowResponse(saveWorkflowGraph(deps.db, req.params.id, body.data.graph, body.data.name));
   });
 
@@ -128,8 +134,9 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: AppDeps): voi
     try {
       return estimateRun(deps, r.graph, r.scope);
     } catch (err) {
-      if (err instanceof GraphError) return reply.code(400).send({ error: `Không ước tính được: ${err.message}` });
-      throw err;
+      // Lỗi lập kế hoạch (GraphError) và lỗi dựng lại nhóm cảnh (rebuildWriterGroup) đều là đồ thị không dùng được: báo 400, không để rơi thành 500.
+      app.log.warn(err, "ước tính thất bại");
+      return reply.code(400).send({ error: `Không ước tính được: ${err instanceof Error ? err.message : String(err)}` });
     }
   });
 }

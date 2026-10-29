@@ -33,6 +33,8 @@ export type NodeDefinition<P> = {
   // Có lỗi thì cả lần chạy dừng (src/core/preflight.ts). Lỗi là chuỗi (gắn vào chính node này) hoặc {nodeId, message}
   // khi lỗi thuộc về node khác (vd Ghép phim báo lỗi ở đúng thẻ Cảnh) để lỗi hiện ở thẻ đó.
   preflight?(ctx: PreflightCtx): PreflightIssue[];
+  // Cảnh báo luật (không chặn chạy) trên cùng đầu vào với preflight(); chỉ ước tính (src/core/estimate.ts) đọc để hiện cho người dùng.
+  warnings?(ctx: PreflightCtx): PreflightIssue[];
 };
 
 export type PreflightIssue = string | { nodeId: string; message: string };

@@ -1,6 +1,6 @@
 import { useEdgesState, useNodesState, type Edge } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../../../app/api-client";
+import { api, WorkflowConflictError } from "../../../app/api-client";
 import type { LatestRunResponse, WorkflowListResponse, WorkflowResponse } from "../../../shared/api";
 import type { WorkflowGroup } from "../../../shared/workflow";
 import { fromFlow, toFlow } from "./graph-convert";
@@ -9,6 +9,8 @@ import type { FlowNode } from "./GraphNode";
 const SAVE_DELAY_MS = 600;
 // Sau lần chạy, người dùng vẫn đang sửa trong lúc tải đồ thị: lưu rồi tải lại, tối đa ngần này lần.
 const SYNC_TRIES = 5;
+
+const noop = () => undefined;
 
 export const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -31,6 +33,11 @@ export function useWorkflow() {
   // Đồ thị (dạng JSON như gửi lên) lần cuối tải về hoặc lưu xong. Canvas đổi mà đồ thị không đổi (đo kích thước node khi
   // ảnh hiện ra, chọn node) thì không lưu: tránh gửi bản cũ đè nhóm thẻ cảnh máy chủ vừa tạo lại trong lúc chạy.
   const savedGraph = useRef("");
+  // updatedAt của bản máy chủ lần cuối tải về hoặc lưu xong, gửi kèm mỗi lần lưu (baseUpdatedAt): máy chủ đã ghi bản khác từ đó
+  // (Biên kịch tạo lại thẻ cảnh) thì từ chối thay vì đè.
+  const baseUpdatedAt = useRef<number | undefined>(undefined);
+  // Tăng mỗi khi canvas bị thay bằng đồ thị máy chủ: lần lưu xếp hàng từ trước đó không được gửi canvas cũ lên nữa.
+  const graphVersion = useRef(0);
   const latest = useRef({ nodes, edges });
   latest.current = { nodes, edges };
   // Nhóm (Phân cảnh) của workflow đang mở: canvas chưa sửa nhóm, nhưng lưu phải giữ nguyên để Biên kịch còn tạo lại được.
@@ -42,6 +49,8 @@ export function useWorkflow() {
   const applyGraph = useCallback(
     (wf: WorkflowResponse) => {
       loaded.current = false;
+      baseUpdatedAt.current = wf.updatedAt;
+      graphVersion.current++;
       const flow = toFlow(wf.graph);
       groups.current = wf.graph.groups;
       savedGraph.current = JSON.stringify(fromFlow(flow.nodes, flow.edges, wf.graph.groups));
@@ -75,29 +84,52 @@ export function useWorkflow() {
       .catch((e: unknown) => setProblem(`Không tải được workflow: ${errText(e)}`));
   }, [showWorkflow]);
 
-  const save = useCallback(async () => {
-    if (!workflowId) return;
+  // Các lần lưu nối đuôi nhau (lần sau chờ lần trước xong để lấy updatedAt mới làm nền). Máy chủ đã giữ bản khác (409):
+  // hiện đồ thị máy chủ thay canvas, báo lên thanh báo, rồi ném lỗi để chỗ gọi (chạy, đổi workflow) dừng lại.
+  const save = useCallback((): Promise<void> => {
+    if (!workflowId) return Promise.resolve();
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = null;
     setSaveState("saving");
-    const graph = fromFlow(latest.current.nodes, latest.current.edges, groups.current);
-    const pending = api.saveWorkflow(workflowId, { graph });
-    saving.current = pending;
-    // Ghi nhận ngay lúc gửi: sửa rồi sửa ngược về đúng bản đang gửi trong lúc chờ thì không cần lưu thêm lần nữa.
-    const before = savedGraph.current;
-    const sent = JSON.stringify(graph);
-    savedGraph.current = sent;
-    try {
-      await pending;
-      setSaveState("saved");
-    } catch (e) {
-      if (savedGraph.current === sent) savedGraph.current = before;
-      setSaveState("error");
-      throw e;
-    } finally {
-      if (saving.current === pending) saving.current = null;
-    }
-  }, [workflowId]);
+    const previous = saving.current;
+    const version = graphVersion.current;
+    const job = async () => {
+      // Lỗi của lần lưu trước đã báo ở chỗ gọi nó; lần này chỉ cần biết nó đã xong.
+      if (previous) await previous.then(noop, noop);
+      if (graphVersion.current !== version) {
+        // Canvas đã bị thay bằng đồ thị máy chủ: không gửi bản canvas cũ lên, và báo để chỗ gọi (chạy, đổi workflow) dừng lại.
+        setSaveState("idle");
+        throw new Error("Đồ thị trên màn hình vừa được thay bằng bản mới từ máy chủ — hãy xem lại rồi thử lại");
+      }
+      const graph = fromFlow(latest.current.nodes, latest.current.edges, groups.current);
+      // Ghi nhận ngay lúc gửi: sửa rồi sửa ngược về đúng bản đang gửi trong lúc chờ thì không cần lưu thêm lần nữa.
+      const before = savedGraph.current;
+      const sent = JSON.stringify(graph);
+      savedGraph.current = sent;
+      try {
+        const saved = await api.saveWorkflow(workflowId, { graph, ...(baseUpdatedAt.current === undefined ? {} : { baseUpdatedAt: baseUpdatedAt.current }) });
+        if (baseUpdatedAt.current === undefined || saved.updatedAt >= baseUpdatedAt.current) baseUpdatedAt.current = saved.updatedAt;
+        setSaveState("saved");
+      } catch (e) {
+        if (e instanceof WorkflowConflictError) {
+          if (saveTimer.current) clearTimeout(saveTimer.current);
+          saveTimer.current = null;
+          applyGraph(e.workflow);
+          setProblem(e.message);
+          setSaveState("idle");
+          throw e;
+        }
+        if (savedGraph.current === sent) savedGraph.current = before;
+        setSaveState("error");
+        throw e;
+      }
+    };
+    const run: Promise<void> = job().finally(() => {
+      if (saving.current === run) saving.current = null;
+    });
+    saving.current = run;
+    return run;
+  }, [workflowId, applyGraph]);
 
   // Lưu ngay sửa đổi đang chờ (hoặc chờ lần lưu đang gửi) trước khi lấy đồ thị từ máy chủ.
   const flushEdits = useCallback(async () => {
@@ -129,7 +161,10 @@ export function useWorkflow() {
     if (!saveTimer.current && JSON.stringify(fromFlow(nodes, edges, groups.current)) === savedGraph.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      save().catch((e: unknown) => setProblem(`Không lưu được: ${errText(e)}`));
+      save().catch((e: unknown) => {
+        // Bản máy chủ mới hơn: save() đã hiện đồ thị mới và báo lên thanh báo rồi.
+        if (!(e instanceof WorkflowConflictError)) setProblem(`Không lưu được: ${errText(e)}`);
+      });
     }, SAVE_DELAY_MS);
   }, [nodes, edges, workflowId, save]);
 
