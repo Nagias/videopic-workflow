@@ -6,6 +6,8 @@ import { PROVIDER_IDS } from "../../shared/providers";
 export const SHOT_SECONDS = 5;
 export const CHAIN_TRIM_SEC = 2 / 24;
 export const LAST_FRAME_FROM_END_SEC = 0.2;
+// Phiên bản các prompt tạo cảnh: Dựng phim và Cảnh dùng chung (cùng bước con trong shot-steps.ts).
+export const SHOT_CACHE_VERSION = codeVersion(keyframePrompt, motionPrompt, textVideoPrompt);
 
 export const params = z.object({
   provider: z.enum(PROVIDER_IDS, { error: "Chưa chọn dịch vụ" }),
@@ -27,7 +29,7 @@ export const definition = defineNode<FilmParams>({
     { name: "video", kind: "video", label: "Phim" },
     { name: "storyboard", kind: "storyboard", label: "Storyboard" },
   ],
-  cacheVersion: codeVersion(keyframePrompt, motionPrompt, textVideoPrompt),
+  cacheVersion: SHOT_CACHE_VERSION,
   params,
   defaults: { provider: "fake", fixBrightness: true },
 });

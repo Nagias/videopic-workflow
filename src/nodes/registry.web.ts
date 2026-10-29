@@ -13,6 +13,8 @@ import { definition as promptDefinition } from "./prompt/definition";
 import { PromptView } from "./prompt/view";
 import { definition as propsDefinition } from "./props/definition";
 import { PropsView } from "./props/view";
+import { definition as sceneDefinition } from "./scene/definition";
+import { SceneView } from "./scene/view";
 import { definition as shotlistDefinition } from "./shotlist/definition";
 import { ShotListView } from "./shotlist/view";
 import { definition as writerDefinition } from "./writer/definition";
@@ -25,6 +27,7 @@ export const webNodes: Record<string, WebNode> = {
   [locationDefinition.type]: webNode(locationDefinition, LocationView),
   [promptDefinition.type]: webNode(promptDefinition, PromptView),
   [propsDefinition.type]: webNode(propsDefinition, PropsView),
+  [sceneDefinition.type]: webNode(sceneDefinition, SceneView),
   [shotlistDefinition.type]: webNode(shotlistDefinition, ShotListView),
   [writerDefinition.type]: webNode(writerDefinition, WriterView),
 };

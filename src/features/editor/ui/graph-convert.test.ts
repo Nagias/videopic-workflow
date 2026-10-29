@@ -22,9 +22,14 @@ describe("nối dây giữa các node", () => {
   });
 
   it("đầu ra chưa node nào nhận thì nói thẳng là chưa có", () => {
+    const why = connectionProblem({ source: "f", sourceHandle: "storyboard", target: "v", targetHandle: "prompt" }, nodes);
+    expect(why).toContain("Hiện chưa có node nào nhận Storyboard");
+    expect(acceptersOf("storyboard")).toEqual([]);
+  });
+
+  it("video cắm được vào cổng Nối tiếp của Cảnh", () => {
     const why = connectionProblem({ source: "v", sourceHandle: "video", target: "f", targetHandle: "shots" }, nodes);
-    expect(why).toContain("Hiện chưa có node nào nhận Video");
-    expect(acceptersOf("video")).toEqual([]);
+    expect(why).toContain("Video cắm được vào: Cảnh (Nối tiếp)");
   });
 
   it("thả dây: tự đổi chiều khi kéo từ cổng vào; hai cổng cùng phía hoặc cùng node thì báo cách kéo", () => {

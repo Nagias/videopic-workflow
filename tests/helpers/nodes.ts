@@ -48,6 +48,8 @@ export type CallLog = {
   firstFrames: (string | undefined)[];
   imagePrompts: string[];
   imageSessions: string[];
+  // Đường dẫn chat của mỗi lần tạo ảnh (undefined khi tạo trong chat mới).
+  imageThreads: (string | undefined)[];
   imageRefs: { mediaId: string; role: string }[][];
   text: number;
   textPrompts: string[];
@@ -60,7 +62,7 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
   log: CallLog;
 } {
   const fake = createFakeProvider();
-  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [], imageRefs: [], text: 0, textPrompts: [], textSessions: [] };
+  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [], imageThreads: [], imageRefs: [], text: 0, textPrompts: [], textSessions: [] };
   const counted: MediaProvider = {
     id: "fake",
     maxParallel: () => 2,
@@ -83,6 +85,7 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
       log.image++;
       log.imagePrompts.push(req.prompt);
       log.imageSessions.push(req.session === undefined ? "none" : req.session === "new" ? "new" : "continue");
+      log.imageThreads.push(typeof req.session === "object" ? req.session.threadUrl : undefined);
       log.imageRefs.push(req.references.map((r) => ({ mediaId: r.mediaId, role: r.role })));
       if (opts.failImageWhen?.(req.prompt)) return Promise.reject(new Error("Lỗi ảnh giả lập"));
       return fake.generateImage(req, ctx);
