@@ -3,7 +3,8 @@ import { api } from "../../../app/api-client";
 import { webNodes } from "../../../nodes/registry.web";
 import type { MuseAccountsResponse } from "../../../shared/api";
 import { WORKFLOW_TEMPLATES } from "../../../shared/templates";
-import { RUN_LABEL, type RunApi } from "./use-run";
+import { RUN_LABEL } from "./run-view";
+import type { RunApi } from "./use-run";
 import type { WorkflowApi } from "./use-workflow";
 
 type Props = {

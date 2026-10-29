@@ -2,18 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../app/api-client";
 import type { ExpandScenesBody, RunNodeState, RunResponse, RunScope } from "../../../shared/api";
 import { writersFinished } from "./run-sync";
+import { isActive, runView } from "./run-view";
 import { errText, type WorkflowApi } from "./use-workflow";
 
 const POLL_MS = 1000;
-
-const isActive = (r: RunResponse | null) => r !== null && (r.status === "queued" || r.status === "running");
-
-export const RUN_LABEL: Record<RunResponse["status"], string> = {
-  queued: "Đang xếp hàng…",
-  running: "Đang chạy…",
-  succeeded: "Chạy xong",
-  failed: "Lỗi",
-};
 
 const NO_STATES: Record<string, RunNodeState> = {};
 
@@ -184,19 +176,7 @@ export function useRun(wf: WorkflowApi) {
     );
   };
 
-  const fromHistory = runFromHistory && !active;
-  // Hộp hỏi chỉ cho lần chạy xem trực tiếp trong phiên này: lần chạy cũ tải lại có thể đã được trả lời.
-  const pendingDecision = run?.decision?.kind === "scenes-edited" && !fromHistory ? run.decision : null;
-  const runLabel = run ? (fromHistory ? `Lần trước: ${RUN_LABEL[run.status]}` : RUN_LABEL[run.status]) : "";
-  // Lần chạy cũ dừng để hỏi Thay/Giữ: hộp hỏi chỉ hiện cho lần chạy xem trong phiên (lần cũ có thể đã được trả lời),
-  // nên chỉ dặn bấm Chạy — Biên kịch vẫn ra bộ cảnh khác thì lần chạy mới sẽ hỏi lại.
-  const runError = !run?.error
-    ? null
-    : fromHistory && run.decision?.kind === "scenes-edited"
-      ? "Lần chạy trước dừng vì Biên kịch ra bộ cảnh mới mà thẻ cảnh đã được sửa tay. Bấm ▶ Chạy để chọn Thay hoặc Giữ."
-      : fromHistory
-        ? `Lần chạy trước lỗi: ${run.error}`
-        : run.error;
+  const { fromHistory, pendingDecision, runLabel, runError } = runView(run, runFromHistory);
 
   return {
     run,
