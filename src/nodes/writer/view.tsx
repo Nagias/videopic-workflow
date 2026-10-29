@@ -1,11 +1,13 @@
 import { SHOT_SIZES, SUBJECTS } from "../../shared/director";
-import type { NodeViewProps } from "../../features/editor/ui/node-kit";
+import { useEditor, type NodeViewProps } from "../../features/editor/ui/node-kit";
 import { ProviderSelect } from "../../features/editor/ui/widgets";
 import type { WriterParams } from "./definition";
 
 export function WriterView({ id, params, setParams, state }: NodeViewProps<WriterParams>) {
+  const editor = useEditor();
   const shots = state?.output?.shots;
   const props = state?.output?.props;
+  const hasResult = shots?.kind === "shotlist";
   return (
     <div className="stack nowheel">
       <label className="field">
@@ -47,6 +49,17 @@ export function WriterView({ id, params, setParams, state }: NodeViewProps<Write
       ) : (
         <div className="preview empty small">Chưa có kịch bản</div>
       )}
+      <button
+        type="button"
+        className="nodrag"
+        data-testid={`writer-expand-${id}`}
+        disabled={!hasResult || editor.busy}
+        title={hasResult ? "Thay các thẻ cảnh của Biên kịch này bằng kịch bản mới nhất (bỏ phần sửa tay)" : undefined}
+        onClick={() => editor.expandScenes(id)}
+      >
+        Tạo thẻ cảnh
+      </button>
+      {!hasResult && <p className="hint">Bấm ▶ Chạy để Biên kịch viết kịch bản trước, rồi mới tạo thẻ cảnh.</p>}
     </div>
   );
 }
