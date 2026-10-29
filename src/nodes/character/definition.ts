@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { defineNode } from "../../shared/node-definition";
-import { CHARACTER_SHEET, codeVersion } from "../../shared/prompts";
+import { CHARACTER_SHEET, codeVersion, DEFAULT_LOOK } from "../../shared/prompts";
 import { PROVIDER_IDS } from "../../shared/providers";
 
 export const params = z.object({
@@ -20,4 +20,6 @@ export const definition = defineNode<CharacterParams>({
   cacheVersion: codeVersion(CHARACTER_SHEET),
   params,
   defaults: { name: "", description: "", provider: "fake" },
+  // 1 ảnh mỗi góc của bộ ảnh mẫu (mặt cận, toàn thân chính diện, nghiêng, sau lưng: 4).
+  estimate: (p) => ({ image: CHARACTER_SHEET(p.description, DEFAULT_LOOK).length, video: 0, text: 0 }),
 });

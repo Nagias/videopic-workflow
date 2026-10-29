@@ -1,22 +1,56 @@
 import { expect, test } from "@playwright/test";
 
-test("workflow cũ (cảnh dạng `action` trước 28/10) mở ra không sập giao diện, chuyển động hiện đúng chữ cũ", async ({ page, request }) => {
+test("workflow cũ (Danh sách cảnh + Dựng phim, cảnh dạng `action` trước 28/10) mở ra tự chuyển sang node Cảnh + Ghép phim, chữ cũ giữ nguyên, có bản cũ", async ({ page, request }) => {
   const id = `cu-${Date.now().toString(36)}`;
+  const graph = {
+    nodes: [
+      { id: "character-1", type: "character", position: { x: 0, y: 0 }, params: { description: "cô gái tóc đen buộc đuôi ngựa, áo xám", provider: "fake" } },
+      { id: "location-1", type: "location", position: { x: 0, y: 600 }, params: { description: "bãi cỏ bên suối đá", provider: "fake" } },
+      {
+        id: "shotlist-1",
+        type: "shotlist",
+        position: { x: 480, y: 0 },
+        params: { shots: [{ id: "c01", size: "WS", angle: "eye", move: "static", subject: "character", link: "cut", action: "cô đi về phía lều" }] },
+      },
+      { id: "film-1", type: "film", position: { x: 1100, y: 0 }, params: { provider: "fake", fixBrightness: true } },
+    ],
+    edges: [
+      { id: "e-char-film", source: "character-1", sourceHandle: "character", target: "film-1", targetHandle: "character" },
+      { id: "e-loc-film", source: "location-1", sourceHandle: "location", target: "film-1", targetHandle: "location" },
+      { id: "e-shots-film", source: "shotlist-1", sourceHandle: "shots", target: "film-1", targetHandle: "shots" },
+    ],
+  };
+  expect((await request.put(`/api/workflows/${id}`, { data: { graph, name: "Workflow cũ thử" } })).ok()).toBe(true);
+  await page.goto(`/?wf=${id}`);
+  await expect(page.getByTestId("node-scene-g1-1")).toBeVisible();
+  await expect(page.getByTestId("scene-motion-scene-g1-1")).toHaveValue("cô đi về phía lều");
+  await expect(page.getByTestId("scene-start-scene-g1-1")).toHaveValue("cô đi về phía lều");
+  await expect(page.getByTestId("node-combine-g1")).toBeVisible();
+  await expect(page.getByTestId("node-film-1")).toHaveCount(0);
+  await expect(page.getByTestId("node-shotlist-1")).toHaveCount(0);
+  await expect(page.getByTestId("workflow-notice")).toHaveCount(0);
+  await expect(page.getByTestId("workflow-select")).toContainText("Workflow cũ thử (bản cũ)");
+});
+
+test("workflow cũ không chuyển được (dịch vụ của Dựng phim lạ): vẫn mở được, thấy lời báo, node cũ giữ nguyên", async ({ page, request }) => {
+  const id = `cu-loi-${Date.now().toString(36)}`;
   const graph = {
     nodes: [
       {
         id: "shotlist-1",
         type: "shotlist",
         position: { x: 0, y: 0 },
-        params: { shots: [{ id: "c01", size: "WS", angle: "eye", move: "static", subject: "character", link: "cut", action: "cô đi về phía lều" }] },
+        params: { shots: [{ id: "c01", size: "WS", angle: "eye", move: "static", subject: "none", link: "cut", start: "bãi cỏ bên suối", motion: "gió thổi qua cỏ" }] },
       },
+      { id: "film-1", type: "film", position: { x: 600, y: 0 }, params: { provider: "khong-co", fixBrightness: true } },
     ],
-    edges: [],
+    edges: [{ id: "e-shots-film", source: "shotlist-1", sourceHandle: "shots", target: "film-1", targetHandle: "shots" }],
   };
   expect((await request.put(`/api/workflows/${id}`, { data: { graph } })).ok()).toBe(true);
   await page.goto(`/?wf=${id}`);
-  await expect(page.getByTestId("shot-motion-shotlist-1-1")).toHaveValue("cô đi về phía lều");
-  await expect(page.getByTestId("shot-start-shotlist-1-1")).toHaveValue("cô đi về phía lều");
+  await expect(page.getByTestId("workflow-notice")).toContainText("Không chuyển được workflow cũ");
+  await expect(page.getByTestId("node-film-1")).toBeVisible();
+  await expect(page.getByTestId("shot-motion-shotlist-1-1")).toHaveValue("gió thổi qua cỏ");
 });
 
 test("chọn nhân vật từ kho thay TOÀN BỘ tham số node (không giữ tên cũ) để trúng lại kết quả cũ", async ({ page, request }) => {

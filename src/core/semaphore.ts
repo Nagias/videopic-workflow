@@ -1,4 +1,5 @@
 // Giới hạn số việc chạy cùng lúc (theo số tài khoản Muse đang rảnh).
+// Nhả chỗ thì trao thẳng cho việc đang chờ, để việc mới gọi vào đúng lúc đó không chen thêm quá giới hạn.
 export function semaphore(max: number) {
   let active = 0;
   const waiting: (() => void)[] = [];
@@ -9,11 +10,11 @@ export function semaphore(max: number) {
         return;
       }
       await new Promise<void>((r) => waiting.push(r));
-      active++;
     },
     release() {
-      active--;
-      waiting.shift()?.();
+      const next = waiting.shift();
+      if (next) next();
+      else active--;
     },
   };
 }

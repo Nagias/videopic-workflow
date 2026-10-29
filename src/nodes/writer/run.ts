@@ -1,4 +1,4 @@
-import type { NodeRun } from "../../core/node-runtime";
+import { optionalInput, type NodeRun } from "../../core/node-runtime";
 import type { ChatSessionRef } from "../../providers/types";
 import { repairPrompt, writerPrompt } from "../../shared/prompts";
 import { parseWriterReply, WriterOutputSchema } from "../../shared/writer-format";
@@ -6,8 +6,8 @@ import { WRITER_MAX_TRIES, type WriterParams } from "./definition";
 
 export const run: NodeRun<WriterParams> = async (ctx, inputs, params) => {
   const provider = ctx.providers.get(params.provider);
-  const character = inputs.character?.kind === "imageset" ? inputs.character.description : undefined;
-  const location = inputs.location?.kind === "imageset" ? inputs.location.description : undefined;
+  const character = optionalInput(inputs, "character", "imageset")?.description;
+  const location = optionalInput(inputs, "location", "imageset")?.description;
   const prompt = writerPrompt({ idea: params.idea, shotCount: params.shotCount, character, location });
   const pctx = { signal: ctx.signal, report: (m: string) => ctx.report(`Biên kịch: ${m}`), storage: ctx.storage, ffmpeg: ctx.ffmpeg };
 

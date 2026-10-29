@@ -1,17 +1,18 @@
 import type { Shot } from "./director";
 import { DEFAULT_LOOK } from "./prompts";
+import { expandScenes } from "./scenes";
 import type { WorkflowGraph } from "./workflow";
 
 // Mẫu viết lại 28/10/2026 theo cảnh v2: khung đầu là ảnh đứng yên, chuyển động chỉ là việc xảy ra sau đó,
 // đồ vật có ảnh mẫu và trạng thái (bổ củi: rìu bổ → gỗ tách; cận cảnh luôn thấy tay người tác động).
 
-const CHARACTER =
+export const SON_LA_CHARACTER =
   "một phụ nữ Việt Nam trưởng thành khoảng 22 tuổi, gương mặt bình thường kiểu người Việt phổ thông (không phải người mẫu), mặt mộc, da rám nắng nhẹ có chút mồ hôi và bụi, tóc đen buộc đuôi ngựa thấp hơi rối, dáng thon khoẻ; mặc áo bra thể thao trơn màu xám than (đồ tập), quần legging leo núi dài màu xanh ô liu sẫm và giày leo núi màu nâu";
 
-const LOCATION =
+export const SON_LA_LOCATION =
   "sườn đồi rừng ở tỉnh Sơn La, vùng núi Tây Bắc Việt Nam: một bãi cỏ nhỏ bằng phẳng trên sườn đồi, ngay bên dưới là con suối đá nước trong chảy qua, phía sau là rừng nhiệt đới rậm và những dãy núi đất thấp xa xa có sương mỏng, sáng sớm";
 
-const PROPS = [
+export const SON_LA_PROPS = [
   { name: "lều", description: "lều mái vòm nhỏ hai người màu xanh rêu, vải dù hơi bạc màu, dây chằng màu cam", states: "dựng trên bãi cỏ" },
   { name: "bếp đá", description: "vòng bếp lửa xếp bằng đá suối tròn cỡ nắm tay, đường kính khoảng 60 cm, giữa có tro cũ", states: "chưa nhóm, có mồi lửa, đang cháy" },
   { name: "gốc cây", description: "gốc cây cưa phẳng đường kính 40 cm, cao ngang gối, mặt cắt có vòng gỗ, vỏ nâu sần", states: "bình thường" },
@@ -32,7 +33,7 @@ const s = (id: string, size: Shot["size"], angle: Shot["angle"], move: Shot["mov
   props,
 });
 
-const SHOTS: Shot[] = [
+export const SON_LA_SHOTS: Shot[] = [
   s("c01", "EWS", "aerial", "drone", "none", "cut",
     "nhìn từ trên cao: bãi cỏ nhỏ trên sườn đồi, chiếc lều xanh rêu dựng giữa bãi, vòng bếp đá bên cạnh lều, con suối đá chảy ngay bên dưới, rừng rậm xung quanh có sương mỏng",
     "flycam bay chậm về phía lều, sương mỏng trôi qua tán cây, nước suối lấp lánh", "lều: dựng trên bãi cỏ\nbếp đá: chưa nhóm"),
@@ -69,21 +70,20 @@ const SHOTS: Shot[] = [
     "máy lùi chậm ra xa, khói bếp bay lên hoà vào sương sáng, cô vẫn ngồi yên ngắm suối", "bếp đá: đang cháy\nlều: dựng trên bãi cỏ"),
 ];
 
-const SON_LA: WorkflowGraph = {
-  nodes: [
-    { id: "character-1", type: "character", position: { x: 40, y: 40 }, params: { name: "Cô gái Sơn La", description: CHARACTER, provider: "muse" } },
-    { id: "location-1", type: "location", position: { x: 40, y: 640 }, params: { name: "Sườn đồi suối đá Sơn La", description: LOCATION, look: DEFAULT_LOOK, provider: "muse" } },
-    { id: "props-1", type: "props", position: { x: 40, y: 1140 }, params: { name: "Đồ cắm trại Sơn La", items: PROPS, provider: "muse" } },
-    { id: "shotlist-1", type: "shotlist", position: { x: 480, y: 40 }, params: { shots: SHOTS } },
-    { id: "film-1", type: "film", position: { x: 1120, y: 40 }, params: { provider: "muse", fixBrightness: true } },
-  ],
-  edges: [
-    { id: "e-char-film", source: "character-1", sourceHandle: "character", target: "film-1", targetHandle: "character" },
-    { id: "e-loc-film", source: "location-1", sourceHandle: "location", target: "film-1", targetHandle: "location" },
-    { id: "e-props-film", source: "props-1", sourceHandle: "props", target: "film-1", targetHandle: "props" },
-    { id: "e-shots-film", source: "shotlist-1", sourceHandle: "shots", target: "film-1", targetHandle: "shots" },
-  ],
-};
+const REFS = { character: "character-1", location: "location-1", props: "props-1" };
+
+// 12 node Cảnh trong một nhóm Phân cảnh, nối Nhân vật/Không gian/Đồ vật, cảnh "chain" có dây Nối tiếp, một Ghép phim.
+const SON_LA: WorkflowGraph = expandScenes(
+  {
+    nodes: [
+      { id: "character-1", type: "character", position: { x: 40, y: 40 }, params: { name: "Cô gái Sơn La", description: SON_LA_CHARACTER, provider: "muse" } },
+      { id: "location-1", type: "location", position: { x: 40, y: 640 }, params: { name: "Sườn đồi suối đá Sơn La", description: SON_LA_LOCATION, look: DEFAULT_LOOK, provider: "muse" } },
+      { id: "props-1", type: "props", position: { x: 40, y: 1140 }, params: { name: "Đồ cắm trại Sơn La", items: SON_LA_PROPS, provider: "muse" } },
+    ],
+    edges: [],
+  },
+  { shots: SON_LA_SHOTS, refs: REFS, provider: "muse", origin: { x: 480, y: 40 } },
+).graph;
 
 const IDEA =
   "Cô gái đi bộ một mình vào rừng nguyên sinh, tìm thấy một thác nước nhỏ, múc nước suối vào chiếc nồi nhôm nhỏ, nhóm bếp đá đun sôi nước rồi ngồi nghỉ uống nước ngắm thác. Phong cách vlog sinh tồn yên bình, không lời thoại.";
@@ -91,24 +91,23 @@ const IDEA =
 const FOREST =
   "rừng nguyên sinh vùng núi Tây Bắc Việt Nam: một thác nước nhỏ cao khoảng 3 mét đổ xuống vũng nước trong, bờ đá phủ rêu, cây cổ thụ và dương xỉ xung quanh, ánh sáng dịu xuyên qua tán lá";
 
-const IDEA_TO_FILM: WorkflowGraph = {
-  nodes: [
-    { id: "character-1", type: "character", position: { x: 40, y: 40 }, params: { name: "Cô gái Sơn La", description: CHARACTER, provider: "muse" } },
-    { id: "location-1", type: "location", position: { x: 40, y: 640 }, params: { name: "Thác nước rừng nguyên sinh", description: FOREST, look: DEFAULT_LOOK, provider: "muse" } },
-    { id: "writer-1", type: "writer", position: { x: 480, y: 40 }, params: { idea: IDEA, shotCount: 8, provider: "muse" } },
-    { id: "props-1", type: "props", position: { x: 480, y: 760 }, params: { name: "", items: [], provider: "muse" } },
-    { id: "film-1", type: "film", position: { x: 1120, y: 40 }, params: { provider: "muse", fixBrightness: true } },
-  ],
-  edges: [
-    { id: "e-char-writer", source: "character-1", sourceHandle: "character", target: "writer-1", targetHandle: "character" },
-    { id: "e-loc-writer", source: "location-1", sourceHandle: "location", target: "writer-1", targetHandle: "location" },
-    { id: "e-writer-props", source: "writer-1", sourceHandle: "props", target: "props-1", targetHandle: "spec" },
-    { id: "e-char-film", source: "character-1", sourceHandle: "character", target: "film-1", targetHandle: "character" },
-    { id: "e-loc-film", source: "location-1", sourceHandle: "location", target: "film-1", targetHandle: "location" },
-    { id: "e-props-film", source: "props-1", sourceHandle: "props", target: "film-1", targetHandle: "props" },
-    { id: "e-shots-film", source: "writer-1", sourceHandle: "shots", target: "film-1", targetHandle: "shots" },
-  ],
-};
+// Nhóm Phân cảnh rỗng sinh từ Biên kịch: chạy lần đầu, Biên kịch viết xong thì nhóm tự có 8 thẻ cảnh rồi ghép phim.
+const IDEA_TO_FILM: WorkflowGraph = expandScenes(
+  {
+    nodes: [
+      { id: "character-1", type: "character", position: { x: 40, y: 40 }, params: { name: "Cô gái Sơn La", description: SON_LA_CHARACTER, provider: "muse" } },
+      { id: "location-1", type: "location", position: { x: 40, y: 640 }, params: { name: "Thác nước rừng nguyên sinh", description: FOREST, look: DEFAULT_LOOK, provider: "muse" } },
+      { id: "writer-1", type: "writer", position: { x: 480, y: 40 }, params: { idea: IDEA, shotCount: 8, provider: "muse" } },
+      { id: "props-1", type: "props", position: { x: 480, y: 760 }, params: { name: "", items: [], provider: "muse" } },
+    ],
+    edges: [
+      { id: "e-char-writer", source: "character-1", sourceHandle: "character", target: "writer-1", targetHandle: "character" },
+      { id: "e-loc-writer", source: "location-1", sourceHandle: "location", target: "writer-1", targetHandle: "location" },
+      { id: "e-writer-props", source: "writer-1", sourceHandle: "props", target: "props-1", targetHandle: "spec" },
+    ],
+  },
+  { writerId: "writer-1", shots: [], refs: REFS, provider: "muse", origin: { x: 940, y: 40 } },
+).graph;
 
 export const WORKFLOW_TEMPLATES = [
   { id: "sinh-ton-son-la", label: "Sinh tồn Sơn La (12 cảnh ~60 giây)", name: "Sinh tồn Sơn La", graph: SON_LA },

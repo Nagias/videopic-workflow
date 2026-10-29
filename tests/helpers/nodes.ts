@@ -1,5 +1,7 @@
 import type { Ffmpeg } from "../../src/core/ffmpeg";
 import type { NodeRunContext, ServerNode, StepValue } from "../../src/core/node-runtime";
+import { createChatLocks, createRunShared } from "../../src/core/run-shared";
+import { SERVICE_FAILURE_LIMIT } from "../../src/shared/service-failure";
 import type { Storage } from "../../src/core/storage";
 import type { NodeOutputs } from "../../src/shared/ports";
 import { serverNodes } from "../../src/nodes/registry.server";
@@ -35,6 +37,7 @@ export function testNodeCtx(
     providers,
     storage: env.storage,
     ffmpeg: env.ffmpeg,
+    shared: createRunShared({ providers, chatLocks: createChatLocks(), failureLimit: SERVICE_FAILURE_LIMIT }),
   };
 }
 
@@ -45,19 +48,21 @@ export type CallLog = {
   firstFrames: (string | undefined)[];
   imagePrompts: string[];
   imageSessions: string[];
+  // Đường dẫn chat của mỗi lần tạo ảnh (undefined khi tạo trong chat mới).
+  imageThreads: (string | undefined)[];
   imageRefs: { mediaId: string; role: string }[][];
   text: number;
   textPrompts: string[];
   textSessions: string[];
 };
 
-export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string; textReply?: (prompt: string, call: number) => string; failImageWhen?: (prompt: string) => boolean } = {}): {
+export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) => boolean; failCode?: string; textReply?: (prompt: string, call: number) => string; textGate?: (prompt: string) => Promise<void>; failImageWhen?: (prompt: string) => boolean } = {}): {
   providers: ProviderRegistry;
   calls: () => number;
   log: CallLog;
 } {
   const fake = createFakeProvider();
-  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [], imageRefs: [], text: 0, textPrompts: [], textSessions: [] };
+  const log: CallLog = { video: 0, image: 0, videoPrompts: [], firstFrames: [], imagePrompts: [], imageSessions: [], imageThreads: [], imageRefs: [], text: 0, textPrompts: [], textSessions: [] };
   const counted: MediaProvider = {
     id: "fake",
     maxParallel: () => 2,
@@ -70,16 +75,20 @@ export function countingFakeProviders(opts: { failVideoWhen?: (prompt: string) =
       }
       return fake.generateVideo(req, ctx);
     },
-    generateText: (req, ctx) => {
+    generateText: async (req, ctx) => {
       log.text++;
       log.textPrompts.push(req.prompt);
       log.textSessions.push(req.session ? "continue" : "new");
-      return (opts.textReply ? Promise.resolve({ text: opts.textReply(req.prompt, log.text), session: req.session ?? { accountId: "fake", threadUrl: "fake://thread/text" } }) : fake.generateText(req, ctx));
+      const call = log.text;
+      // textGate: giữ câu trả lời lại (giả Muse viết chữ mất vài phút) cho test làm việc khác trong lúc chờ.
+      if (opts.textGate) await opts.textGate(req.prompt);
+      return opts.textReply ? { text: opts.textReply(req.prompt, call), session: req.session ?? { accountId: "fake", threadUrl: "fake://thread/text" } } : fake.generateText(req, ctx);
     },
     generateImage: (req, ctx) => {
       log.image++;
       log.imagePrompts.push(req.prompt);
       log.imageSessions.push(req.session === undefined ? "none" : req.session === "new" ? "new" : "continue");
+      log.imageThreads.push(typeof req.session === "object" ? req.session.threadUrl : undefined);
       log.imageRefs.push(req.references.map((r) => ({ mediaId: r.mediaId, role: r.role })));
       if (opts.failImageWhen?.(req.prompt)) return Promise.reject(new Error("Lỗi ảnh giả lập"));
       return fake.generateImage(req, ctx);

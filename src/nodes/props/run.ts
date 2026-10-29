@@ -1,13 +1,13 @@
-import type { NodeRun } from "../../core/node-runtime";
+import { optionalInput, type NodeRun } from "../../core/node-runtime";
 import { semaphore } from "../../core/semaphore";
 import type { ChatSessionRef } from "../../providers/types";
 import type { PropItem, PropSetValue } from "../../shared/ports";
 import { DEFAULT_LOOK, propStatePrompt, propStillPrompt } from "../../shared/prompts";
-import { checkSpec, rowsToSpec, type PropsParams } from "./definition";
+import { checkSpec, propStepKey, specOf, type PropsParams } from "./definition";
 
 export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
-  const fromWriter = inputs.spec?.kind === "propspec";
-  const spec = checkSpec(inputs.spec?.kind === "propspec" ? inputs.spec.items : rowsToSpec(params.items), { allowEmpty: fromWriter });
+  const fromWriter = optionalInput(inputs, "spec", "propspec");
+  const spec = checkSpec(specOf(params, fromWriter), { allowEmpty: fromWriter !== undefined });
   const provider = ctx.providers.get(params.provider);
   const sem = semaphore(Math.max(1, provider.maxParallel()));
   const items: PropItem[] = spec.map((s) => ({ name: s.name, description: s.description, images: [] }));
@@ -24,8 +24,7 @@ export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
           const inChat = idx > 0 && session !== undefined;
           const prompt = idx === 0 ? propStillPrompt(item, DEFAULT_LOOK) : propStatePrompt(item, state, DEFAULT_LOOK);
           ctx.report(`Ảnh mẫu đồ vật: ${item.name} (${state})…`);
-          // Khoá theo mô tả món đồ (không theo node): món giống hệt ở workflow khác dùng lại ảnh, không tốn lượt.
-          const img = await ctx.step(["prop", provider.id, item.name, item.description, item.states.slice(0, idx + 1), DEFAULT_LOOK], async () => {
+          const img = await ctx.step(propStepKey(provider.id, item, idx), async () => {
             const r = await provider.generateImage(
               {
                 prompt,

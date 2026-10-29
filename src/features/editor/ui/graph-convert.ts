@@ -1,7 +1,7 @@
 import type { Connection, Edge } from "@xyflow/react";
 import { webNodes } from "../../../nodes/registry.web";
-import { PORT_KIND_LABEL, type PortKind } from "../../../shared/ports";
-import type { WorkflowGraph } from "../../../shared/workflow";
+import { PORT_KIND_LABEL, type PortDef, type PortKind } from "../../../shared/ports";
+import type { WorkflowGraph, WorkflowGroup } from "../../../shared/workflow";
 import type { FlowNode } from "./GraphNode";
 
 // Dây mang màu theo loại dữ liệu ở cổng ra, khớp màu chấm cổng (styles.css: .kind-*).
@@ -16,8 +16,10 @@ export function toFlow(graph: WorkflowGraph): { nodes: FlowNode[]; edges: Edge[]
   return { nodes, edges: graph.edges.map((e) => ({ ...e, className: edgeKindClass(e, nodes) })) };
 }
 
-export function fromFlow(nodes: FlowNode[], edges: Edge[]): WorkflowGraph {
+// groups: nhóm của đồ thị đã tải (canvas chưa sửa nhóm), lưu lại nguyên vẹn để nhóm Phân cảnh không mất khi lưu.
+export function fromFlow(nodes: FlowNode[], edges: Edge[], groups: WorkflowGroup[]): WorkflowGraph {
   return {
+    groups,
     nodes: nodes.map((n) => ({
       id: n.id,
       type: n.type ?? "",
@@ -45,6 +47,23 @@ function hintFor(kind: PortKind): string {
   return list.length
     ? `${PORT_KIND_LABEL[kind]} cắm được vào: ${list.join("; ")}.`
     : `Hiện chưa có node nào nhận ${PORT_KIND_LABEL[kind]}.`;
+}
+
+// Cổng vào có nhận nhiều dây (multiple) không: nối thêm thì giữ dây cũ.
+// `defs` mặc định là registry thật; test truyền bảng riêng để thử cổng multiple.
+export function targetAcceptsMany(
+  conn: Connection | Edge,
+  nodes: FlowNode[],
+  defs: Record<string, { definition: { inputs: PortDef[] } }> = webNodes,
+): boolean {
+  const dst = nodes.find((n) => n.id === conn.target);
+  return defs[dst?.type ?? ""]?.definition.inputs.find((p) => p.name === conn.targetHandle)?.multiple === true;
+}
+
+// Cổng thường: dây mới THAY dây cũ ở cùng cổng (như ComfyUI). Cổng multiple: giữ nguyên các dây cũ.
+export function replaceTargetEdges(edges: Edge[], conn: Connection | Edge, isMultiple: boolean): Edge[] {
+  if (isMultiple) return edges;
+  return edges.filter((e) => !(e.target === conn.target && e.targetHandle === conn.targetHandle));
 }
 
 // Cổng vào đã có dây thì nối mới sẽ THAY dây cũ (như ComfyUI), nên không tính là lỗi ở đây.

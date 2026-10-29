@@ -10,6 +10,7 @@
   --warn: #f2b84b;
   --err: #ff6b6b;
   --text-port: #c9a2ff;
+  --image-port: #dfe3ee;
   --video-port: #4fd1c5;
   --imageset-port: #ff9f6b;
   --shotlist-port: #6cb8ff;
@@ -125,6 +126,28 @@ button.primary {
   margin-left: auto;
 }
 
+.banner.notice {
+  background: #3a3220;
+  color: #ffe9bf;
+  border-bottom-color: var(--warn);
+}
+
+.banner.decision {
+  background: #1f2a3a;
+  color: #dbe6ff;
+  border-bottom-color: var(--accent);
+}
+
+.banner-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.banner .banner-actions button {
+  margin-left: 0;
+}
+
 .canvas {
   flex: 1;
   min-height: 0;
@@ -200,6 +223,9 @@ button.primary {
 /* Mỗi loại dữ liệu một màu: chấm cổng, chữ loại cổng và dây cùng màu → cùng màu là cắm được. */
 .kind-text {
   --kind: var(--text-port);
+}
+.kind-image {
+  --kind: var(--image-port);
 }
 .kind-video {
   --kind: var(--video-port);

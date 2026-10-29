@@ -5,6 +5,7 @@ import type { Db } from "./db/client";
 import type { Ffmpeg } from "./ffmpeg";
 import type { ServerNode } from "./node-runtime";
 import type { Queue } from "./queue";
+import type { ChatLocks } from "./run-shared";
 import type { Storage } from "./storage";
 
 export type AppDeps = {
@@ -16,4 +17,5 @@ export type AppDeps = {
   nodes: Record<string, ServerNode>;
   queue: Queue;
   musePool: AccountPool;
+  chatLocks: ChatLocks;
 };

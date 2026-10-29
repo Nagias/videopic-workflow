@@ -24,6 +24,17 @@ describe("khoá cứng kiến trúc", () => {
     expect(Object.keys(serverNodes).sort()).toEqual(listNodeDirs());
   });
 
+  it("node có tham số provider (gọi dịch vụ) phải khai báo estimate, để ước tính lượt không coi nó là miễn phí", () => {
+    const missing = Object.values(serverNodes)
+      .filter((n) => {
+        const shape = (n.definition.params as { shape?: Record<string, unknown> }).shape;
+        return shape !== undefined && "provider" in shape && !n.definition.estimate;
+      })
+      .map((n) => n.definition.type);
+    expect(missing, "thêm estimate() vào definition.ts của các node này").toEqual([]);
+    expect(Object.values(serverNodes).filter((n) => (n.definition.params as { shape?: Record<string, unknown> }).shape === undefined).map((n) => n.definition.type)).toEqual([]);
+  });
+
   it("mọi dịch vụ khai báo trong src/shared/providers.ts đều có thư mục cài đặt trong src/providers/", () => {
     for (const id of PROVIDER_IDS) expect(statSync(path.join(ROOT, "src/providers", id, "index.ts")).isFile(), id).toBe(true);
   });
@@ -67,6 +78,15 @@ describe("khoá cứng kiến trúc", () => {
     const gi = read(".gitignore");
     expect(gi).toMatch(/^\.data\/$/m);
     expect(gi).toMatch(/^\.env$/m);
+  });
+
+  it("bảng workflows chỉ được ghi ở src/features/workflows/store.ts", () => {
+    const store = path.join(ROOT, "src/features/workflows/store.ts");
+    const offenders = walk(path.join(ROOT, "src"))
+      .filter((f) => /\.(ts|tsx)$/.test(f) && f !== store)
+      .filter((f) => /\.(insert|update|delete)\(\s*workflows\s*\)/.test(readFileSync(f, "utf8")));
+    expect(offenders, "ghi workflow qua saveWorkflowGraph()").toEqual([]);
+    expect(readFileSync(store, "utf8")).toMatch(/\.insert\(workflows\)/);
   });
 
   it("không file nào trong src/ trỏ sang dự án khác hay ổ C", () => {

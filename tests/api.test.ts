@@ -1,8 +1,13 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runs } from "../src/core/db/schema";
+import { runNodes, runs, workflows } from "../src/core/db/schema";
+import type { ServerNode } from "../src/core/node-runtime";
 import { createQueue } from "../src/core/queue";
+import { fakeTextReply } from "../src/providers/fake/text";
 import { AssetListResponseSchema, LatestRunResponseSchema, RunResponseSchema, WorkflowResponseSchema } from "../src/shared/api";
+import { expandScenes } from "../src/shared/scenes";
+import type { WorkflowGraph } from "../src/shared/workflow";
+import { legacyIdeaGraph, legacySonLaGraph } from "./helpers/legacy";
 import { promptToVideoGraph } from "./helpers/nodes";
 import { createTestServer, type TestServer } from "./helpers/server";
 
@@ -105,7 +110,7 @@ describe("hàng đợi chạy tiếp sau khi tắt máy giữa chừng", () => {
     const stuck = s.deps.queue.enqueue("default", graph);
     s.db.update(runs).set({ status: "running" }).where(eq(runs.id, stuck)).run();
 
-    const restarted = createQueue({ db: s.db, storage: s.storage, ffmpeg: s.ffmpeg, providers: s.deps.providers, nodes: s.deps.nodes }, { pollMs: 20 });
+    const restarted = createQueue({ db: s.db, storage: s.storage, ffmpeg: s.ffmpeg, providers: s.deps.providers, nodes: s.deps.nodes, chatLocks: s.deps.chatLocks }, { pollMs: 20 });
     restarted.start();
     const deadline = Date.now() + 10_000;
     while (s.db.select().from(runs).where(eq(runs.id, stuck)).get()?.status !== "succeeded" && Date.now() < deadline) {
@@ -118,6 +123,133 @@ describe("hàng đợi chạy tiếp sau khi tắt máy giữa chừng", () => {
   });
 });
 
+describe("phạm vi chạy và huỷ lượt chạy", () => {
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await createTestServer();
+  });
+  afterEach(async () => {
+    await s.cleanup();
+  });
+
+  const runRow = (id: string) => s.db.select().from(runs).where(eq(runs.id, id)).get();
+  const nodeIdsOf = (id: string) => s.db.select().from(runNodes).where(eq(runNodes.runId, id)).all().map((r) => r.nodeId).sort();
+
+  it("run mở lại sau khi tắt máy dùng lại phạm vi đã lưu", async () => {
+    const stuck = s.deps.queue.enqueue("default", promptToVideoGraph("Rừng"), { mode: "node", nodeId: "p1" });
+    expect(JSON.parse(runRow(stuck)!.scopeJson!)).toEqual({ mode: "node", nodeId: "p1" });
+    s.db.update(runs).set({ status: "running" }).where(eq(runs.id, stuck)).run();
+
+    const restarted = createQueue({ db: s.db, storage: s.storage, ffmpeg: s.ffmpeg, providers: s.deps.providers, nodes: s.deps.nodes, chatLocks: s.deps.chatLocks }, { pollMs: 20 });
+    restarted.start();
+    const deadline = Date.now() + 10_000;
+    while (runRow(stuck)?.status !== "succeeded" && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    await restarted.stop();
+    expect(runRow(stuck)?.status).toBe("succeeded");
+    expect(nodeIdsOf(stuck)).toEqual(["p1"]);
+    expect(s.calls()).toBe(0);
+  });
+
+  const post = (url: string, payload: unknown) => s.app.inject({ method: "POST", url, payload: payload as object });
+  const finished = async (runId: string) => {
+    while (await s.deps.queue.processNext());
+    return RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${runId}` })).json());
+  };
+
+  it("POST runs scope node chỉ chạy node đó", async () => {
+    expect((await s.app.inject({ method: "PUT", url: "/api/workflows/default", payload: { graph: promptToVideoGraph("Rừng") } })).statusCode).toBe(200);
+    const start = await post("/api/workflows/default/runs", { scope: { mode: "node", nodeId: "p1" } });
+    expect(start.statusCode, start.body).toBe(202);
+    const run = await finished(start.json<{ runId: string }>().runId);
+    expect(run.status).toBe("succeeded");
+    expect(Object.keys(run.nodes)).toEqual(["p1"]);
+    expect(s.calls()).toBe(0);
+
+    const bad = await post("/api/workflows/default/runs", { scope: { mode: "node" } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json<{ error: string }>().error).toMatch(/Phạm vi chạy không hợp lệ/);
+    const unknown = await post("/api/workflows/default/runs", { scope: { mode: "downstream", nodeId: "khong-co" } });
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.json<{ error: string }>().error).toContain("khong-co");
+    expect((await post("/api/workflows/khong-co/runs", {})).statusCode).toBe(404);
+    expect(s.db.select().from(runs).all()).toHaveLength(1);
+  });
+
+  it("latest gộp theo node: chạy all rồi chạy node → nodes có đủ mọi node", async () => {
+    expect((await s.app.inject({ method: "PUT", url: "/api/workflows/default", payload: { graph: promptToVideoGraph("Rừng") } })).statusCode).toBe(200);
+    const all = await finished((await post("/api/workflows/default/runs", {})).json<{ runId: string }>().runId);
+    const one = await finished((await post("/api/workflows/default/runs", { scope: { mode: "node", nodeId: "p1" } })).json<{ runId: string }>().runId);
+    const latest = LatestRunResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/workflows/default/runs/latest" })).json());
+    expect(latest.run?.id).toBe(one.id);
+    expect(Object.keys(latest.run!.nodes)).toEqual(["p1"]);
+    expect(Object.keys(latest.nodes).sort()).toEqual(["p1", "v1"]);
+    expect(latest.nodes.p1).toEqual(one.nodes.p1);
+    expect(latest.nodes.v1).toEqual(all.nodes.v1);
+    expect(latest.nodes.v1?.output?.video?.kind).toBe("video");
+
+    // Node đã bỏ khỏi workflow thì không còn trong `nodes`.
+    expect((await s.app.inject({ method: "PUT", url: "/api/workflows/default", payload: { graph: { nodes: [promptToVideoGraph("Rừng").nodes[0]], edges: [] } } })).statusCode).toBe(200);
+    const after = LatestRunResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/workflows/default/runs/latest" })).json());
+    expect(Object.keys(after.nodes)).toEqual(["p1"]);
+  });
+
+  it("cancel 404 với run lạ", async () => {
+    const missing = await post("/api/runs/khong-co/cancel", {});
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json<{ error: string }>().error).toMatch(/Không tìm thấy lần chạy/);
+    const runId = s.deps.queue.enqueue("default", promptToVideoGraph("Rừng"));
+    const first = await post(`/api/runs/${runId}/cancel`, {});
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toEqual({ result: "cancelled" });
+    expect(runRow(runId)).toMatchObject({ status: "failed", error: "Đã huỷ" });
+    expect((await post(`/api/runs/${runId}/cancel`, {})).json()).toEqual({ result: "finished" });
+    expect(s.calls()).toBe(0);
+  });
+
+  it("huỷ run đang xếp hàng → failed, error 'Đã huỷ'", async () => {
+    const runId = s.deps.queue.enqueue("default", promptToVideoGraph("Rừng"));
+    expect(s.deps.queue.cancel(runId)).toBe("cancelled");
+    expect(runRow(runId)).toMatchObject({ status: "failed", error: "Đã huỷ" });
+    expect(runRow(runId)?.finishedAt).toBeTypeOf("number");
+    expect(await s.deps.queue.processNext()).toBe(false);
+    expect(s.calls()).toBe(0);
+    expect(s.deps.queue.cancel(runId)).toBe("finished");
+    expect(s.deps.queue.cancel("khong-co")).toBe("not_found");
+  });
+
+  it("huỷ run đang chạy → signal bị huỷ, run failed 'Đã huỷ'", async () => {
+    let markStarted!: () => void;
+    const started = new Promise<void>((r) => (markStarted = r));
+    let aborted = false;
+    const waiter: ServerNode = {
+      definition: { type: "waiter", label: "Chờ", description: "", inputs: [], outputs: [], params: { parse: (x: unknown) => x } as never, defaults: {} },
+      parseParams: (x) => x,
+      run: (ctx) =>
+        new Promise((_resolve, reject) => {
+          ctx.signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              reject(new Error("node thấy tín hiệu huỷ"));
+            },
+            { once: true },
+          );
+          markStarted();
+        }),
+    };
+    const queue = createQueue({ db: s.db, storage: s.storage, ffmpeg: s.ffmpeg, providers: s.deps.providers, nodes: { waiter }, chatLocks: s.deps.chatLocks });
+    const runId = queue.enqueue("default", { nodes: [{ id: "w", type: "waiter", position: { x: 0, y: 0 }, params: {} }], edges: [] });
+    const processing = queue.processNext();
+    await started;
+    expect(runRow(runId)?.status).toBe("running");
+    expect(queue.cancel(runId)).toBe("cancelled");
+    expect(await processing).toBe(true);
+    expect(aborted).toBe(true);
+    expect(runRow(runId)).toMatchObject({ status: "failed", error: "Đã huỷ" });
+    expect(queue.cancel(runId)).toBe("finished");
+  });
+});
+
 describe("API mẫu workflow", () => {
   let s: TestServer;
   beforeEach(async () => {
@@ -127,28 +259,49 @@ describe("API mẫu workflow", () => {
     await s.cleanup();
   });
 
-  it("tạo từ mẫu Sơn La: 5 node (có Đồ vật), 12 cảnh, có trong danh sách; mẫu lạ trả 404", async () => {
+  it("tạo từ mẫu Sơn La: Nhân vật, Không gian, Đồ vật + 12 Cảnh + Ghép phim, có trong danh sách; mẫu lạ trả 404", async () => {
     const res = await s.app.inject({ method: "POST", url: "/api/workflows/from-template/sinh-ton-son-la", payload: {} });
     expect(res.statusCode).toBe(201);
     const wf = WorkflowResponseSchema.parse(res.json());
-    expect(wf.graph.nodes.map((n) => n.type)).toEqual(["character", "location", "props", "shotlist", "film"]);
-    expect((wf.graph.nodes[3]!.params.shots as unknown[]).length).toBe(12);
+    expect(wf.graph.nodes.map((n) => n.type)).toEqual(["character", "location", "props", ...Array<string>(12).fill("scene"), "film-combine"]);
+    expect(wf.graph.groups.map((g) => g.nodeIds.length)).toEqual([12]);
+    expect(wf.graph.edges.filter((e) => e.targetHandle === "follow")).toHaveLength(2);
     const list = (await s.app.inject({ method: "GET", url: "/api/workflows" })).json<{ workflows: { id: string }[] }>();
     expect(list.workflows.map((w) => w.id)).toContain(wf.id);
     expect((await s.app.inject({ method: "GET", url: `/api/workflows/${wf.id}` })).statusCode).toBe(200);
     expect((await s.app.inject({ method: "POST", url: "/api/workflows/from-template/khong-co", payload: {} })).statusCode).toBe(404);
   });
 
-  it("mọi mẫu đi qua kiểm đồ thị; cảnh Sơn La qua luật đạo diễn với đúng danh sách đồ vật, không cảnh báo", async () => {
-    const { planGraph } = await import("../src/core/executor");
+  it("mọi mẫu đi qua kiểm đồ thị và kiểm luật Ghép phim; cảnh Sơn La qua luật đạo diễn với đúng danh sách đồ vật, không cảnh báo", async () => {
+    const { orderSources, planGraph } = await import("../src/core/executor");
+    const { preflightErrors } = await import("../src/core/preflight");
     const { WORKFLOW_TEMPLATES } = await import("../src/shared/templates");
-    const { checkShotList, ShotSchema } = await import("../src/shared/director");
-    const { rowsToSpec } = await import("../src/nodes/props/definition");
-    for (const t of WORKFLOW_TEMPLATES) expect(() => planGraph(t.graph, s.deps.nodes), t.id).not.toThrow();
-    const sonLa = WORKFLOW_TEMPLATES.find((t) => t.id === "sinh-ton-son-la")!.graph;
-    const items = rowsToSpec(sonLa.nodes.find((n) => n.type === "props")!.params.items as never);
-    const shots = ShotSchema.array().parse(sonLa.nodes.find((n) => n.type === "shotlist")!.params.shots);
-    expect(checkShotList(shots, items.map((i) => ({ name: i.name, states: i.states })))).toEqual({ errors: [], warnings: [] });
+    const { checkShotList } = await import("../src/shared/director");
+    const { scenesFeeding } = await import("../src/nodes/film-combine/definition");
+    const planOf = (raw: WorkflowGraph) => {
+      const graph = WorkflowResponseSchema.shape.graph.parse(raw);
+      const plan = planGraph(graph, s.deps.nodes);
+      const planned = new Map(plan.map((p) => [p.node.id, p]));
+      const order = (p: (typeof plan)[number], port: string) => orderSources(p, port, graph);
+      return { graph, plan, planned, order };
+    };
+    for (const t of WORKFLOW_TEMPLATES) {
+      expect(t.graph.nodes.some((n) => n.type === "film" || n.type === "shotlist"), t.id).toBe(false);
+      const { graph, plan, planned, order } = planOf(t.graph);
+      expect(preflightErrors(plan, planned, graph, order), t.id).toEqual([]);
+    }
+    // Luật đạo diễn trên đúng chuỗi cảnh Ghép phim sẽ ghép, với danh sách đồ vật của node Đồ vật.
+    const { graph, plan, planned, order } = planOf(WORKFLOW_TEMPLATES.find((t) => t.id === "sinh-ton-son-la")!.graph);
+    const combine = plan.find((p) => p.node.type === "film-combine")!;
+    const sources = (nodeId: string, port: string) => {
+      const p = planned.get(nodeId)!;
+      return p.impl.definition.inputs.find((x) => x.name === port)?.multiple ? order(p, port) : [...(p.inputs.get(port) ?? [])];
+    };
+    const fed = scenesFeeding(combine.node.id, { node: combine, graph, planned, sources });
+    expect(fed.shots).toHaveLength(12);
+    expect(fed.known).toHaveLength(6);
+    expect(fed.errors).toEqual([]);
+    expect(checkShotList(fed.shots, fed.known)).toEqual({ errors: [], warnings: [] });
     expect(WORKFLOW_TEMPLATES.map((t) => t.id)).toContain("y-tuong-thanh-phim");
   });
 });
@@ -191,5 +344,528 @@ describe("API kho tài sản dùng chung", () => {
 
   it("kind lạ trả 400", async () => {
     expect((await s.app.inject({ method: "GET", url: "/api/assets?kind=xyz" })).statusCode).toBe(400);
+  });
+});
+
+describe("API nhóm Phân cảnh: Biên kịch sinh cảnh, tự tạo lại, hỏi khi đã sửa tay", () => {
+  const IDEA_A = "Cô gái đi bộ một mình vào rừng nguyên sinh, tìm thấy thác nước nhỏ rồi nhóm bếp đá đun nước.";
+  const IDEA_B = "Cô gái đi bộ một mình vào rừng nguyên sinh, tìm thấy thác nước nhỏ rồi ngồi nghỉ ngắm thác.";
+  const WF = "y-tuong";
+  const EDITED_MESSAGE = "Biên kịch ra bộ cảnh mới nhưng thẻ cảnh đã được sửa tay — chọn Thay hoặc Giữ";
+
+  let s: TestServer;
+  // Số lần gọi video lúc Biên kịch được hỏi (để biết cảnh nào đã chạy trước Biên kịch chưa).
+  let videoAtWriter: number[];
+  // Giữ câu trả lời Biên kịch lại: `hold()` trả lời hứa xong khi Biên kịch đã được hỏi, và hàm thả ra.
+  let gate: { asked: () => void; release: Promise<void> } | undefined;
+  const hold = () => {
+    let release!: () => void;
+    const asked = new Promise<void>((r) => (gate = { asked: r, release: new Promise<void>((done) => (release = done)) }));
+    return { asked, release: () => release() };
+  };
+  beforeEach(async () => {
+    videoAtWriter = [];
+    gate = undefined;
+    s = await createTestServer({
+      textGate: async () => {
+        if (!gate) return;
+        gate.asked();
+        await gate.release;
+      },
+      // Kịch bản giả như dịch vụ giả, riêng ý tưởng B đổi chữ cảnh 4: chỉ cảnh đó phải tạo lại.
+      textReply: (prompt) => {
+        videoAtWriter.push(s.log.video);
+        const reply = fakeTextReply(prompt);
+        return prompt.includes("ngồi nghỉ ngắm thác") ? reply.replace("việc xảy ra ở cảnh 4", "cô ngồi nghỉ trên tảng đá ngắm thác") : reply;
+      },
+    });
+  });
+  afterEach(async () => {
+    await s.cleanup();
+  });
+
+  // Đồ thị kiểu mới: Nhân vật + Bối cảnh → Biên kịch → Đồ vật, cùng một nhóm Phân cảnh rỗng (chưa có kết quả) và Ghép phim.
+  const ideaGraph = (idea: string): WorkflowGraph => {
+    const base: WorkflowGraph = {
+      nodes: [
+        { id: "character-1", type: "character", position: { x: 40, y: 40 }, params: { description: "một cô gái Việt Nam 22 tuổi, tóc buộc đuôi ngựa, áo thể thao xám", provider: "fake" } },
+        { id: "location-1", type: "location", position: { x: 40, y: 640 }, params: { description: "rừng nguyên sinh có thác nước nhỏ đổ xuống vũng nước trong", provider: "fake" } },
+        { id: "writer-1", type: "writer", position: { x: 480, y: 40 }, params: { idea, shotCount: 4, provider: "fake" } },
+        { id: "props-1", type: "props", position: { x: 480, y: 760 }, params: { name: "", items: [], provider: "fake" } },
+      ],
+      edges: [
+        { id: "e-char-writer", source: "character-1", sourceHandle: "character", target: "writer-1", targetHandle: "character" },
+        { id: "e-loc-writer", source: "location-1", sourceHandle: "location", target: "writer-1", targetHandle: "location" },
+        { id: "e-writer-props", source: "writer-1", sourceHandle: "props", target: "props-1", targetHandle: "spec" },
+      ],
+    };
+    return expandScenes(base, { writerId: "writer-1", shots: [], refs: { character: "character-1", location: "location-1", props: "props-1" }, provider: "fake", origin: { x: 900, y: 40 } }).graph;
+  };
+
+  const getWorkflow = async () => WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${WF}` })).json());
+  const save = async (graph: WorkflowGraph) => expect((await s.app.inject({ method: "PUT", url: `/api/workflows/${WF}`, payload: { graph } })).statusCode).toBe(200);
+  const run = async () => {
+    const start = await s.app.inject({ method: "POST", url: `/api/workflows/${WF}/runs`, payload: {} });
+    expect(start.statusCode).toBe(202);
+    while (await s.deps.queue.processNext());
+    return RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${start.json<{ runId: string }>().runId}` })).json());
+  };
+  const writerKey = (runId: string) => s.db.select().from(runNodes).where(eq(runNodes.runId, runId)).all().find((r) => r.nodeId === "writer-1")!.cacheKey;
+  const group = (graph: WorkflowGraph) => graph.groups![0]!;
+  const sceneIds = (graph: WorkflowGraph) => group(graph).nodeIds;
+  const setParam = (graph: WorkflowGraph, id: string, key: string, value: unknown): WorkflowGraph => ({
+    ...graph,
+    nodes: graph.nodes.map((n) => (n.id === id ? { ...n, params: { ...n.params, [key]: value } } : n)),
+  });
+
+  it("chạy lần đầu: Biên kịch xong rồi mới có cảnh chạy, ra phim", async () => {
+    await save(ideaGraph(IDEA_A));
+    const first = await run();
+    expect(first.status, first.error ?? "").toBe("succeeded");
+    expect(videoAtWriter).toEqual([0]);
+
+    const wf = await getWorkflow();
+    const ids = sceneIds(wf.graph);
+    expect(ids).toHaveLength(4);
+    expect(wf.graph.nodes.filter((n) => ids.includes(n.id)).every((n) => n.type === "scene")).toBe(true);
+    expect(group(wf.graph).source).toMatchObject({ writerId: "writer-1", resultKey: writerKey(first.id) });
+    for (const id of ids) expect(first.nodes[id]?.status, id).toBe("succeeded");
+    const combine = wf.graph.nodes.find((n) => n.type === "film-combine")!;
+    expect(combine.params.order).toEqual(ids);
+    expect(first.nodes[combine.id]?.output?.video?.kind).toBe("video");
+    expect(s.log.video).toBe(4);
+    // Run lưu đúng đồ thị mới: mở lại sau khi tắt máy thì chạy tiếp đúng các cảnh này.
+    expect(JSON.parse(s.db.select().from(runs).where(eq(runs.id, first.id)).get()!.graphJson)).toEqual(wf.graph);
+  });
+
+  it("đổi ý tưởng, chạy lại: nhóm tự tạo lại, cảnh chữ không đổi thì cached", async () => {
+    await save(ideaGraph(IDEA_A));
+    const first = await run();
+    expect(first.status, first.error ?? "").toBe("succeeded");
+    const before = await getWorkflow();
+    const ids = sceneIds(before.graph);
+
+    await save(setParam(before.graph, "writer-1", "idea", IDEA_B));
+    const videoBefore = s.log.video;
+    const imageBefore = s.log.image;
+    const second = await run();
+    expect(second.status, second.error ?? "").toBe("succeeded");
+    const after = await getWorkflow();
+    expect(sceneIds(after.graph)).toEqual(ids);
+    expect(group(after.graph).source?.resultKey).toBe(writerKey(second.id));
+    expect(after.graph.nodes.find((n) => n.id === ids[3])!.params.motion).toBe("cô ngồi nghỉ trên tảng đá ngắm thác");
+    // Đồ vật lấy danh sách từ Biên kịch nên khoá node Đồ vật, rồi khoá các Cảnh, đổi theo khoá Biên kịch (khoá cache nối chuỗi
+    // theo khoá nguồn): cảnh không đổi chữ vẫn chạy lại nhưng mọi bước con (ảnh khung, clip) trúng cache, không tốn lượt.
+    // Chỉ cảnh 4 (đổi chuyển động) gọi dịch vụ: 1 video; ảnh khung dùng lại vì khung đầu không đổi.
+    expect(s.log.video - videoBefore).toBe(1);
+    expect(s.log.image - imageBefore).toBe(0);
+    expect(s.log.videoPrompts.at(-1)).toContain("cô ngồi nghỉ trên tảng đá ngắm thác");
+
+    // Biên kịch dùng lại cache (về ý tưởng A) nhưng khác kết quả nhóm đang giữ: vẫn tạo lại nhóm, mọi cảnh trúng cache.
+    await save(setParam(after.graph, "writer-1", "idea", IDEA_A));
+    const third = await run();
+    expect(third.status, third.error ?? "").toBe("succeeded");
+    expect(third.nodes["writer-1"]?.status).toBe("cached");
+    const back = await getWorkflow();
+    expect(group(back.graph).source?.resultKey).toBe(writerKey(first.id));
+    expect(back.graph.nodes.find((n) => n.id === ids[3])!.params.motion).toBe("việc xảy ra ở cảnh 4");
+    expect(ids.map((id) => third.nodes[id]?.status)).toEqual(["cached", "cached", "cached", "cached"]);
+    expect(s.log.video - videoBefore).toBe(1);
+    expect(s.log.image - imageBefore).toBe(0);
+  });
+
+  const editedThenRun = async () => {
+    await save(ideaGraph(IDEA_A));
+    expect((await run()).status).toBe("succeeded");
+    const wf = await getWorkflow();
+    const ids = sceneIds(wf.graph);
+    // Sửa tay chữ cảnh 2 rồi đổi ý tưởng.
+    await save(setParam(setParam(wf.graph, ids[1]!, "motion", "cô đặt rìu xuống, lau mồ hôi"), "writer-1", "idea", IDEA_B));
+    const counts = { video: s.log.video, image: s.log.image, text: s.log.text };
+    const blocked = await run();
+    return { ids, counts, blocked };
+  };
+
+  it("đã sửa tay một cảnh, đổi ý tưởng, chạy: run failed có decision scenes-edited, số lần gọi video/ảnh = 0", async () => {
+    const { ids, counts, blocked } = await editedThenRun();
+    expect(blocked.status).toBe("failed");
+    expect(blocked.error).toContain(EDITED_MESSAGE);
+    const wf = await getWorkflow();
+    expect(blocked.decision).toEqual({ kind: "scenes-edited", writerId: "writer-1", groupId: group(wf.graph).id });
+    expect(s.log.video - counts.video).toBe(0);
+    expect(s.log.image - counts.image).toBe(0);
+    expect(s.log.text - counts.text).toBe(1);
+    expect(blocked.nodes["writer-1"]?.status).toBe("succeeded");
+    const combineId = wf.graph.nodes.find((n) => n.type === "film-combine")!.id;
+    for (const id of [...ids, combineId]) expect(blocked.nodes[id]?.status, id).toBe("skipped");
+    // Thẻ đã sửa không bị thay khi chưa có câu trả lời.
+    expect(wf.graph.nodes.find((n) => n.id === ids[1])!.params.motion).toBe("cô đặt rìu xuống, lau mồ hôi");
+    expect(wf.graph.nodes.find((n) => n.id === ids[3])!.params.motion).toBe("việc xảy ra ở cảnh 4");
+  });
+
+  it("POST scenes choice keep rồi chạy: dùng thẻ đã sửa", async () => {
+    const { ids, blocked } = await editedThenRun();
+    expect(blocked.status).toBe("failed");
+
+    const kept = await s.app.inject({ method: "POST", url: `/api/workflows/${WF}/scenes`, payload: { writerId: "writer-1", choice: "keep" } });
+    expect(kept.statusCode).toBe(200);
+    const wf = WorkflowResponseSchema.parse(kept.json());
+    expect(group(wf.graph).source?.resultKey).toBe(writerKey(blocked.id));
+    expect(wf.graph.nodes.find((n) => n.id === ids[1])!.params.motion).toBe("cô đặt rìu xuống, lau mồ hôi");
+
+    const videoBefore = s.log.video;
+    const next = await run();
+    expect(next.status, next.error ?? "").toBe("succeeded");
+    expect(next.decision).toBeNull();
+    expect(next.nodes["writer-1"]?.status).toBe("cached");
+    expect(next.nodes[ids[1]!]?.status).toBe("succeeded");
+    expect(s.log.video - videoBefore).toBe(1);
+    expect(s.log.videoPrompts.at(-1)).toContain("cô đặt rìu xuống, lau mồ hôi");
+
+    // "Giữ" không phải là tạo lại: thẻ vẫn tính là đã sửa tay, đổi ý tưởng lần nữa thì lại dừng hỏi, không tốn lượt.
+    const keptWf = await getWorkflow();
+    await save(setParam(keptWf.graph, "writer-1", "idea", IDEA_A));
+    const counts = { video: s.log.video, image: s.log.image };
+    const again = await run();
+    expect(again.status).toBe("failed");
+    expect(again.decision).toEqual({ kind: "scenes-edited", writerId: "writer-1", groupId: group(keptWf.graph).id });
+    expect(s.log.video - counts.video).toBe(0);
+    expect(s.log.image - counts.image).toBe(0);
+    expect((await getWorkflow()).graph.nodes.find((n) => n.id === ids[1])!.params.motion).toBe("cô đặt rìu xuống, lau mồ hôi");
+
+    // Thay (mặc định): bỏ bản sửa tay, nhóm theo kết quả Biên kịch mới nhất (ý tưởng A).
+    const replaced = WorkflowResponseSchema.parse((await s.app.inject({ method: "POST", url: `/api/workflows/${WF}/scenes`, payload: { writerId: "writer-1" } })).json());
+    expect(sceneIds(replaced.graph)).toEqual(ids);
+    expect(replaced.graph.nodes.find((n) => n.id === ids[1])!.params.motion).not.toBe("cô đặt rìu xuống, lau mồ hôi");
+    expect(replaced.graph.nodes.find((n) => n.id === ids[3])!.params.motion).toBe("việc xảy ra ở cảnh 4");
+    expect(group(replaced.graph).source?.resultKey).toBe(writerKey(again.id));
+  });
+
+  // Bấm Chạy rồi, trong lúc Biên kịch đang viết thì sửa workflow (Editor tự lưu); thả Biên kịch ra cho run chạy hết.
+  const runWhileEditing = async (edit: (graph: WorkflowGraph) => WorkflowGraph) => {
+    const { asked, release } = hold();
+    const start = await s.app.inject({ method: "POST", url: `/api/workflows/${WF}/runs`, payload: {} });
+    const processing = (async () => {
+      while (await s.deps.queue.processNext());
+    })();
+    await asked;
+    await save(edit((await getWorkflow()).graph));
+    release();
+    await processing;
+    return RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${start.json<{ runId: string }>().runId}` })).json());
+  };
+  const extraPrompt = (graph: WorkflowGraph): WorkflowGraph => ({
+    ...graph,
+    nodes: [...graph.nodes, { id: "ghi-chu", type: "prompt", position: { x: 0, y: 2000 }, params: { text: "ghi chú thêm trong lúc chạy" } }],
+  });
+
+  it("sửa node khác trong lúc Biên kịch đang viết: workflow giữ cả sửa đổi đó lẫn nhóm cảnh mới", async () => {
+    await save(ideaGraph(IDEA_A));
+    const done = await runWhileEditing(extraPrompt);
+    expect(done.status, done.error ?? "").toBe("succeeded");
+    const wf = await getWorkflow();
+    expect(wf.graph.nodes.find((n) => n.id === "ghi-chu")?.params.text).toBe("ghi chú thêm trong lúc chạy");
+    const ids = sceneIds(wf.graph);
+    expect(ids).toHaveLength(4);
+    expect(group(wf.graph).source?.resultKey).toBe(writerKey(done.id));
+    for (const id of ids) expect(done.nodes[id]?.status, id).toBe("succeeded");
+    // Đồ thị của run là đồ thị lúc bấm Chạy cộng nhóm mới (không có node thêm sau).
+    const runGraph = JSON.parse(s.db.select().from(runs).where(eq(runs.id, done.id)).get()!.graphJson) as WorkflowGraph;
+    expect(runGraph.nodes.some((n) => n.id === "ghi-chu")).toBe(false);
+    expect(runGraph.groups![0]!.nodeIds).toEqual(ids);
+  });
+
+  it("sửa tay thẻ cảnh trong lúc Biên kịch đang viết: dừng hỏi, không ghi đè bản sửa, 0 video", async () => {
+    await save(ideaGraph(IDEA_A));
+    expect((await run()).status).toBe("succeeded");
+    const before = await getWorkflow();
+    const ids = sceneIds(before.graph);
+    await save(setParam(before.graph, "writer-1", "idea", IDEA_B));
+    const videoBefore = s.log.video;
+    const blocked = await runWhileEditing((g) => setParam(g, ids[0]!, "motion", "flycam bay vòng quanh thác"));
+    expect(blocked.status).toBe("failed");
+    expect(blocked.error).toContain(EDITED_MESSAGE);
+    expect(blocked.decision).toEqual({ kind: "scenes-edited", writerId: "writer-1", groupId: group(before.graph).id });
+    expect(s.log.video - videoBefore).toBe(0);
+    const wf = await getWorkflow();
+    expect(wf.graph.nodes.find((n) => n.id === ids[0])!.params.motion).toBe("flycam bay vòng quanh thác");
+    expect(wf.graph.nodes.find((n) => n.id === ids[3])!.params.motion).toBe("việc xảy ra ở cảnh 4");
+  });
+
+  it("cảnh cũ của nhóm sai luật nhưng Biên kịch sẽ tạo lại: không chặn từ đầu, tạo lại rồi chạy xong", async () => {
+    // Nhóm cũ: cảnh 2 "nối" từ cảnh 1 nhưng khác chủ thể → Ghép phim báo lỗi nếu kiểm ngay lúc bấm Chạy.
+    const base = ideaGraph(IDEA_A);
+    const cut = { id: "c01", size: "EWS", angle: "aerial", move: "drone", subject: "none", link: "cut", start: "thác nước nhỏ trong rừng", motion: "sương trôi qua thác", props: "" } as const;
+    const chain = { ...cut, id: "c02", size: "MS", angle: "eye", move: "static", subject: "character", link: "chain", start: "", motion: "cô gái bước tới mép nước" } as const;
+    const stale = expandScenes(base, {
+      writerId: "writer-1",
+      groupId: group(base).id,
+      shots: [cut, chain],
+      refs: { character: "character-1", location: "location-1", props: "props-1" },
+      provider: "fake",
+      resultKey: "ket-qua-cu",
+      origin: { x: 900, y: 40 },
+    }).graph;
+    await save(stale);
+    const done = await run();
+    expect(done.status, done.error ?? "").toBe("succeeded");
+    const wf = await getWorkflow();
+    expect(sceneIds(wf.graph)).toHaveLength(4);
+    expect(wf.graph.edges.some((e) => e.targetHandle === "follow")).toBe(false);
+    expect(s.log.video).toBe(4);
+  });
+
+  it("bộ cảnh mới không qua kiểm luật Ghép phim: không cảnh nào được chạy, video = 0, không lưu gì", async () => {
+    // Nhóm cũ cắm vào node Đồ vật gõ tay chỉ có "lều"; Biên kịch (giả) viết cảnh dùng "khúc gỗ" → Ghép phim chặn trước khi chạy.
+    const base = ideaGraph(IDEA_A);
+    const graph: WorkflowGraph = {
+      ...base,
+      nodes: [...base.nodes, { id: "props-tay", type: "props", position: { x: 40, y: 1140 }, params: { name: "", items: [{ name: "lều", description: "lều mái vòm nhỏ màu xanh rêu", states: "dựng trên bãi cỏ" }], provider: "fake" } }],
+    };
+    const shot = { id: "c01", size: "EWS", angle: "aerial", move: "drone", subject: "none", link: "cut", start: "bãi cỏ nhỏ có lều xanh", motion: "sương trôi chậm qua bãi cỏ", props: "lều: dựng trên bãi cỏ" } as const;
+    const stale = expandScenes(graph, {
+      writerId: "writer-1",
+      groupId: group(base).id,
+      shots: [shot],
+      refs: { character: "character-1", location: "location-1", props: "props-tay" },
+      provider: "fake",
+      resultKey: "ket-qua-cu",
+      origin: { x: 900, y: 40 },
+    }).graph;
+    await save(stale);
+
+    const blocked = await run();
+    expect(blocked.status).toBe("failed");
+    expect(blocked.error).toContain("Kiểm luật trước khi chạy");
+    expect(blocked.error).toContain("khúc gỗ");
+    expect(s.log.video).toBe(0);
+    expect(blocked.nodes["writer-1"]?.status).toBe("succeeded");
+    // Kiểm luật trước khi lưu: workflow và đồ thị của run giữ nguyên nhóm cũ (1 cảnh, kết quả cũ).
+    const wf = await getWorkflow();
+    expect(wf.graph).toEqual(WorkflowResponseSchema.shape.graph.parse(stale));
+    expect(JSON.parse(s.db.select().from(runs).where(eq(runs.id, blocked.id)).get()!.graphJson)).toEqual(wf.graph);
+    const ids = sceneIds(wf.graph);
+    expect(ids).toHaveLength(1);
+    expect(blocked.nodes[ids[0]!]?.status).toBe("skipped");
+  });
+
+  it("POST scenes: Biên kịch chưa có kết quả → 409; workflow lạ → 404; thân sai → 400", async () => {
+    await save(ideaGraph(IDEA_A));
+    const none = await s.app.inject({ method: "POST", url: `/api/workflows/${WF}/scenes`, payload: { writerId: "writer-1" } });
+    expect(none.statusCode).toBe(409);
+    expect(none.json<{ error: string }>().error).toBe("Biên kịch chưa có kết quả: bấm Chạy trước");
+    expect((await s.app.inject({ method: "POST", url: "/api/workflows/khong-co/scenes", payload: { writerId: "writer-1" } })).statusCode).toBe(404);
+    expect((await s.app.inject({ method: "POST", url: `/api/workflows/${WF}/scenes`, payload: { choice: "xoa" } })).statusCode).toBe(400);
+  });
+});
+
+describe("API chuyển workflow cũ (Dựng phim → Cảnh + Ghép phim) khi mở, không tốn lượt", () => {
+  const OLD_MESSAGE = "Kết quả cũ từ Dựng phim — bấm Chạy để kiểm lại (0 lượt)";
+  let s: TestServer;
+  beforeEach(async () => {
+    s = await createTestServer();
+  });
+  afterEach(async () => {
+    await s.cleanup();
+  });
+
+  const allCalls = () => ({ video: s.log.video, image: s.log.image, text: s.log.text });
+  const open = async (id: string) => {
+    const res = await s.app.inject({ method: "GET", url: id === "default" ? "/api/workflows/default" : `/api/workflows/${id}` });
+    expect(res.statusCode, res.body).toBe(200);
+    return WorkflowResponseSchema.parse(res.json());
+  };
+  const runOf = async (id: string) => {
+    const start = await s.app.inject({ method: "POST", url: `/api/workflows/${id}/runs`, payload: {} });
+    expect(start.statusCode).toBe(202);
+    while (await s.deps.queue.processNext());
+    return RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${start.json<{ runId: string }>().runId}` })).json());
+  };
+  const latest = async (id: string) => LatestRunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${id}/runs/latest` })).json()).run;
+  const putLegacy = async (id: string, graph: WorkflowGraph, name: string) =>
+    expect((await s.app.inject({ method: "PUT", url: `/api/workflows/${id}`, payload: { graph, name } })).statusCode).toBe(200);
+  const videoId = (v: unknown) => (v && typeof v === "object" && (v as { kind?: string }).kind === "video" ? (v as { mediaId: string }).mediaId : undefined);
+  const runCount = () => s.db.select().from(runs).all().length;
+
+  it("workflow Sơn La cũ chạy xong bằng film; GET → đã chuyển, có bản '-ban-cu'; chạy lại → calls() không tăng, mediaId phim bằng phim cũ", async () => {
+    const legacy = legacySonLaGraph();
+    await putLegacy("son-la", legacy, "Sinh tồn Sơn La");
+    const old = await runOf("son-la");
+    expect(old.status, old.error ?? "").toBe("succeeded");
+    const oldFilm = videoId(old.nodes["film-1"]?.output?.video);
+    expect(oldFilm).toBeTruthy();
+    const board = old.nodes["film-1"]?.output?.storyboard;
+    const boardShots = board?.kind === "storyboard" ? board.shots : [];
+    expect(boardShots).toHaveLength(12);
+    const before = allCalls();
+    const runsBefore = runCount();
+
+    const wf = await open("son-la");
+    expect(wf.name).toBe("Sinh tồn Sơn La");
+    expect(wf.graph.nodes.some((n) => n.type === "film" || n.type === "shotlist")).toBe(false);
+    const sceneIds = wf.graph.groups[0]!.nodeIds;
+    expect(sceneIds).toHaveLength(12);
+    const combineId = wf.graph.nodes.find((n) => n.type === "film-combine")!.id;
+
+    // Bản gốc giữ lại, và không bị chuyển khi mở.
+    const backup = await open("son-la-ban-cu");
+    expect(backup.name).toBe("Sinh tồn Sơn La (bản cũ)");
+    expect(backup.graph).toEqual(WorkflowResponseSchema.shape.graph.parse(legacy));
+
+    // Mở ra thấy ngay ảnh khung và clip cũ (một lần chạy hiển thị), chưa gọi dịch vụ nào.
+    expect(runCount()).toBe(runsBefore + 1);
+    const shown = await latest("son-la");
+    expect(shown?.status).toBe("succeeded");
+    sceneIds.forEach((id, i) => {
+      const st = shown?.nodes[id];
+      expect(st?.status, id).toBe("cached");
+      expect(st?.message).toBe(OLD_MESSAGE);
+      const frame = st?.output?.frame;
+      expect(frame?.kind === "image" ? frame.mediaId : undefined).toBe(boardShots[i]!.keyframeId);
+      const clip = st?.output?.clip;
+      expect(videoId(clip)).toBe(boardShots[i]!.clipId);
+      expect(clip?.kind === "video" ? clip.durationSec : 0).toBeGreaterThan(4);
+      expect(clip?.kind === "video" ? clip.clip : "không phải video").toBeUndefined();
+    });
+    expect(videoId(shown?.nodes[combineId]?.output?.video)).toBe(oldFilm);
+    expect(shown?.nodes["character-1"]?.output).toEqual(old.nodes["character-1"]?.output);
+    expect(shown?.nodes["props-1"]?.output).toEqual(old.nodes["props-1"]?.output);
+    expect(shown?.nodes["film-1"]).toBeUndefined();
+    expect(allCalls()).toEqual(before);
+
+    // Mở lần nữa: không chuyển lại, không ghi gì.
+    expect(await open("son-la")).toEqual(wf);
+    expect(runCount()).toBe(runsBefore + 1);
+    expect(await open("son-la-ban-cu")).toEqual(backup);
+
+    const rerun = await runOf("son-la");
+    expect(rerun.status, rerun.error ?? "").toBe("succeeded");
+    expect(allCalls()).toEqual(before);
+    expect(videoId(rerun.nodes[combineId]?.output?.video)).toBe(oldFilm);
+  });
+
+  it("bản '-ban-cu' vẫn chạy được (cached)", async () => {
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    const old = await runOf("son-la");
+    expect(old.status, old.error ?? "").toBe("succeeded");
+    await open("son-la");
+    const before = allCalls();
+    const backupRun = await runOf("son-la-ban-cu");
+    expect(backupRun.status, backupRun.error ?? "").toBe("succeeded");
+    expect(backupRun.nodes["film-1"]?.status).toBe("cached");
+    expect(videoId(backupRun.nodes["film-1"]?.output?.video)).toBe(videoId(old.nodes["film-1"]?.output?.video));
+    expect(allCalls()).toEqual(before);
+  });
+
+  it("Ý tưởng → phim cũ: cảnh lấy từ Biên kịch của lần ra phim; chạy lại không viết lại, không tạo lại nhóm, 0 lượt", async () => {
+    await putLegacy("y-tuong", legacyIdeaGraph("fake", 4), "Ý tưởng → phim");
+    const old = await runOf("y-tuong");
+    expect(old.status, old.error ?? "").toBe("succeeded");
+    const writerKey = s.db.select().from(runNodes).where(eq(runNodes.runId, old.id)).all().find((r) => r.nodeId === "writer-1")!.cacheKey;
+    const before = allCalls();
+
+    const wf = await open("y-tuong");
+    const group = wf.graph.groups[0]!;
+    expect(group.nodeIds).toHaveLength(4);
+    expect(group.source).toMatchObject({ writerId: "writer-1", resultKey: writerKey });
+    expect(wf.graph.nodes.filter((n) => group.nodeIds.includes(n.id)).every((n) => n.type === "scene")).toBe(true);
+    expect((await latest("y-tuong"))?.nodes["writer-1"]?.output).toEqual(old.nodes["writer-1"]?.output);
+
+    const rerun = await runOf("y-tuong");
+    expect(rerun.status, rerun.error ?? "").toBe("succeeded");
+    expect(allCalls()).toEqual(before);
+    expect(rerun.nodes["writer-1"]?.status).toBe("cached");
+    const combineId = wf.graph.nodes.find((n) => n.type === "film-combine")!.id;
+    expect(videoId(rerun.nodes[combineId]?.output?.video)).toBe(videoId(old.nodes["film-1"]?.output?.video));
+    expect((await open("y-tuong")).graph).toEqual(wf.graph);
+  });
+
+  it("workflow cũ chưa từng chạy: chuyển, có bản cũ, không có lần chạy hiển thị; Biên kịch chưa có kết quả thì nhóm rỗng", async () => {
+    await putLegacy("chua-chay", legacyIdeaGraph(), "Chưa chạy");
+    const wf = await open("chua-chay");
+    expect(wf.graph.nodes.map((n) => n.type)).toEqual(["character", "location", "writer", "props", "film-combine"]);
+    expect(wf.graph.groups[0]?.nodeIds).toEqual([]);
+    expect((await open("chua-chay-ban-cu")).name).toBe("Chưa chạy (bản cũ)");
+    expect(runCount()).toBe(0);
+  });
+
+  it("đã có bản '-ban-cu' thì không ghi đè; đang có lần chạy xếp hàng thì chưa chuyển; workflow không cần chuyển thì mở không ghi gì", async () => {
+    await putLegacy("son-la-ban-cu", promptToVideoGraph("bản cũ của chủ dự án"), "Bản cũ có sẵn");
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    const backupBefore = await open("son-la-ban-cu");
+
+    s.deps.queue.enqueue("son-la", legacySonLaGraph());
+    expect((await open("son-la")).graph.nodes.some((n) => n.type === "film")).toBe(true);
+    while (await s.deps.queue.processNext());
+
+    const wf = await open("son-la");
+    expect(wf.graph.nodes.some((n) => n.type === "film")).toBe(false);
+    expect(await open("son-la-ban-cu")).toEqual(backupBefore);
+    expect(await open("son-la")).toEqual(wf);
+
+    const def = await open("default");
+    expect(await open("default")).toEqual(def);
+  });
+
+  it("lần chạy cũ có output_json hỏng: vẫn chuyển, node đó không hiện kết quả cũ", async () => {
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    const old = await runOf("son-la");
+    expect(old.status, old.error ?? "").toBe("succeeded");
+    s.db.update(runNodes).set({ outputJson: "{hỏng" }).where(and(eq(runNodes.runId, old.id), eq(runNodes.nodeId, "character-1"))).run();
+
+    const wf = await open("son-la");
+    expect(wf.notice).toBeUndefined();
+    expect(wf.graph.nodes.some((n) => n.type === "film")).toBe(false);
+    const shown = await latest("son-la");
+    expect(shown?.nodes["character-1"]).toBeUndefined();
+    expect(shown?.nodes["location-1"]?.output).toEqual(old.nodes["location-1"]?.output);
+    for (const id of wf.graph.groups[0]!.nodeIds) expect(shown?.nodes[id]?.status, id).toBe("cached");
+  });
+
+  it("chuyển lỗi (dịch vụ không hợp lệ): GET 200 trả workflow chưa chuyển kèm thông báo, không ghi gì; /default vẫn mở được", async () => {
+    const bad = legacySonLaGraph();
+    bad.nodes = bad.nodes.map((n) => (n.id === "film-1" ? { ...n, params: { ...n.params, provider: "khong-co" } } : n));
+    await putLegacy("son-la", bad, "Sinh tồn Sơn La");
+    await putLegacy("default", bad, "Workflow đầu tiên");
+    const rowsBefore = s.db.select().from(workflows).all();
+
+    for (const id of ["son-la", "default"]) {
+      const wf = await open(id);
+      expect(wf.graph).toEqual(WorkflowResponseSchema.shape.graph.parse(bad));
+      expect(wf.notice, id).toContain("Không chuyển được workflow cũ");
+      expect(wf.notice).toContain("chưa bị đổi");
+      expect(wf.notice).toContain("khong-co");
+    }
+    expect(s.db.select().from(workflows).all()).toEqual(rowsBefore);
+    expect((await s.app.inject({ method: "GET", url: "/api/workflows/son-la-ban-cu" })).statusCode).toBe(404);
+    expect(runCount()).toBe(0);
+  });
+
+  it("Ý tưởng → phim đã chuyển, đổi ý tưởng rồi chạy: nhóm tạo lại theo kết quả Biên kịch mới, không hỏi", async () => {
+    await putLegacy("y-tuong", legacyIdeaGraph("fake", 4), "Ý tưởng → phim");
+    const old = await runOf("y-tuong");
+    expect(old.status, old.error ?? "").toBe("succeeded");
+    const wf = await open("y-tuong");
+    const oldKey = wf.graph.groups[0]!.source!.resultKey;
+    const textBefore = s.log.text;
+
+    const changed: WorkflowGraph = {
+      ...wf.graph,
+      nodes: wf.graph.nodes.map((n) => (n.id === "writer-1" ? { ...n, params: { ...n.params, idea: "Cô gái leo lên đỉnh đồi ngắm mây rồi dựng lều." } } : n)),
+    };
+    expect((await s.app.inject({ method: "PUT", url: "/api/workflows/y-tuong", payload: { graph: changed } })).statusCode).toBe(200);
+    const rerun = await runOf("y-tuong");
+    expect(rerun.status, rerun.error ?? "").toBe("succeeded");
+    expect(rerun.decision).toBeNull();
+    expect(rerun.nodes["writer-1"]?.status).toBe("succeeded");
+    expect(s.log.text).toBe(textBefore + 1);
+
+    const after = await open("y-tuong");
+    const newKey = s.db.select().from(runNodes).where(eq(runNodes.runId, rerun.id)).all().find((r) => r.nodeId === "writer-1")!.cacheKey;
+    expect(newKey).not.toBe(oldKey);
+    const group = after.graph.groups[0]!;
+    expect(group.source).toMatchObject({ writerId: "writer-1", resultKey: newKey });
+    expect(group.nodeIds).toHaveLength(4);
+    for (const id of group.nodeIds) expect(rerun.nodes[id]?.status, id).toMatch(/succeeded|cached/);
   });
 });

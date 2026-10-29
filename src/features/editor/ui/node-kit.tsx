@@ -26,6 +26,11 @@ export type EditorApi = {
   stateOf(nodeId: string): RunNodeState | undefined;
   // Đổi khi chuyển workflow hoặc có lượt chạy mới: ô dữ liệu lấy từ máy chủ (kho tài sản) tải lại theo khoá này.
   refreshKey: string;
+  // Đang chạy, đang xin chạy hoặc đang tải lại đồ thị sau lần chạy: nút đổi đồ thị phía máy chủ (Tạo thẻ cảnh) phải chờ.
+  busy: boolean;
+  // Tạo (thay) nhóm thẻ cảnh từ kết quả Biên kịch mới nhất: lưu sửa đổi đang chờ, gọi máy chủ, rồi hiện đồ thị mới.
+  // Lỗi (ví dụ Biên kịch chưa có kết quả) hiện ở thanh báo lỗi.
+  expandScenes(writerId: string): void;
 };
 
 export const EditorContext = createContext<EditorApi | null>(null);

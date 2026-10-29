@@ -3,12 +3,17 @@ import type { AssetKind } from "../shared/node-definition";
 import {
   ApiErrorSchema,
   AssetListResponseSchema,
+  CancelRunResponseSchema,
+  EstimateResponseSchema,
   LatestRunResponseSchema,
   MuseAccountsResponseSchema,
   RunResponseSchema,
   StartRunResponseSchema,
   WorkflowListResponseSchema,
   WorkflowResponseSchema,
+  type ExpandScenesBody,
+  type RunRequestBody,
+  type RunScope,
   type SaveWorkflowBody,
 } from "../shared/api";
 
@@ -22,6 +27,8 @@ async function call<S extends z.ZodType>(schema: S, url: string, init?: RequestI
   return schema.parse(body);
 }
 
+const runBody = (scope?: RunScope): RunRequestBody => (scope ? { scope } : {});
+
 export const api = {
   getDefaultWorkflow: () => call(WorkflowResponseSchema, "/api/workflows/default"),
   getWorkflow: (id: string) => call(WorkflowResponseSchema, `/api/workflows/${encodeURIComponent(id)}`),
@@ -30,8 +37,17 @@ export const api = {
     call(WorkflowResponseSchema, `/api/workflows/from-template/${encodeURIComponent(templateId)}`, { method: "POST", body: "{}" }),
   saveWorkflow: (id: string, body: SaveWorkflowBody) =>
     call(WorkflowResponseSchema, `/api/workflows/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }),
-  startRun: (workflowId: string) =>
-    call(StartRunResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/runs`, { method: "POST", body: "{}" }),
+  // Không truyền scope: chạy cả workflow.
+  startRun: (workflowId: string, scope?: RunScope) =>
+    call(StartRunResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/runs`, { method: "POST", body: JSON.stringify(runBody(scope)) }),
+  estimate: (workflowId: string, scope?: RunScope) =>
+    call(EstimateResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/estimate`, { method: "POST", body: JSON.stringify(runBody(scope)) }),
+  cancelRun: (runId: string) => call(CancelRunResponseSchema, `/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST", body: "{}" }),
+  expandScenes: (workflowId: string, writerId: string, choice?: ExpandScenesBody["choice"]) =>
+    call(WorkflowResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/scenes`, {
+      method: "POST",
+      body: JSON.stringify({ writerId, ...(choice ? { choice } : {}) } satisfies ExpandScenesBody),
+    }),
   getRun: (runId: string) => call(RunResponseSchema, `/api/runs/${encodeURIComponent(runId)}`),
   getLatestRun: (workflowId: string) => call(LatestRunResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/runs/latest`),
   getMuseAccounts: () => call(MuseAccountsResponseSchema, "/api/muse/accounts"),
