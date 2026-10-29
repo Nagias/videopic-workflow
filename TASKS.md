@@ -86,3 +86,18 @@ Kết luận: (1) Muse từ chối 1 lần ảnh chân thực có đính kèm �
 
 Tổng lượt Muse thật đợt nâng chất lượng: thử nghiệm 6 + Sơn La v2 36 (+ ước 2–4 lượt mất do máy chủ khởi động lại) + Ý tưởng → phim 31 (1 chữ + 22 ảnh + 8 video) ≈ 75; chạy lại Sơn La thêm 14 → ≈ 89; lần chạy lại thứ hai 10 (+~3 mất) → ≈ 102.
 
+
+## Canvas thẻ ảnh — Đợt 1A máy chủ (kế hoạch: `docs/superpowers/plans/2026-10-28-canvas-dot-1a-may-chu.md`)
+
+- [x] Task 1–8: cổng nhiều dây + lần tạo, chạy song song/một phần/huỷ, node Cảnh, node Ghép phim + kiểm luật trước khi chạy, nhóm Phân cảnh + Biên kịch tự tạo lại, chuyển workflow cũ, API ước tính/huỷ/kết quả gộp, giao diện tối thiểu + e2e (mỗi task có người soát riêng)
+- [x] Task 9: chạy thật trên dữ liệu của chủ dự án (sao lưu trước: `.data/backup-2026-10-29-truoc-dot-1a/`)
+
+### Nhật ký gọi Muse thật — Đợt 1A (29/10/2026, máy chủ không watch, nhánh `canvas-dot-1a`)
+
+| Giờ | Việc | Kết quả |
+|---|---|---|
+| 12:58 | Mở workflow `sinh-ton-son-la-mvrx71w5` → tự chuyển | ✅ 12 node Cảnh + 1 Ghép phim, dây nối tiếp cảnh 5→6 và 9→10, bản `-ban-cu` có. Ước tính `museTotal` = 0 |
+| 12:58 | Chạy lại cả workflow (run `ce922091`) | ✅ 0 lượt Muse (media nguồn Muse giữ 134), phim `70ba80fe…` giống hệt phim cũ, 59,8 giây. 10 file mới là khung cuối ffmpeg (không tốn lượt) |
+| 12:59–13:02 | Sửa chuyển động cảnh 3 (thêm "cô đứng thẳng lại thở ra một hơi"); ước tính trước khi chạy: 1 video, chỉ cảnh 3 (run `a0ce2882`) | ✅ đúng 1 video Muse (muse_vid_01, ~2 phút 18 giây; media Muse 134→135), 14 node dùng lại. Clip h264 1280×720 5,0 giây có tiếng; đã xem đầu/giữa/cuối: bổ rìu → gỗ tách đôi → cô đứng thẳng thở ra, đúng người, đúng trang phục, lều xanh rêu. Phim mới `b69e1b18…` 59,8 giây |
+
+Tổng lượt Muse thật Đợt 1A: 1.
