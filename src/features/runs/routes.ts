@@ -6,7 +6,8 @@ import { RunDecisionSchema, type CancelRunResponse, type LatestRunResponse, type
 import { NodeOutputsSchema } from "../../shared/ports";
 import { WorkflowGraphSchema, type WorkflowGraph } from "../../shared/workflow";
 import { getWorkflowRow } from "../workflows/store";
-import { freshResults, keyFnFor, newestRows } from "./fresh-results";
+import { OLD_RESULT_MESSAGE } from "../workflows/upgrade";
+import { freshResults, graphRules, newestRows } from "./fresh-results";
 
 function safeJson(text: string): unknown {
   try {
@@ -58,8 +59,10 @@ export function registerRunRoutes(app: FastifyInstance, deps: AppDeps): void {
   // Mở lại workflow thì giao diện hiện lại ảnh/phim: `run` là lần chạy gần nhất (kể cả đang chạy dở, `run.nodes` là ghi chép
   // nguyên của lần đó); `nodes` là, với mỗi node của workflow hiện tại, dòng mới nhất của nó trong mọi lần chạy (theo thời điểm
   // tạo run, rồi thời điểm cập nhật dòng), để chạy một phần không làm mất kết quả của node ngoài phạm vi (spec mục 6.3).
-  // Chỉ giữ kết quả còn đúng với workflow đang lưu (freshResults): tham số của node trong đồ thị của lần chạy đó (runs.graph_json)
-  // phải đúng bằng khoá cache tính lại từ đồ thị hiện tại (tham số, take, nguồn mới hơn, dây, thứ tự clip), với dòng không khoá thì kiểm yếu hơn (xem fresh-results.ts). Node khác thì vắng ở `nodes` (giao diện hiện "Chưa chạy"); những node từng có kết quả mà bị bỏ nằm ở `outdated`.
+  // Chỉ giữ kết quả còn đúng với workflow đang lưu (freshResults): khoá cache của dòng phải đúng bằng khoá cache tính lại từ đồ thị
+  // hiện tại (tham số, take, nguồn mới hơn, dây, thứ tự clip); dòng không khoá và dòng của lần chạy hiển thị của workflow cũ thì kiểm
+  // yếu hơn bằng đồ thị của lần chạy đó (runs.graph_json, xem fresh-results.ts). Node khác thì vắng ở `nodes` (giao diện hiện
+  // "Chưa chạy"); những node từng có kết quả mà bị bỏ nằm ở `outdated`.
   app.get<{ Params: { id: string } }>("/api/workflows/:id/runs/latest", async (req, reply) => {
     const wf = getWorkflowRow(deps.db, req.params.id);
     if (!wf) return reply.code(404).send({ error: "Không tìm thấy workflow" });
@@ -94,7 +97,20 @@ export function registerRunRoutes(app: FastifyInstance, deps: AppDeps): void {
         if (parsed.success) runGraphs.set(r.id, parsed.data);
       }
     }
-    const { shown, outdated } = freshResults(allRows, runGraphs, graph, keyFnFor(deps.nodes));
+    // Lần chạy hiển thị của workflow cũ: có dòng mang OLD_RESULT_MESSAGE (writeDisplayRun()), xét mọi dòng của lần đó kể cả node
+    // đã xoá khỏi workflow.
+    const displayRuns = new Set(
+      runIds.length === 0
+        ? []
+        : deps.db
+            .selectDistinct({ runId: runNodes.runId })
+            .from(runNodes)
+            .where(and(inArray(runNodes.runId, runIds), eq(runNodes.message, OLD_RESULT_MESSAGE)))
+            .all()
+            .map((r) => r.runId),
+    );
+    const { shown, outdated, unplannable } = freshResults(allRows, runGraphs, displayRuns, graph, graphRules(deps.nodes));
+    if (unplannable !== null) req.log.warn({ workflowId: wf.id, reason: unplannable }, "runs/latest: đồ thị hiện tại chưa lập được kế hoạch, lọc kết quả bằng nhánh kiểm yếu");
     const nodes = Object.fromEntries([...shown].map(([id, row]) => [id, toNodeState(row)]));
     const res: LatestRunResponse = { run: run ? toRunResponse(deps, run) : null, nodes, outdated };
     return res;

@@ -1,7 +1,8 @@
 import { GraphError, nodeKeyOf, planGraph } from "../../core/executor";
 import type { ServerNode } from "../../core/node-runtime";
 import { stableStringify, withoutDefaultTake } from "../../shared/hash";
-import type { WorkflowGraph } from "../../shared/workflow";
+import { orderSourceList } from "../../shared/source-order";
+import type { WorkflowEdge, WorkflowGraph } from "../../shared/workflow";
 
 // Kết quả nào của lần chạy cũ còn đúng với workflow đang lưu? (GET /api/workflows/:id/runs/latest). Hàm thuần (không đọc db).
 //
@@ -11,10 +12,14 @@ import type { WorkflowGraph } from "../../shared/workflow";
 // luôn: tham số đổi, `take` đổi, nguồn có kết quả mới hơn kết quả X đã dùng (chạy riêng một cảnh), đổi dây, đổi thứ tự clip.
 // Duyệt theo thứ tự đồ thị: nguồn bị bỏ (hoặc chưa có kết quả) thì mọi node nhận từ nó cũng bị bỏ.
 //
-// Dòng không có khoá (lần chạy hiển thị của workflow cũ, dòng bỏ qua/lỗi), hoặc khoá không đáng tin (khoá lưu khác khoá tính lại từ
-// chính đồ thị của lần chạy đó: phiên bản prompt đã đổi từ sau lần chạy), hoặc nguồn có dòng không khoá, hoặc đồ thị hiện tại
-// không lập được kế hoạch (thiếu dây bắt buộc): kiểm tra yếu hơn nhưng không để "Xong" giả:
-//   - tham số và các dây vào của X trong đồ thị của lần chạy của nó giống hệt hiện tại, VÀ
+// Khoá không đáng tin (khoá lưu khác khoá tính lại bằng code hiện tại từ chính đồ thị của lần chạy đó: phiên bản prompt đã đổi từ
+// sau lần chạy) thì bỏ, đúng như ước tính và máy chạy (chúng coi node là chưa có kết quả, sẽ tốn lượt). Ngoại lệ duy nhất: dòng của
+// lần chạy hiển thị của workflow cũ (`displayRuns`, writeDisplayRun() ở workflows/upgrade.ts), vì node giữ mã ở đó mang khoá cũ.
+// Dòng không có khoá (lần chạy hiển thị của workflow cũ; ở lần chạy thường chỉ có dòng chờ/bỏ qua/lỗi trước khi chạy, không có đầu
+// ra), dòng không đáng tin của lần chạy hiển thị, nguồn có dòng không khoá, hoặc đồ thị hiện tại không lập được kế hoạch (thiếu dây
+// bắt buộc): kiểm tra yếu hơn nhưng không để "Xong" giả:
+//   - tham số và các dây vào của X (cổng nhiều dây theo đúng thứ tự ghép của từng đồ thị) trong đồ thị của lần chạy của nó giống
+//     hệt hiện tại, VÀ
 //   - mỗi nguồn U hoặc có dòng đang hiện nằm cùng lần chạy với X, hoặc có đầu ra (outputJson) y hệt dòng U trong lần chạy của X.
 //     U không có dòng trong lần chạy của X, hoặc không có đầu ra để so, thì bỏ. (Dòng "dùng lại" không chứng minh X đã dùng đầu ra nào.)
 //
@@ -26,11 +31,33 @@ export function paramsKey(params: unknown): string {
   return stableStringify(withoutDefaultTake(JSON.parse(JSON.stringify(params ?? null))));
 }
 
-// Các dây vào từng node (nguồn.cổng ra → cổng vào, xếp cố định) dạng chữ: so dây giữa hai đồ thị khi không tính được khoá.
-export function wiresOfGraph(graph: Pick<WorkflowGraph, "edges">): Map<string, string> {
-  const wires = new Map<string, string[]>();
-  for (const e of graph.edges) wires.set(e.target, [...(wires.get(e.target) ?? []), `${e.source}.${e.sourceHandle}>${e.targetHandle}`]);
-  return new Map([...wires].map(([id, list]) => [id, list.sort().join(",")]));
+// Cổng `port` của loại node `nodeType` có nhận nhiều dây không (cổng Clip của Ghép phim).
+export type IsMultiple = (nodeType: string, port: string) => boolean;
+
+// Các dây vào từng node dạng chữ, theo từng cổng vào: so dây giữa hai đồ thị khi không tính được khoá. Cổng nhiều dây theo đúng
+// thứ tự node sẽ nhận (orderSourceList(): `order` rồi toạ độ node nguồn TRONG CHÍNH đồ thị này), nên kéo thẻ cảnh làm đổi thứ tự
+// clip là khác; cổng thường xếp cố định.
+export function wiresOfGraph(graph: Pick<WorkflowGraph, "nodes" | "edges">, isMultiple: IsMultiple): Map<string, string> {
+  const nodes = new Map(graph.nodes.map((n) => [n.id, n]));
+  const ports = new Map<string, Map<string, WorkflowEdge[]>>();
+  for (const e of graph.edges) {
+    const byPort = ports.get(e.target) ?? new Map<string, WorkflowEdge[]>();
+    byPort.set(e.targetHandle, [...(byPort.get(e.targetHandle) ?? []), e]);
+    ports.set(e.target, byPort);
+  }
+  const wire = (e: WorkflowEdge) => `${e.source}.${e.sourceHandle}`;
+  return new Map(
+    [...ports].map(([id, byPort]) => {
+      const node = nodes.get(id);
+      const parts = [...byPort.keys()].sort().map((port) => {
+        const edges = byPort.get(port)!;
+        const list =
+          node && isMultiple(node.type, port) ? orderSourceList(edges, node.params.order, (sid) => nodes.get(sid)?.position).map(wire) : edges.map(wire).sort();
+        return `${port}<${list.join(",")}`;
+      });
+      return [id, parts.join(";")];
+    }),
+  );
 }
 
 // Tham số từng node trong đồ thị của một lần chạy.
@@ -42,17 +69,28 @@ export type ResultRow<T> = { nodeId: string; runId: string; cacheKey: string | n
 
 // Khoá cache của node `nodeId` trong một đồ thị, cho khoá các node nguồn (keyOf); undefined khi không tính được.
 export type KeyFn = (nodeId: string, keyOf: (sourceId: string) => string | undefined) => string | undefined;
-export type KeyFnFor = (graph: WorkflowGraph) => KeyFn | undefined;
+// Đồ thị không lập được kế hoạch thì `{ unplannable: lý do }` thay cho KeyFn.
+export type KeyFnFor = (graph: WorkflowGraph) => KeyFn | { unplannable: string };
+
+// Quy tắc đồ thị lấy từ các loại node của máy chủ: khoá cache và cổng nhiều dây.
+export type GraphRules = { keyFor: KeyFnFor; isMultiple: IsMultiple };
+
+export function graphRules(nodes: Record<string, ServerNode>): GraphRules {
+  return {
+    keyFor: keyFnFor(nodes),
+    isMultiple: (nodeType, port) => nodes[nodeType]?.definition.inputs.find((p) => p.name === port)?.multiple === true,
+  };
+}
 
 // Dựng KeyFn từ đúng hàm của máy chủ (planGraph + nodeKeyOf, không viết lại công thức khoá). Đồ thị không lập được kế hoạch
-// (thiếu dây bắt buộc, tham số hỏng, có vòng) thì undefined; lỗi khác ném tiếp.
+// (thiếu dây bắt buộc, tham số hỏng, có vòng) thì trả lý do; lỗi khác ném tiếp.
 export function keyFnFor(nodes: Record<string, ServerNode>): KeyFnFor {
   return (graph) => {
     let order;
     try {
       order = planGraph(graph, nodes);
     } catch (err) {
-      if (err instanceof GraphError) return undefined;
+      if (err instanceof GraphError) return { unplannable: err.message };
       throw err;
     }
     const planned = new Map(order.map((p) => [p.node.id, p]));
@@ -97,13 +135,15 @@ function topoOrder(graph: Pick<WorkflowGraph, "nodes" | "edges">): string[] {
 
 // `rows`: MỌI dòng kết quả của các node trong workflow, mới nhất trước. `runGraphs`: mã lần chạy → đồ thị của lần đó, chỉ cần cho các
 // lần chạy có dòng mới nhất của một node (newestRows); lần chạy không có trong bảng (đồ thị không đọc được) thì không kiểm chứng
-// được nên không hiện gì của nó.
+// được nên không hiện gì của nó. `displayRuns`: mã các lần chạy hiển thị của workflow cũ (có dòng mang OLD_RESULT_MESSAGE).
+// `unplannable`: lý do đồ thị hiện tại không lập được kế hoạch (cả lần lọc đi nhánh kiểm yếu), để máy chủ ghi log.
 export function freshResults<T>(
   rows: readonly ResultRow<T>[],
   runGraphs: ReadonlyMap<string, WorkflowGraph>,
+  displayRuns: ReadonlySet<string>,
   current: WorkflowGraph,
-  keyFor: KeyFnFor,
-): { shown: Map<string, T>; outdated: string[] } {
+  { keyFor, isMultiple }: GraphRules,
+): { shown: Map<string, T>; outdated: string[]; unplannable: string | null } {
   const currentParams = paramsOfGraph(current);
   const newest = newestRows(rows, current);
   const inRun = new Map<string, ResultRow<T>>();
@@ -118,25 +158,27 @@ export function freshResults<T>(
     if (!runParams.has(runId)) runParams.set(runId, paramsOfGraph(graph));
     return runParams.get(runId);
   };
+  const asKeyFn = (k: KeyFn | { unplannable: string }) => (typeof k === "function" ? k : undefined);
   const runKeyFns = new Map<string, KeyFn | undefined>();
   const keyFnOfRun = (runId: string) => {
     const graph = runGraphs.get(runId);
     if (!graph) return undefined;
-    if (!runKeyFns.has(runId)) runKeyFns.set(runId, keyFor(graph));
+    if (!runKeyFns.has(runId)) runKeyFns.set(runId, asKeyFn(keyFor(graph)));
     return runKeyFns.get(runId);
   };
-  const currentWires = wiresOfGraph(current);
+  const currentWires = wiresOfGraph(current, isMultiple);
   const runWires = new Map<string, Map<string, string>>();
   const wiresIn = (runId: string) => {
     const graph = runGraphs.get(runId);
     if (!graph) return undefined;
-    if (!runWires.has(runId)) runWires.set(runId, wiresOfGraph(graph));
+    if (!runWires.has(runId)) runWires.set(runId, wiresOfGraph(graph, isMultiple));
     return runWires.get(runId);
   };
-  const currentKeyFn = keyFor(current);
+  const currentPlan = keyFor(current);
+  const currentKeyFn = asKeyFn(currentPlan);
 
   // Khoá của dòng đáng tin khi nó đúng là khoá mà code hiện tại tính ra cho đồ thị của chính lần chạy đó (không phải khoá cũ của
-  // phiên bản prompt trước, cũng không phải dòng hiển thị của workflow cũ).
+  // phiên bản prompt trước, cũng không phải khoá cũ của node giữ mã trong lần chạy hiển thị của workflow cũ).
   const trusted = (row: ResultRow<T>): boolean => {
     if (row.cacheKey === null) return false;
     const keyOf = keyFnOfRun(row.runId);
@@ -151,8 +193,11 @@ export function freshResults<T>(
     if (sources.some((s) => s === undefined)) continue;
     const upstream = sources as ResultRow<T>[];
 
+    const isTrusted = trusted(row);
     let fresh: boolean;
-    if (currentKeyFn && trusted(row) && upstream.every((u) => u.cacheKey !== null)) {
+    if (row.cacheKey !== null && !isTrusted && !displayRuns.has(row.runId)) {
+      fresh = false;
+    } else if (currentKeyFn && isTrusted && upstream.every((u) => u.cacheKey !== null)) {
       const byId = new Map(upstream.map((u) => [u.nodeId, u.cacheKey ?? undefined]));
       fresh = currentKeyFn(id, (sid) => byId.get(sid)) === row.cacheKey;
     } else {
@@ -168,5 +213,9 @@ export function freshResults<T>(
     if (fresh) kept.set(id, row);
   }
   // `outdated`: node từng có kết quả mà không còn hiện (để khung Kết quả nói rõ "đã đổi sau lần chạy cuối", khác với chưa chạy bao giờ).
-  return { shown: new Map([...kept].map(([id, row]) => [id, row.state])), outdated: [...newest.keys()].filter((id) => !kept.has(id)) };
+  return {
+    shown: new Map([...kept].map(([id, row]) => [id, row.state])),
+    outdated: [...newest.keys()].filter((id) => !kept.has(id)),
+    unplannable: typeof currentPlan === "function" ? null : currentPlan.unplannable,
+  };
 }

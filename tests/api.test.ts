@@ -849,6 +849,32 @@ describe("API chuyển workflow cũ (Dựng phim → Cảnh + Ghép phim) khi m�
     expect(videoId(full.nodes[combineId]?.output?.video)).toBeTruthy();
   });
 
+  it("runs/latest: khoá lưu không tính lại được (phiên bản prompt đã đổi) chỉ được kiểm yếu ở lần chạy hiển thị của workflow cũ; ở lần chạy thường thì bỏ, như ước tính", async () => {
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    expect((await runOf("son-la")).status).toBe("succeeded");
+    const wf = await open("son-la");
+    const sceneIds = wf.graph.groups[0]!.nodeIds;
+    const combineId = wf.graph.nodes.find((n) => n.type === "film-combine")!.id;
+    const driftKey = (runId: string, nodeId: string) =>
+      s.db.update(runNodes).set({ cacheKey: `khoa-phien-ban-truoc-${nodeId}` }).where(and(eq(runNodes.runId, runId), eq(runNodes.nodeId, nodeId))).run();
+
+    const displayRunId = s.db.select().from(runNodes).where(eq(runNodes.message, OLD_MESSAGE)).get()!.runId;
+    driftKey(displayRunId, "character-1");
+    const display = await latestAll("son-la");
+    expect(display.outdated).toEqual([]);
+    expect(display.nodes["character-1"]?.output).toBeTruthy();
+
+    const rerun = await runOf("son-la");
+    expect(rerun.status, rerun.error ?? "").toBe("succeeded");
+    expect((await latestAll("son-la")).outdated).toEqual([]);
+    driftKey(rerun.id, "character-1");
+    const normal = await latestAll("son-la");
+    expect(normal.nodes["character-1"]).toBeUndefined();
+    expect(normal.outdated).toContain("character-1");
+    expect(normal.outdated).toContain(combineId);
+    for (const id of sceneIds) expect(normal.nodes[id], id).toBeUndefined();
+  });
+
   it("bản '-ban-cu' vẫn chạy được (cached)", async () => {
     await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
     const old = await runOf("son-la");
