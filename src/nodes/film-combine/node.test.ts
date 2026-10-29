@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runNodes } from "../../core/db/schema";
 import type { Ffmpeg } from "../../core/ffmpeg";
-import { executeRun } from "../../core/executor";
+import { executeRun, orderSources, planGraph } from "../../core/executor";
 import { createChatLocks } from "../../core/run-shared";
 import type { ProviderRegistry } from "../../providers/types";
 import type { Shot } from "../../shared/director";
@@ -12,6 +12,7 @@ import type { WorkflowGraph, WorkflowNode } from "../../shared/workflow";
 import { countingFakeProviders, testNodes } from "../../../tests/helpers/nodes";
 import { createTestEnv, type TestEnv } from "../../../tests/helpers/test-env";
 import type { SceneParams } from "../scene/definition";
+import { definition, scenesFeeding } from "./definition";
 
 const CHARACTER = "an adult Vietnamese woman in her early 20s, plain features";
 const LOCATION = "sườn đồi Sơn La có suối đá bên dưới";
@@ -158,7 +159,7 @@ describe("node film-combine (Ghép phim)", () => {
     ], [edge("s1", "clip", "s2", "follow")]);
     const { runId, error } = await runGraph(graph, counter.providers);
     expect(error?.message).toContain("s2");
-    expect(error?.message).toMatch(/cảnh đầu tiên không thể "nối"/);
+    expect(error?.message).toContain(`Cảnh "s2" nối tiếp "s1" nhưng đứng đầu Ghép phim`);
     expect(counter.calls()).toBe(0);
     expect(counter.log.image).toBe(0);
     for (const id of ["ch", "lo", "s1", "s2", "g"]) expect(rowOf(runId, id)?.status).toBe("skipped");
@@ -211,5 +212,95 @@ describe("node film-combine (Ghép phim)", () => {
     // Không cắt về 5 giây như clip của Cảnh.
     expect(film?.durationSec).toBeGreaterThan(9.5);
     expect(Math.abs((film?.durationSec ?? 0) - (clip?.kind === "video" ? clip.durationSec : 0))).toBeLessThan(0.15);
+  });
+
+  describe("Nối tiếp phải nối đúng clip liền trước trong Ghép phim", () => {
+    // Clip theo `order`; "v" là video Tạo video (không phải Cảnh). follow: [cảnh, nguồn nối].
+    const mixed = (order: string[], follow: [string, string][]): WorkflowGraph => {
+      const scenes = order.filter((id) => id !== "v");
+      return {
+        nodes: [
+          ...refNodes(),
+          node("p", "prompt", { text: "rừng nguyên sinh buổi sáng" }),
+          node("v", "generate-video", { provider: "fake", durationSec: 5 }),
+          ...scenes.map((id, i) => node(id, "scene", scene(id, { size: (["MS", "CU", "WS"] as const)[i % 3], start: follow.some(([s]) => s === id) ? "" : `start ${id}` }))),
+          node("g", "film-combine", { fixBrightness: true, order }),
+        ],
+        edges: [
+          edge("p", "text", "v", "prompt"),
+          ...scenes.flatMap((id) => refEdges(id)),
+          ...order.map((id, i) => edge(id, id === "v" ? "video" : "clip", "g", "clips", i)),
+          ...follow.map(([s, from]) => edge(from, from === "v" ? "video" : "clip", s, "follow")),
+        ],
+      };
+    };
+    const feed = (graph: WorkflowGraph) => {
+      const planned = new Map(planGraph(graph, testNodes).map((p) => [p.node.id, p]));
+      const ctx = {
+        node: planned.get("g")!,
+        graph,
+        planned,
+        sources: (id: string, port: string) => {
+          const p = planned.get(id)!;
+          return p.impl.definition.inputs.find((x) => x.name === port)?.multiple ? orderSources(p, port, graph) : [...(p.inputs.get(port) ?? [])];
+        },
+      };
+      return { feeding: scenesFeeding("g", ctx), errors: definition.preflight!(ctx) };
+    };
+
+    it("[v, s(follow←v)] qua kiểm luật, s coi là cảnh cắt, chạy được", async () => {
+      const graph = mixed(["v", "s"], [["s", "v"]]);
+      const { feeding, errors } = feed(graph);
+      expect(errors).toEqual([]);
+      expect(feeding.shots.map((s) => s.link)).toEqual(["cut"]);
+      expect(feeding.positions).toEqual([2]);
+      const counter = countingFakeProviders();
+      const { runId, error } = await runGraph(graph, counter.providers);
+      expect(error).toBeUndefined();
+      expect(counter.calls()).toBe(2);
+      expect(rowOf(runId, "g")?.status).toBe("succeeded");
+    });
+
+    it("[s1, s2(follow←s1)] vẫn là cảnh nối", () => {
+      const { feeding, errors } = feed(mixed(["s1", "s2"], [["s2", "s1"]]));
+      expect(errors).toEqual([]);
+      expect(feeding.shots.map((s) => s.link)).toEqual(["cut", "chain"]);
+    });
+
+    it("[s1, s2, s3(follow←s1)] → lỗi nêu cả hai, calls() = 0", async () => {
+      const graph = mixed(["s1", "s2", "s3"], [["s3", "s1"]]);
+      expect(feed(graph).errors).toContain(`Cảnh "s3" nối tiếp "s1" nhưng đứng sau "s2" trong Ghép phim`);
+      const counter = countingFakeProviders();
+      const { error } = await runGraph(graph, counter.providers);
+      expect(error?.message).toContain(`Cảnh "s3" nối tiếp "s1" nhưng đứng sau "s2" trong Ghép phim`);
+      expect(counter.calls()).toBe(0);
+    });
+
+    it("[s1, v, s2(follow←s1)] → lỗi, calls() = 0", async () => {
+      const graph = mixed(["s1", "v", "s2"], [["s2", "s1"]]);
+      const counter = countingFakeProviders();
+      const { error } = await runGraph(graph, counter.providers);
+      expect(error?.message).toContain(`Cảnh "s2" nối tiếp "s1" nhưng đứng sau "v" trong Ghép phim`);
+      expect(counter.calls()).toBe(0);
+    });
+
+    it("nối tiếp clip không có trong Ghép phim → lỗi", () => {
+      const graph = mixed(["s2"], [["s2", "s1"]]);
+      graph.nodes.push(node("s1", "scene", scene("s1")));
+      graph.edges.push(...refEdges("s1"));
+      expect(feed(graph).errors).toContain(`Cảnh "s2" nối tiếp "s1" nhưng "s1" không có trong Ghép phim`);
+    });
+
+    it("trạng thái đồ vật vẫn phải liên tục qua clip không phải Cảnh", () => {
+      const graph = mixed(["s1", "v", "s2"], []);
+      graph.nodes.push(node("pr", "props", { items: [{ name: "khúc gỗ", description: "khúc gỗ thông ngắn", states: "nguyên khúc, bổ đôi" }], provider: "fake" }));
+      graph.edges.push(edge("pr", "props", "s1", "props"), edge("pr", "props", "s2", "props"));
+      const s1 = graph.nodes.find((n) => n.id === "s1")!;
+      const s2 = graph.nodes.find((n) => n.id === "s2")!;
+      s1.params = { ...s1.params, props: "khúc gỗ: nguyên khúc -> bổ đôi" };
+      s2.params = { ...s2.params, props: "khúc gỗ: nguyên khúc" };
+      const { errors } = feed(graph);
+      expect(errors.some((e) => e.startsWith(`Cảnh "s2" (clip 3):`) && e.includes(`đang ở trạng thái "bổ đôi"`))).toBe(true);
+    });
   });
 });

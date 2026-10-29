@@ -12,33 +12,55 @@ export const params = z.object({
 export type FilmCombineParams = z.infer<typeof params>;
 
 // Danh sách cảnh mà một Ghép phim sẽ ghép, dựng lại từ tham số các node Cảnh cắm vào (đúng thứ tự ghép),
-// để kiểm luật giữa các cảnh trước khi tốn lượt. Nguồn không phải Cảnh (video khác) không có luật cảnh, bỏ qua.
+// để kiểm luật giữa các cảnh trước khi tốn lượt. Đi theo đúng thứ tự clip trong phim, clip không phải Cảnh giữ chỗ:
+// - Cảnh có dây Nối tiếp phải nối đúng clip liền trước nó trong Ghép phim, sai thì lỗi (`errors`, nêu cả hai).
+// - Cảnh chỉ là "chain" trong `shots` khi clip liền trước là Cảnh nó nối; liền trước là video khác (Kéo dài video)
+//   thì coi là cảnh cắt có khung đầu là khung cuối video đó (như Cảnh tự kiểm), nên luật chủ thể/số cảnh nối liền
+//   chỉ áp giữa hai Cảnh kề nhau trong phim. Trạng thái đồ vật vẫn phải liên tục trên cả phim.
+// - `positions[i]`: vị trí (từ 1) của shots[i] trong phim, để báo lỗi đúng chỗ.
 // known: từ node Đồ vật đầu tiên mà các cảnh cắm vào, đọc tham số như node Đồ vật đọc (rowsToSpec()).
-// Đồ vật lấy danh sách từ Biên kịch (cổng spec có dây) thì chưa biết món nào trước khi chạy: known để trống.
-export function scenesFeeding(combineId: string, ctx: PreflightCtx): { shots: Shot[]; known?: KnownProp[] } {
+// Đồ vật lấy danh sách từ Biên kịch (cổng spec có dây) thì chưa biết món nào trước khi chạy: known để trống (DEBT.md N-015).
+export function scenesFeeding(combineId: string, ctx: PreflightCtx): { shots: Shot[]; positions: number[]; errors: string[]; known?: KnownProp[] } {
+  const clips = ctx.sources(combineId, "clips");
   const shots: Shot[] = [];
+  const positions: number[] = [];
+  const errors: string[] = [];
+  const isScene = (id: string | undefined) => id !== undefined && ctx.planned.get(id)?.node.type === "scene";
   let propsNode: string | undefined;
-  for (const src of ctx.sources(combineId, "clips")) {
+  clips.forEach((src, i) => {
     const p = ctx.planned.get(src.source);
-    if (p?.node.type !== "scene") continue;
+    if (!p || p.node.type !== "scene") return;
     const s = sceneParams.parse(p.params);
+    const follow = ctx.sources(p.node.id, "follow")[0];
+    const prev = clips[i - 1];
+    const followsPrev = follow !== undefined && prev !== undefined && follow.source === prev.source && follow.sourceHandle === prev.sourceHandle;
+    if (follow && !followsPrev) {
+      const where = clips.some((c) => c.source === follow.source && c.sourceHandle === follow.sourceHandle)
+        ? prev
+          ? `đứng sau "${prev.source}" trong Ghép phim`
+          : "đứng đầu Ghép phim"
+        : `"${follow.source}" không có trong Ghép phim`;
+      errors.push(`Cảnh "${p.node.id}" nối tiếp "${follow.source}" nhưng ${where}`);
+    }
+    const chain = followsPrev && isScene(prev?.source);
     shots.push({
       id: p.node.id,
-      link: ctx.sources(p.node.id, "follow").length > 0 ? "chain" : "cut",
+      link: chain ? "chain" : "cut",
       size: s.size,
       angle: s.angle,
       move: s.move,
       subject: s.subject,
-      start: s.start,
+      start: follow && !chain ? s.start.trim() || "khung cuối clip trước" : s.start,
       motion: s.motion,
       props: s.props,
     });
+    positions.push(i + 1);
     propsNode ??= ctx.sources(p.node.id, "props")[0]?.source;
-  }
+  });
   const pr = propsNode === undefined ? undefined : ctx.planned.get(propsNode);
-  if (pr?.node.type !== "props" || ctx.sources(pr.node.id, "spec").length > 0) return { shots };
+  if (pr?.node.type !== "props" || ctx.sources(pr.node.id, "spec").length > 0) return { shots, positions, errors };
   const known = rowsToSpec(propsParams.parse(pr.params).items).map((i) => ({ name: i.name, states: i.states }));
-  return { shots, known };
+  return { shots, positions, errors, known };
 }
 
 export const definition = defineNode<FilmCombineParams>({
@@ -54,8 +76,12 @@ export const definition = defineNode<FilmCombineParams>({
   estimate: () => ({ image: 0, video: 0, text: 0 }),
   // Luật giữa các cảnh (nối, trạng thái đồ vật liên tục, tên/trạng thái đồ vật) trên cả chuỗi cảnh cắm vào.
   preflight(ctx) {
-    const { shots, known } = scenesFeeding(ctx.node.node.id, ctx);
-    if (shots.length === 0) return [];
-    return checkShotList(shots, known).errors.map((e) => e.replace(/^Cảnh (\d+):/, (_, n: string) => `Cảnh ${n} ("${shots[Number(n) - 1]!.id}"):`));
+    const { shots, positions, errors, known } = scenesFeeding(ctx.node.node.id, ctx);
+    if (shots.length === 0) return errors;
+    // checkShotList đánh số theo shots; đổi về mã node và vị trí clip trong phim.
+    const checked = checkShotList(shots, known).errors.map((e) =>
+      e.replace(/^Cảnh (\d+):/, (_, n: string) => `Cảnh "${shots[Number(n) - 1]!.id}" (clip ${positions[Number(n) - 1]!}):`),
+    );
+    return [...errors, ...checked];
   },
 });
