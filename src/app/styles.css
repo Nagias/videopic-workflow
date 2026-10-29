@@ -178,18 +178,18 @@ button.primary {
 }
 
 /* Thẻ node: nhãn nổi phía trên, thân là ảnh/video/chữ, chân một dòng. Không có ô nhập nào trên thẻ. */
-/* Bề rộng theo bản phác: thẻ thường 250, thẻ Cảnh 210 (vừa lưới nhóm Phân cảnh 230 × 250), Ghép phim 340. */
+/* Bề rộng thẻ do GraphNode đặt (cardWidthOf() ở new-node.ts). */
 .gnode {
   position: relative;
-  width: 250px;
 }
 
-.gnode.type-scene {
-  width: 210px;
-}
-
-.gnode.type-film-combine {
-  width: 340px;
+/* Node có loại lạ (workflow cũ): vẫn thấy khung đỏ. */
+.gnode.status-failed {
+  padding: 10px 12px;
+  border: 1px solid var(--err);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--err);
 }
 
 .nlabel {
@@ -416,7 +416,9 @@ button.primary {
 .nlabel.compact .st,
 .card.compact .cfoot,
 .card.compact .cerr,
-.card.compact .runbtn {
+.card.compact .runbtn,
+.card.compact .prog,
+.gnode.compact .plabel {
   display: none;
 }
 

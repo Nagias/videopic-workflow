@@ -5,7 +5,8 @@ import { labelOf } from "../../../shared/node-label";
 import { Banners } from "./Banners";
 import { connectionProblem, droppedConnectionProblem, edgeKindClass, replaceTargetEdges, targetAcceptsMany } from "./graph-convert";
 import { GraphNode, type FlowNode } from "./GraphNode";
-import { Inspector } from "./Inspector";
+import { COMPACT_ZOOM } from "./NodeCard";
+import { Inspector, sourcesOf, type InspectorSources } from "./Inspector";
 import { inheritProvider, placeNewNode } from "./new-node";
 import { EditorContext, type EditorApi } from "./node-kit";
 import { QueuePanel } from "./QueuePanel";
@@ -13,6 +14,8 @@ import { Rail } from "./Rail";
 import { TopBar } from "./TopBar";
 import { useRun } from "./use-run";
 import { useWorkflow } from "./use-workflow";
+
+const EMPTY_SOURCES: InspectorSources = { nodes: [], edges: [] };
 
 const nodeTypes = Object.fromEntries(Object.keys(webNodes).map((t) => [t, GraphNode]));
 
@@ -68,13 +71,14 @@ export function Editor() {
     const params = inheritProvider(impl.definition.defaults as Record<string, unknown>, existing);
     setNodes((ns) => [
       ...ns.map((n) => (n.selected ? { ...n, selected: false } : n)),
-      { id, type, position: placeNewNode(center, ns), selected: true, data: { params } },
+      { id, type, position: placeNewNode(center, ns, type), selected: true, data: { params } },
     ]);
   };
 
   // Đúng một node đang chọn thì khung bên phải hiện nó; chọn nhiều node hoặc không chọn thì khung đóng.
   const selectedNodes = nodes.filter((n) => n.selected);
-  const selectedId = selectedNodes.length === 1 ? selectedNodes[0]!.id : null;
+  const selectedNode = selectedNodes.length === 1 ? selectedNodes[0]! : null;
+  const inspectorSources = selectedNode ? sourcesOf(selectedNode.id, nodes, edges) : EMPTY_SOURCES;
 
   // Escape: đang gõ trong ô nhập thì chỉ thoát ô đó; không thì bỏ chọn node (khung bên phải đóng).
   useEffect(() => {
@@ -129,7 +133,7 @@ export function Editor() {
               onConnectEnd={onConnectEnd}
               isValidConnection={isValidConnection}
               fitView
-              fitViewOptions={{ padding: 0.3 }}
+              fitViewOptions={{ padding: 0.3, minZoom: COMPACT_ZOOM }}
               minZoom={0.1}
               colorMode="dark"
             >
@@ -138,7 +142,7 @@ export function Editor() {
             </ReactFlow>
           </div>
           <aside className="right-panel">
-            <Inspector nodeId={selectedId} nodes={nodes} edges={edges} />
+            <Inspector node={selectedNode} sources={inspectorSources} />
             <QueuePanel />
           </aside>
         </div>

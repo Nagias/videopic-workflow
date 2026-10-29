@@ -10,6 +10,9 @@ import { STATUS_LABEL, useEditor } from "./node-kit";
 // Dưới mức phóng này thẻ chỉ còn ảnh và tên (đỡ nặng máy khi canvas có hàng chục thẻ).
 export const COMPACT_ZOOM = 0.45;
 
+// Đang phóng nhỏ quá mức (chỉ hiện ảnh và tên): dùng chung cho thẻ và các phần phụ của node (tên cổng).
+export const useCompact = (): boolean => useStore((s) => s.transform[2] < COMPACT_ZOOM);
+
 // Biểu tượng loại node (ký tự Unicode, không thêm thư viện biểu tượng). Loại lạ dùng ◇.
 export const NODE_ICON: Record<string, string> = {
   prompt: "✎",
@@ -70,7 +73,7 @@ function Media({ media, compact, icon }: { media: CardMedia; compact: boolean; i
 export function NodeCard({ id, type, params, state, selected }: Props) {
   const editor = useEditor();
   const impl = webNodes[type];
-  const compact = useStore((s) => s.transform[2] < COMPACT_ZOOM);
+  const compact = useCompact();
   const connections = useNodeConnections({ handleType: "target" });
   const wires = useMemo<CardWires>(() => {
     const counts: Record<string, number> = {};

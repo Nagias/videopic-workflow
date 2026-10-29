@@ -181,3 +181,11 @@ test("thu nhỏ dưới 0.45: thẻ chỉ còn ảnh và tên, phóng lại thì
   for (let i = 0; i < 12; i++) await zoomIn.click();
   await expect(page.getByTestId("node-status-p")).toBeVisible();
 });
+
+test("mở workflow lớn (mẫu Sinh tồn Sơn La, 12 cảnh): vừa màn hình nhưng không rơi vào chế độ thu nhỏ", async ({ page }) => {
+  const created = (await (await page.request.post("/api/workflows/from-template/sinh-ton-son-la", { data: {} })).json()) as { id: string };
+  await page.goto(`/?wf=${created.id}`);
+  await expect(page.getByTestId("card-scene-g1-12")).toBeVisible();
+  await expect(page.locator(".gnode.compact")).toHaveCount(0);
+  await expect(page.getByTestId("node-status-scene-g1-1")).toBeVisible();
+});

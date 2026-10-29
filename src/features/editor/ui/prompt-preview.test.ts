@@ -3,6 +3,7 @@ import { sceneShot, type SceneParams } from "../../../nodes/scene/definition";
 import { clipStep, keyframeStep, textClipStep } from "../../../shared/shot-plan";
 import type { ImageSetValue, NodeOutputs } from "../../../shared/ports";
 import { writerPrompt } from "../../../shared/prompts";
+import { definition as writerDefinition, params as writerParams } from "../../../nodes/writer/definition";
 import { PROMPT_AT_RUN, promptPreview } from "./prompt-preview";
 
 const scene = (over: Partial<SceneParams> = {}): SceneParams => ({
@@ -50,8 +51,12 @@ describe("promptPreview — Cảnh", () => {
     const prev = node("prev", "scene", scene());
     const r = promptPreview("s", [...nodes(scene({ start: "" })), prev], [...edges, wire("prev", "clip", "s", "follow")], noOutput);
     if ("note" in r) throw new Error("phải có prompt");
-    expect(r.sections.map((s) => s.title.split(" (")[0])).toEqual(["Khung đầu", "Prompt video"]);
-    expect(r.sections[1]!.text).toBe(clipStep(sceneShot(scene({ start: "" }), true), "fake", sets().character, "").prompt);
+    expect(r.sections).toHaveLength(1);
+    expect(r.sections[0]!.title).toContain("Prompt video");
+    expect(r.notes).toHaveLength(1);
+    expect(r.notes![0]).toContain("Khung đầu");
+    expect(r.sections.map((x) => x.text).join("\n")).not.toContain("Khung đầu:");
+    expect(r.sections[0]!.text).toBe(clipStep(sceneShot(scene({ start: "" }), true), "fake", sets().character, "").prompt);
   });
 
   it("cảnh không người, không đồ vật: một prompt chữ → video", () => {
@@ -93,6 +98,16 @@ describe("promptPreview — Biên kịch và node khác", () => {
     expect(r).toEqual({
       sections: [{ title: "Prompt gửi Biên kịch", text: writerPrompt({ idea: "Cô gái dựng lều bên suối rồi nhóm lửa", shotCount: 8, character: "cô gái tóc đen, áo khoác xám" }) }],
     });
+  });
+
+  it("Biên kịch: ý tưởng có khoảng trắng hai đầu và thiếu số cảnh vẫn ra đúng chữ máy chủ dựng từ tham số đã qua zod (writer/run.ts)", () => {
+    const raw = { idea: "  \nCô gái dựng lều bên suối rồi nhóm lửa nấu nước \n ", provider: "fake" };
+    const r = promptPreview("w", [node("w", "writer", raw)], [], noOutput);
+    if ("note" in r) throw new Error("phải có prompt");
+    const parsed = writerParams.parse({ ...raw, shotCount: writerDefinition.defaults.shotCount });
+    expect(r.sections[0]!.text).toBe(writerPrompt({ idea: parsed.idea, shotCount: parsed.shotCount }));
+    expect(r.sections[0]!.text).toContain(`Số cảnh: ${writerDefinition.defaults.shotCount}`);
+    expect(r.sections[0]!.text).toContain("Ý tưởng: Cô gái dựng lều bên suối rồi nhóm lửa nấu nước\n");
   });
 
   it("node khác (và node không có): Prompt được tạo khi chạy", () => {

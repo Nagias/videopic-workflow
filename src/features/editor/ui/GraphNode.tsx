@@ -1,7 +1,8 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { webNodes } from "../../../nodes/registry.web";
 import { PORT_KIND_LABEL, type PortDef } from "../../../shared/ports";
-import { NodeCard } from "./NodeCard";
+import { cardWidthOf } from "./new-node";
+import { NodeCard, useCompact } from "./NodeCard";
 import { NodeErrorBoundary } from "./NodeErrorBoundary";
 import { useEditor } from "./node-kit";
 
@@ -29,11 +30,13 @@ function Port({ port, side, index, count }: { port: PortDef; side: "in" | "out";
 
 export function GraphNode({ id, type, data, selected }: NodeProps<FlowNode>) {
   const editor = useEditor();
+  const compact = useCompact();
   const impl = webNodes[type];
-  if (!impl) return <div className="gnode status-failed">Loại node lạ: {type}</div>;
+  const style = { width: cardWidthOf(type) };
+  if (!impl) return <div className="gnode status-failed" style={style}>Loại node lạ: {type}</div>;
   const { definition } = impl;
   return (
-    <div className={`gnode type-${type}`} data-testid={`node-${id}`}>
+    <div className={`gnode type-${type} ${compact ? "compact" : ""}`} style={style} data-testid={`node-${id}`}>
       <NodeErrorBoundary>
         <NodeCard id={id} type={type} params={data.params} state={editor.stateOf(id)} selected={Boolean(selected)} />
       </NodeErrorBoundary>

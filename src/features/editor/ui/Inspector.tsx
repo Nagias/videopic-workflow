@@ -1,5 +1,5 @@
 import type { Edge } from "@xyflow/react";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { webNodes } from "../../../nodes/registry.web";
 import { mediaUrl, type RunNodeState } from "../../../shared/api";
 import { fmtSec } from "../../../shared/card-line";
@@ -111,13 +111,18 @@ function ResultTab({ id, definition, state }: { id: string; definition: AnyNodeD
   );
 }
 
-function PromptTab({ node, nodes, edges }: { node: FlowNode; nodes: FlowNode[]; edges: Edge[] }) {
+function PromptTab({ node, sources }: { node: FlowNode; sources: InspectorSources }) {
   const editor = useEditor();
-  const preview = promptPreview(node.id, nodes, edges, (nid) => editor.stateOf(nid)?.output);
+  const preview = promptPreview(node.id, [node, ...sources.nodes], sources.edges, (nid) => editor.stateOf(nid)?.output);
   if ("note" in preview) return <p className="hint">{preview.note}</p>;
   return (
     <div className="stack">
       <p className="hint">Đúng chữ sẽ gửi Muse khi chạy (chỉ đọc). Sửa ở tab Thông số.</p>
+      {preview.notes?.map((n) => (
+        <p className="hint" key={n}>
+          {n}
+        </p>
+      ))}
       {preview.sections.map((s) => (
         <div className="stack" key={s.title}>
           <span className="fieldlabel">{s.title}</span>
@@ -128,7 +133,7 @@ function PromptTab({ node, nodes, edges }: { node: FlowNode; nodes: FlowNode[]; 
   );
 }
 
-function InspectorBody({ node, nodes, edges }: { node: FlowNode; nodes: FlowNode[]; edges: Edge[] }) {
+function InspectorBody({ node, sources }: { node: FlowNode; sources: InspectorSources }) {
   const editor = useEditor();
   const [tab, setTab] = useState<Tab>("params");
   const impl = webNodes[node.type ?? ""];
@@ -166,17 +171,32 @@ function InspectorBody({ node, nodes, edges }: { node: FlowNode; nodes: FlowNode
             />
           ) : null}
           {tab === "result" ? <ResultTab id={node.id} definition={definition} state={state} /> : null}
-          {tab === "prompt" ? <PromptTab node={node} nodes={nodes} edges={edges} /> : null}
+          {tab === "prompt" ? <PromptTab node={node} sources={sources} /> : null}
         </NodeErrorBoundary>
       </div>
     </div>
   );
 }
 
+// Phần đồ thị khung bên phải cần để dựng prompt: các node nối thẳng vào node đang chọn và dây nối đó.
+export type InspectorSources = { nodes: FlowNode[]; edges: Edge[] };
+
+export function sourcesOf(nodeId: string, nodes: FlowNode[], edges: Edge[]): InspectorSources {
+  const feeding = edges.filter((e) => e.target === nodeId);
+  const ids = new Set(feeding.map((e) => e.source));
+  return { nodes: nodes.filter((n) => ids.has(n.id)), edges: feeding };
+}
+
+type InspectorProps = { node: FlowNode | null; sources: InspectorSources };
+
+const sameItems = <T,>(a: readonly T[], b: readonly T[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+// Kéo một node khác không làm khung phải vẽ lại: chỉ vẽ lại khi node đang chọn hoặc node/dây nối vào nó đổi.
+const sameProps = (a: InspectorProps, b: InspectorProps) => a.node === b.node && sameItems(a.sources.nodes, b.sources.nodes) && sameItems(a.sources.edges, b.sources.edges);
+
 // Khung bên phải: sửa thông số, xem kết quả và prompt gửi Muse của node đang chọn. Không chọn node nào thì không hiện gì.
-export function Inspector({ nodeId, nodes, edges }: { nodeId: string | null; nodes: FlowNode[]; edges: Edge[] }) {
-  const node = nodeId === null ? undefined : nodes.find((n) => n.id === nodeId);
+export const Inspector = memo(function Inspector({ node, sources }: InspectorProps) {
   if (!node) return null;
   // key theo node: chọn node khác thì quay về tab Thông số.
-  return <InspectorBody key={node.id} node={node} nodes={nodes} edges={edges} />;
-}
+  return <InspectorBody key={node.id} node={node} sources={sources} />;
+}, sameProps);

@@ -3,6 +3,7 @@ import type { NodeOutputs, PropSetValue, ImageSetValue } from "../../../shared/p
 import { writerPrompt } from "../../../shared/prompts";
 import { clipStep, keyframeStep, textClipStep } from "../../../shared/shot-plan";
 import { definition as sceneDefinition, sceneShot, type SceneParams } from "../../../nodes/scene/definition";
+import { definition as writerDefinition } from "../../../nodes/writer/definition";
 
 // Tab "Prompt gửi Muse" của khung bên phải (chỉ đọc): dựng lại đúng chữ máy chủ sẽ gửi, bằng chính các hàm dựng prompt dùng chung
 // (src/shared/shot-plan.ts, src/shared/prompts.ts) — không viết lại chữ prompt ở đây. Đầu vào lấy từ kết quả lần chạy của node
@@ -11,7 +12,8 @@ import { definition as sceneDefinition, sceneShot, type SceneParams } from "../.
 export const PROMPT_AT_RUN = "Prompt được tạo khi chạy";
 
 export type PromptSection = { title: string; text: string };
-export type PromptPreview = { sections: PromptSection[] } | { note: string };
+// sections: chữ prompt thật sẽ gửi. notes: lời giải thích cho người đọc (không phải chữ gửi đi).
+export type PromptPreview = { sections: PromptSection[]; notes?: string[] } | { note: string };
 
 type PreviewNode = { id: string; type?: string; data: { params: Record<string, unknown> } };
 type PreviewWire = { source: string; sourceHandle?: string | null; target: string; targetHandle?: string | null };
@@ -66,7 +68,7 @@ function scenePreview(node: PreviewNode, nodes: readonly PreviewNode[], edges: r
   const props = propsOf(sourceOf(node.id, "props", nodes, edges), outputOf);
   const clip: PromptSection = { title: "Prompt video (gửi kèm ảnh khung đầu)", text: clipStep(shot, p.provider, character, "").prompt };
   if (shot.link === "chain") {
-    return { sections: [{ title: "Khung đầu", text: "Lấy khung cuối của clip cảnh trước nối vào, không gửi prompt tạo ảnh." }, clip] };
+    return { sections: [clip], notes: ["Khung đầu: lấy khung cuối của clip cảnh trước nối vào, không gửi prompt tạo ảnh."] };
   }
   const frame = keyframeStep({ shot, providerId: p.provider, character, location, ...(props ? { props } : {}) });
   return { sections: [{ title: "Prompt tạo ảnh khung đầu", text: frame.prompt }, clip] };
@@ -76,9 +78,10 @@ function writerPreview(node: PreviewNode, nodes: readonly PreviewNode[], edges: 
   const p = node.data.params;
   const sourceCharacter = sourceOf(node.id, "character", nodes, edges);
   const sourceLocation = sourceOf(node.id, "location", nodes, edges);
-  const count = typeof p.shotCount === "number" ? p.shotCount : 12;
+  // Như máy chủ đọc tham số qua zod: ý tưởng được cắt khoảng trắng hai đầu, thiếu số cảnh thì lấy mặc định của node.
+  const count = typeof p.shotCount === "number" ? p.shotCount : writerDefinition.defaults.shotCount;
   const text = writerPrompt({
-    idea: str(p.idea),
+    idea: str(p.idea).trim(),
     shotCount: count,
     ...(sourceCharacter ? { character: imageSetOf(sourceCharacter, "character", MISSING_CHARACTER, outputOf).description } : {}),
     ...(sourceLocation ? { location: imageSetOf(sourceLocation, "location", MISSING_LOCATION, outputOf).description } : {}),
