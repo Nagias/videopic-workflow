@@ -5,6 +5,8 @@ import { definition as characterDefinition } from "./character/definition";
 import { CharacterView } from "./character/view";
 import { definition as filmDefinition } from "./film/definition";
 import { FilmView } from "./film/view";
+import { definition as filmCombineDefinition } from "./film-combine/definition";
+import { FilmCombineView } from "./film-combine/view";
 import { definition as generateVideoDefinition } from "./generate-video/definition";
 import { GenerateVideoView } from "./generate-video/view";
 import { definition as locationDefinition } from "./location/definition";
@@ -23,6 +25,7 @@ import { WriterView } from "./writer/view";
 export const webNodes: Record<string, WebNode> = {
   [characterDefinition.type]: webNode(characterDefinition, CharacterView),
   [filmDefinition.type]: webNode(filmDefinition, FilmView),
+  [filmCombineDefinition.type]: webNode(filmCombineDefinition, FilmCombineView),
   [generateVideoDefinition.type]: webNode(generateVideoDefinition, GenerateVideoView),
   [locationDefinition.type]: webNode(locationDefinition, LocationView),
   [promptDefinition.type]: webNode(promptDefinition, PromptView),

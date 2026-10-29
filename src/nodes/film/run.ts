@@ -4,7 +4,7 @@ import type { MediaProvider } from "../../providers/types";
 import { checkShotList } from "../../shared/director";
 import type { StoryboardShot } from "../../shared/ports";
 import type { FilmParams } from "./definition";
-import { makeShot, type ShotResult } from "./shot-steps";
+import { concatParts, makeShot, type ShotResult } from "./shot-steps";
 
 // Điều phối: kiểm danh sách cảnh, chạy từng cảnh (makeShot) — cảnh nối chờ cảnh trước — rồi ghép.
 // Giới hạn song song, khoá chat nhân vật và cầu dao nằm ở ctx.shared (chung cả lần chạy).
@@ -84,22 +84,7 @@ export const run: NodeRun<FilmParams> = async (ctx, inputs, params) => {
   });
 
   ctx.report(`Ghép ${parts.length} cảnh…`);
-  const film = await ctx.step(["concat", parts], async () => {
-    const out = await ctx.storage.tmpPath("mp4");
-    await ctx.ffmpeg.concatClips(
-      parts.map((p) => ({
-        path: ctx.storage.absPath(ctx.storage.getMedia(p.clipId)!),
-        trimStartSec: p.trimStartSec,
-        durationSec: p.durationSec,
-        hasAudio: p.hasAudio,
-        ...(p.brightness ? { brightness: p.brightness } : {}),
-      })),
-      out,
-    );
-    const probe = await ctx.ffmpeg.probeVideo(out);
-    const rec = await ctx.storage.importFile(out, { kind: "video", source: "film", width: probe.width, height: probe.height, durationSec: probe.durationSec });
-    return { mediaId: rec.id, durationSec: probe.durationSec, width: probe.width, height: probe.height };
-  });
+  const film = await concatParts(ctx, parts);
   ctx.report(`Xong: ${shots.length} cảnh, ${film.durationSec.toFixed(1)} giây`);
   return {
     video: { kind: "video", mediaId: film.mediaId, durationSec: film.durationSec, width: film.width, height: film.height },

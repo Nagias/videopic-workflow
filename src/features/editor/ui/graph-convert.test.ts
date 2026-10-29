@@ -27,9 +27,9 @@ describe("nối dây giữa các node", () => {
     expect(acceptersOf("storyboard")).toEqual([]);
   });
 
-  it("video cắm được vào cổng Nối tiếp của Cảnh", () => {
+  it("video cắm được vào cổng Clip của Ghép phim và cổng Nối tiếp của Cảnh", () => {
     const why = connectionProblem({ source: "v", sourceHandle: "video", target: "f", targetHandle: "shots" }, nodes);
-    expect(why).toContain("Video cắm được vào: Cảnh (Nối tiếp)");
+    expect(why).toContain("Video cắm được vào: Ghép phim (Clip); Cảnh (Nối tiếp)");
   });
 
   it("thả dây: tự đổi chiều khi kéo từ cổng vào; hai cổng cùng phía hoặc cùng node thì báo cách kéo", () => {

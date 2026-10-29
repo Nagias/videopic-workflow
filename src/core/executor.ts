@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { and, eq } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import type { ProviderRegistry } from "../providers/types";
+import type { SourceRef } from "../shared/node-definition";
 import { NodeOutputsSchema, type NodeOutputs, type PortValue } from "../shared/ports";
 import type { WorkflowGraph, WorkflowNode } from "../shared/workflow";
 import type { Db } from "./db/client";
@@ -12,6 +13,7 @@ import type { NodeInputs, ServerNode, StepValue } from "./node-runtime";
 import { recordAsset } from "../features/assets/store";
 import { collectMediaIds } from "./media-ids";
 import { SERVICE_FAILURE_LIMIT } from "../shared/service-failure";
+import { preflightErrors } from "./preflight";
 import { createRunShared, type ChatLocks } from "./run-shared";
 import type { Storage } from "./storage";
 
@@ -30,7 +32,7 @@ export type PlannedNode = {
   inputs: Map<string, SourceRef[]>;
 };
 
-export type SourceRef = { source: string; sourceHandle: string };
+export type { SourceRef };
 
 // Số lần tạo (take) của node: càng cao càng là một lần tạo khác. Mặc định 1.
 export function takeOf(params: unknown): number {
@@ -225,9 +227,10 @@ export async function executeRun(
     db.update(runNodes).set({ ...patch, updatedAt: now() }).where(and(eq(runNodes.runId, runId), eq(runNodes.nodeId, nodeId))).run();
   const addRow = (nodeId: string) => db.insert(runNodes).values({ runId, nodeId, status: "pending", updatedAt: now() }).onConflictDoNothing().run();
 
+  let order: PlannedNode[];
   let plan: PlannedNode[];
   try {
-    const order = planGraph(graph, deps.nodes);
+    order = planGraph(graph, deps.nodes);
     const inScope = scopeNodes(order, scope);
     plan = order.filter((p) => inScope.has(p.node.id));
   } catch (err) {
@@ -240,6 +243,18 @@ export async function executeRun(
     throw err;
   }
   for (const p of plan) addRow(p.node.id);
+
+  // Kiểm luật trước khi tốn lượt: có lỗi thì không node nào được khởi chạy.
+  const blocked = preflightErrors(plan, new Map(order.map((p) => [p.node.id, p])), graph, (p, port) => orderSources(p, port, graph));
+  if (blocked.length > 0) {
+    const culprits = new Set(blocked.map((e) => e.nodeId));
+    for (const p of plan) {
+      const own = blocked.filter((e) => e.nodeId === p.node.id).map((e) => e.message);
+      const error = own.length > 0 ? own.join("; ") : `Bỏ qua vì kiểm luật trước khi chạy có lỗi ở ${[...culprits].map((id) => `"${id}"`).join(", ")}`;
+      setNode(p.node.id, { status: "skipped", error, message: null });
+    }
+    throw new GraphError(`Kiểm luật trước khi chạy: ${blocked.length} lỗi, chưa chạy node nào. ${blocked.map((e) => e.message).join(" | ")}`);
+  }
 
   const shared = createRunShared({ providers: deps.providers, chatLocks: deps.chatLocks, failureLimit: SERVICE_FAILURE_LIMIT });
   const outputs = new Map<string, NodeOutputs>();

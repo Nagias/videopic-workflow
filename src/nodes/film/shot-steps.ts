@@ -129,6 +129,29 @@ async function keyframeFor(ctx: NodeRunContext, a: ShotArgs, pctx: ProviderConte
   );
 }
 
+// Một clip trong phim: phần dùng khi ghép (đã cắt đầu) và độ sáng để bù (chỉ khi bật bù sáng).
+export type FilmPart = { clipId: string; trimStartSec: number; durationSec: number; hasAudio: boolean; brightness?: Brightness };
+
+// Ghép phim: Dựng phim và Ghép phim dùng chung bước con ["concat", parts] (cùng stepScope "film"),
+// nên cùng các phần (giá trị và trường có mặt) thì ra đúng một file, không ghép lại.
+export const concatParts = (ctx: NodeRunContext, parts: FilmPart[]): Promise<{ mediaId: string; durationSec: number; width: number; height: number }> =>
+  ctx.step(["concat", parts], async () => {
+    const out = await ctx.storage.tmpPath("mp4");
+    await ctx.ffmpeg.concatClips(
+      parts.map((p) => ({
+        path: ctx.storage.absPath(ctx.storage.getMedia(p.clipId)!),
+        trimStartSec: p.trimStartSec,
+        durationSec: p.durationSec,
+        hasAudio: p.hasAudio,
+        ...(p.brightness ? { brightness: p.brightness } : {}),
+      })),
+      out,
+    );
+    const probe = await ctx.ffmpeg.probeVideo(out);
+    const rec = await ctx.storage.importFile(out, { kind: "video", source: "film", width: probe.width, height: probe.height, durationSec: probe.durationSec });
+    return { mediaId: rec.id, durationSec: probe.durationSec, width: probe.width, height: probe.height };
+  });
+
 export async function makeShot(ctx: NodeRunContext, a: ShotArgs): Promise<ShotResult> {
   const { shot, provider, character, location } = a;
   const look = location.look ?? DEFAULT_LOOK;
