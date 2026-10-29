@@ -29,6 +29,8 @@ export type EditorApi = {
   setParams(nodeId: string, patch: Record<string, unknown>): void;
   replaceParams(nodeId: string, params: Record<string, unknown>): void;
   stateOf(nodeId: string): RunNodeState | undefined;
+  // Node từng có kết quả nhưng tham số hoặc đầu vào đã đổi sau lần chạy đó (máy chủ không trả kết quả của nó): khung Kết quả nói rõ lý do, không để trống như chưa chạy bao giờ.
+  isOutdated(nodeId: string): boolean;
   // Đổi khi chuyển workflow hoặc có lượt chạy mới: ô dữ liệu lấy từ máy chủ (kho tài sản) tải lại theo khoá này.
   refreshKey: string;
   // Đang chạy, đang xin chạy hoặc đang tải lại đồ thị sau lần chạy: nút đổi đồ thị phía máy chủ (Tạo thẻ cảnh) phải chờ.

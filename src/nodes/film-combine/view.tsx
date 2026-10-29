@@ -4,6 +4,9 @@ import { orderAfterMove, orderSourceList, shiftTarget } from "../../shared/sourc
 import { useEditor, type NodeViewProps } from "../../features/editor/ui/node-kit";
 import type { FilmCombineParams } from "./definition";
 
+// Kiểu dữ liệu riêng của cú kéo: thả clip lên ô nhập chữ thì không dán mã node vào đó.
+const CLIP_DRAG_TYPE = "application/x-videopic-clip";
+
 // Dải thứ tự clip: mỗi clip nối vào cổng Clip là một ảnh nhỏ (khung đầu của cảnh nếu có, không thì ô "clip"), đúng thứ tự máy chủ
 // sẽ ghép (orderSourceList, cùng hàm với orderSources() của máy chủ). Kéo thả (hoặc Alt+mũi tên khi đang chọn một clip) ghi
 // params.order; chưa đổi gì thì không ghi, nên thứ tự mặc định (theo toạ độ) không bị "đóng đinh" khi chưa ai kéo.
@@ -28,10 +31,12 @@ function OrderStrip({ id, params, setParams, incoming }: Pick<NodeViewProps<Film
   );
   const shown = clips.map((c) => c.source);
 
-  const move = (clipId: string, to: number) => {
+  // Trả true khi thứ tự thật sự đổi (và đã ghi params.order).
+  const move = (clipId: string, to: number): boolean => {
     const next = orderAfterMove(params.order, shown, clipId, to);
-    if (next.slice(0, shown.length).every((x, i) => x === shown[i])) return;
+    if (next.slice(0, shown.length).every((x, i) => x === shown[i])) return false;
     setParams({ order: next });
+    return true;
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>, clipId: string, index: number) => {
@@ -39,13 +44,12 @@ function OrderStrip({ id, params, setParams, incoming }: Pick<NodeViewProps<Film
     const by = e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : 0;
     if (by === 0) return;
     e.preventDefault();
-    refocus.current = clipId;
-    move(clipId, shiftTarget(index, by, shown.length));
+    if (move(clipId, shiftTarget(index, by, shown.length))) refocus.current = clipId;
   };
 
   const onDrop = (e: DragEvent<HTMLElement>, index: number) => {
     e.preventDefault();
-    const clipId = e.dataTransfer.getData("text/plain");
+    const clipId = e.dataTransfer.getData(CLIP_DRAG_TYPE);
     setDragging(null);
     setOver(null);
     if (shown.includes(clipId)) move(clipId, index);
@@ -77,7 +81,7 @@ function OrderStrip({ id, params, setParams, incoming }: Pick<NodeViewProps<Film
               tabIndex={0}
               aria-label={`Clip ${index + 1}: ${clip.label}. Alt cùng mũi tên để đổi chỗ`}
               onDragStart={(e) => {
-                e.dataTransfer.setData("text/plain", clip.source);
+                e.dataTransfer.setData(CLIP_DRAG_TYPE, clip.source);
                 e.dataTransfer.effectAllowed = "move";
                 setDragging(clip.source);
               }}

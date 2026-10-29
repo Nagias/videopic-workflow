@@ -84,6 +84,14 @@ function ValueView({ value }: { value: PortValue }) {
 
 // Tab Kết quả: mọi đầu ra của lần chạy mới nhất (video, ảnh, chữ…), kèm thông báo và lỗi đầy đủ (trên thẻ chỉ có một dòng).
 function ResultTab({ id, definition, state }: { id: string; definition: AnyNodeDefinition; state: RunNodeState | undefined }) {
+  const editor = useEditor();
+  if (!state && editor.isOutdated(id)) {
+    return (
+      <p className="hint" data-testid={`result-outdated-${id}`}>
+        Thông số hoặc đầu vào đã đổi sau lần chạy cuối — chạy lại để tạo kết quả mới.
+      </p>
+    );
+  }
   if (!state) return <p className="hint">Chưa có kết quả. Bấm ▶ Chạy để node này tạo kết quả.</p>;
   const outputs = Object.entries(state.output ?? {});
   return (

@@ -67,7 +67,7 @@ export function Editor() {
   const wf = useWorkflow();
   const run = useRun(wf);
   const { workflowId, nodes, edges, setNodes, setEdges, setProblem, latest, groups, groupList, setGroups } = wf;
-  const { nodeStates, expandScenes } = run;
+  const { nodeStates, outdated, expandScenes } = run;
   // Đang kiểm ước tính / hộp xác nhận đang mở: cũng tính là bận, để mọi đường chạy (nút, phím, menu) đứng yên.
   const [checking, setChecking] = useState(false);
   const busy = run.active || run.starting || run.syncing || checking;
@@ -512,13 +512,14 @@ export function Editor() {
         setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, params: { ...n.data.params, ...patch } } } : n))),
       replaceParams: (nodeId, params) => setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, params: { ...params } } } : n))),
       stateOf: (nodeId) => nodeStates[nodeId],
+      isOutdated: (nodeId) => outdated.has(nodeId),
       refreshKey: `${workflowId ?? ""}:${runId}:${runStatus}`,
       busy,
       expandScenes: (writerId) => void expandScenes(writerId),
       titleOf: (nodeId, baseLabel, params) => labelOf({ id: nodeId, params }, baseLabel, { groups: groups.current }),
       runNode: (nodeId) => runScope({ mode: "node", nodeId }),
     }),
-    [nodeStates, setNodes, workflowId, runId, runStatus, busy, expandScenes, groups, runScope],
+    [nodeStates, outdated, setNodes, workflowId, runId, runStatus, busy, expandScenes, groups, runScope],
   );
 
   return (

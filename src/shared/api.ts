@@ -102,8 +102,13 @@ export const RunResponseSchema = z.object({
 export type RunResponse = z.infer<typeof RunResponseSchema>;
 
 // run: lần chạy mới nhất. nodes: với mỗi node của workflow hiện tại, trạng thái mới nhất của nó trong mọi lần chạy
-// (chạy một phần thì node ngoài phạm vi vẫn hiện kết quả lần trước).
-export const LatestRunResponseSchema = z.object({ run: RunResponseSchema.nullable(), nodes: z.record(z.string(), RunNodeStateSchema) });
+// (chạy một phần thì node ngoài phạm vi vẫn hiện kết quả lần trước), trừ node đã đổi tham số/đầu vào từ đó (xem `outdated`).
+export const LatestRunResponseSchema = z.object({
+  run: RunResponseSchema.nullable(),
+  nodes: z.record(z.string(), RunNodeStateSchema),
+  // Node từng có kết quả nhưng không còn đúng với workflow đang lưu (tham số hoặc đầu vào đã đổi sau lần chạy đó): không có trong `nodes`.
+  outdated: z.array(z.string()),
+});
 export type LatestRunResponse = z.infer<typeof LatestRunResponseSchema>;
 
 export const MuseAccountsResponseSchema = z.object({

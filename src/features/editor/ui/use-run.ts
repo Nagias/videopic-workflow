@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../app/api-client";
 import type { ExpandScenesBody, RunNodeState, RunResponse, RunScope } from "../../../shared/api";
-import { paramsSnapshot, staleResultIds, withoutResults, writersFinished } from "./run-sync";
+import { writersFinished } from "./run-sync";
 import { isActive, runView } from "./run-view";
 import { errText, type WorkflowApi } from "./use-workflow";
 
@@ -9,11 +9,12 @@ const POLL_MS = 1000;
 
 const NO_STATES: Record<string, RunNodeState> = {};
 const NO_IDS: readonly string[] = [];
+const NO_OUTDATED: ReadonlySet<string> = new Set();
 
 // Lượt chạy của workflow đang mở: bắt đầu, hỏi tiến độ, gộp kết quả vào các node, tải lại đồ thị giữa và cuối lượt chạy, huỷ,
 // và trả lời hộp hỏi Thay/Giữ của Biên kịch.
 export function useRun(wf: WorkflowApi) {
-  const { workflowId, shownWorkflow, groups, latest, onShown, save, flushEdits, applyGraph, reloadGraph, setProblem } = wf;
+  const { workflowId, shownWorkflow, groups, onShown, save, flushEdits, applyGraph, reloadGraph, setProblem } = wf;
   const [run, setRun] = useState<RunResponse | null>(null);
   // true khi `run` là lần chạy cũ tải lại lúc mở workflow (chưa xem trực tiếp trong phiên này).
   const [runFromHistory, setRunFromHistory] = useState(false);
@@ -25,6 +26,8 @@ export function useRun(wf: WorkflowApi) {
   const [runNodeIds, setRunNodeIds] = useState<readonly string[]>(NO_IDS);
   // Hướng dẫn bước tiếp theo sau khi chọn Thay/Giữ.
   const [info, setInfo] = useState<string | null>(null);
+  // Node từng có kết quả nhưng tham số/đầu vào đã đổi sau lần chạy đó: máy chủ không trả kết quả của chúng (GET .../runs/latest).
+  const [outdated, setOutdated] = useState<ReadonlySet<string>>(NO_OUTDATED);
   const currentRun = useRef<RunResponse | null>(null);
   currentRun.current = run;
   // Biên kịch đã tải lại đồ thị giữa lần chạy (mỗi Biên kịch một lần mỗi lần chạy).
@@ -38,12 +41,14 @@ export function useRun(wf: WorkflowApi) {
     setRunNodeIds(NO_IDS);
     setRunFromHistory(false);
     setInfo(null);
+    setOutdated(NO_OUTDATED);
     api.getLatestRun(id).then(
-      ({ run: last, nodes }) => {
+      ({ run: last, nodes, outdated: old }) => {
         // Đã đổi sang workflow khác, hoặc đã bấm Chạy trong lúc chờ: bỏ kết quả cũ.
         if (shownWorkflow.current !== id || !last || currentRun.current) return;
         // Mỗi node hiện kết quả mới nhất của nó qua mọi lần chạy (lần gần nhất có thể chỉ chạy một phần).
         setRun({ ...last, nodes });
+        setOutdated(new Set(old));
         setRunFromHistory(true);
       },
       (e: unknown) => setProblem(`Không tải được kết quả lần chạy trước: ${errText(e)}`),
@@ -58,7 +63,10 @@ export function useRun(wf: WorkflowApi) {
       setSyncing(true);
       try {
         const last = await reloadGraph(id, true);
-        if (last) setRun((cur) => (cur?.id === runId ? { ...cur, nodes: last.nodes } : cur));
+        if (last) {
+          setRun((cur) => (cur?.id === runId ? { ...cur, nodes: last.nodes } : cur));
+          setOutdated(new Set(last.outdated));
+        }
       } catch (e) {
         setProblem(`Không tải lại được workflow sau lần chạy: ${errText(e)}`);
       } finally {
@@ -79,6 +87,26 @@ export function useRun(wf: WorkflowApi) {
     [reloadGraph, shownWorkflow, setProblem],
   );
 
+  // Đồ thị vừa đổi ở máy chủ (Tạo thẻ cảnh / Thay / Giữ): kết quả hiện lại đúng như máy chủ trả, một nơi quyết định duy nhất. Thẻ có
+  // tham số khác (hoặc mới) và Ghép phim phía sau chúng không còn kết quả cũ, hiện "Chưa chạy" tới lần chạy sau.
+  const showServerResults = useCallback(
+    async (id: string) => {
+      try {
+        const last = await api.getLatestRun(id);
+        if (shownWorkflow.current !== id) return;
+        const shown = currentRun.current;
+        if (shown) {
+          currentRun.current = { ...shown, nodes: last.nodes };
+          setRun(currentRun.current);
+        }
+        setOutdated(new Set(last.outdated));
+      } catch (e) {
+        setProblem(`Không tải được kết quả của các thẻ cảnh mới: ${errText(e)}`);
+      }
+    },
+    [shownWorkflow, setProblem],
+  );
+
   // Tạo/thay nhóm thẻ cảnh của Biên kịch (nút Tạo thẻ cảnh, hộp hỏi Thay/Giữ). Trả true khi máy chủ đã đổi đồ thị.
   const expandScenes = useCallback(
     async (writerId: string, choice?: ExpandScenesBody["choice"]) => {
@@ -89,20 +117,10 @@ export function useRun(wf: WorkflowApi) {
       setSyncing(true);
       try {
         await flushEdits();
-        // Tham số các thẻ ngay trước khi đổi: kết quả đang hiện là của những tham số này.
-        const before = paramsSnapshot(latest.current.nodes.map((n) => ({ id: n.id, params: n.data.params })));
         const next = await api.expandScenes(id, writerId, choice);
         if (shownWorkflow.current !== id) return false;
         applyGraph(next);
-        // Thẻ nào tham số khác (hoặc mới) thì kết quả cũ không còn đúng: hiện "Chưa chạy" tới lần chạy sau. Thẻ giữ nguyên thì giữ kết quả.
-        const shown = currentRun.current;
-        if (shown) {
-          const nodes = withoutResults(shown.nodes, staleResultIds(before, next.graph.nodes));
-          if (nodes !== shown.nodes) {
-            currentRun.current = { ...shown, nodes };
-            setRun(currentRun.current);
-          }
-        }
+        await showServerResults(id);
         return true;
       } catch (e) {
         setProblem(errText(e));
@@ -111,7 +129,7 @@ export function useRun(wf: WorkflowApi) {
         setSyncing(false);
       }
     },
-    [flushEdits, applyGraph, latest, shownWorkflow, setProblem],
+    [flushEdits, applyGraph, showServerResults, shownWorkflow, setProblem],
   );
 
   const active = isActive(run);
@@ -199,6 +217,7 @@ export function useRun(wf: WorkflowApi) {
     run,
     nodeStates: run?.nodes ?? NO_STATES,
     runNodeIds,
+    outdated,
     fromHistory,
     active,
     starting,

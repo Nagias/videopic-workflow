@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RunNodeState } from "../../../shared/api";
 import type { WorkflowGroup } from "../../../shared/workflow";
-import { paramsSnapshot, staleResultIds, withoutResults, writersFinished } from "./run-sync";
+import { writersFinished } from "./run-sync";
 
 const group = (id: string, writerId?: string): WorkflowGroup => ({
   id,
@@ -28,29 +28,5 @@ describe("tải lại đồ thị giữa lần chạy khi Biên kịch xong", ()
   it("nhóm tạo tay (không có nguồn Biên kịch) và Biên kịch không có trong lần chạy thì bỏ qua", () => {
     expect(writersFinished([group("g1")], { "writer-1": node("succeeded") }, new Set())).toEqual([]);
     expect(writersFinished([group("g1", "writer-1")], {}, new Set())).toEqual([]);
-  });
-});
-
-describe("kết quả cũ của thẻ bị thay sau Tạo thẻ cảnh / Thay / Giữ", () => {
-  const n = (id: string, params: Record<string, unknown>) => ({ id, params });
-
-  it("thẻ đổi tham số, và thẻ mới (mã chưa có trước đó), thì bỏ kết quả; thẻ giữ nguyên tham số thì giữ", () => {
-    const before = paramsSnapshot([n("s1", { motion: "đi", size: "MS" }), n("s2", { motion: "chạy" })]);
-    const after = [n("s1", { motion: "đi", size: "MS" }), n("s2", { motion: "nhảy" }), n("s3", { motion: "mới" })];
-    expect(staleResultIds(before, after)).toEqual(["s2", "s3"]);
-  });
-
-  it("thứ tự khoá trong tham số không phải là khác biệt", () => {
-    const before = paramsSnapshot([n("s1", { a: 1, b: { x: 1, y: 2 } })]);
-    expect(staleResultIds(before, [n("s1", { b: { y: 2, x: 1 }, a: 1 })])).toEqual([]);
-  });
-
-  it("withoutResults bỏ đúng các node đó khỏi kết quả đang hiện, không đụng node khác, không đổi bản gốc", () => {
-    const keep = node("succeeded");
-    const states = { s1: keep, s2: node("succeeded"), s3: node("cached") };
-    expect(withoutResults(states, ["s2", "s3", "không-có"])).toEqual({ s1: keep });
-    expect(states.s2).toBeDefined();
-    expect(withoutResults(states, [])).toBe(states);
-    expect(withoutResults(states, ["không-có"])).toBe(states);
   });
 });

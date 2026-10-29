@@ -153,6 +153,26 @@ test("Tạo thẻ cảnh lại với Biên kịch đổi số cảnh → thẻ m
   await expect(page.getByTestId("node-status-scene-g1-9")).toHaveText("Chưa chạy");
   await expect(page.getByTestId("node-status-scene-g1-3")).toHaveText("Chưa chạy");
 
+  await expect(page.getByTestId("node-status-combine-g1")).toHaveText("Chưa chạy");
+
+  // Chạy riêng một node không liên quan (Nhân vật): sau lần chạy một phần, các thẻ bị thay và Ghép phim vẫn "Chưa chạy"
+  // (máy chủ không trả lại clip cũ của cùng mã node), và tab Kết quả nói rõ lý do.
+  await page.getByTestId("card-character-1").click();
+  await page.keyboard.press("Shift+Enter");
+  await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 120_000 });
+  await expect(page.getByTestId("node-status-character-1")).toHaveText(/Xong|Dùng lại kết quả/);
+  for (const id of ["scene-g1-3", "scene-g1-9", "scene-g1-10", "combine-g1"]) await expect(page.getByTestId(`node-status-${id}`)).toHaveText("Chưa chạy");
+  await page.getByTestId("card-scene-g1-3").click();
+  await page.getByTestId("inspector-tab-result").click();
+  await expect(page.getByTestId("result-outdated-scene-g1-3")).toContainText("đã đổi sau lần chạy cuối");
+  await expect(page.getByTestId("result-media-scene-g1-3")).toHaveCount(0);
+
+  // Tải lại trang: vẫn "Chưa chạy", nhân vật vẫn giữ kết quả.
+  await page.reload();
+  await expect(page.getByTestId("node-scene-g1-10")).toBeVisible();
+  await expect(page.getByTestId("node-status-character-1")).toHaveText(/Xong|Dùng lại kết quả/);
+  for (const id of ["scene-g1-3", "scene-g1-9", "scene-g1-10", "combine-g1"]) await expect(page.getByTestId(`node-status-${id}`)).toHaveText("Chưa chạy");
+
   // Chạy lại thì có kết quả mới.
   await runAllConfirmed(page);
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 300_000 });

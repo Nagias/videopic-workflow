@@ -6,6 +6,15 @@ import { RunDecisionSchema, type CancelRunResponse, type LatestRunResponse, type
 import { NodeOutputsSchema } from "../../shared/ports";
 import { WorkflowGraphSchema } from "../../shared/workflow";
 import { getWorkflowRow } from "../workflows/store";
+import { freshResults, paramsOfGraph } from "./fresh-results";
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
 
 const BROKEN_OUTPUT = "Kết quả đã lưu của lần chạy này không đọc được — bấm Chạy để tạo lại (bước con đã có thì không tốn lượt)";
 
@@ -46,14 +55,17 @@ export function registerRunRoutes(app: FastifyInstance, deps: AppDeps): void {
     return res;
   });
 
-  // Mở lại workflow thì giao diện hiện lại ảnh/phim: `run` là lần chạy gần nhất (kể cả đang chạy dở); `nodes` là, với mỗi node
-  // của workflow hiện tại, dòng mới nhất của nó trong mọi lần chạy (theo thời điểm tạo run, rồi thời điểm cập nhật dòng),
-  // để chạy một phần không làm mất kết quả của node ngoài phạm vi (spec mục 6.3).
+  // Mở lại workflow thì giao diện hiện lại ảnh/phim: `run` là lần chạy gần nhất (kể cả đang chạy dở, `run.nodes` là ghi chép
+  // nguyên của lần đó); `nodes` là, với mỗi node của workflow hiện tại, dòng mới nhất của nó trong mọi lần chạy (theo thời điểm
+  // tạo run, rồi thời điểm cập nhật dòng), để chạy một phần không làm mất kết quả của node ngoài phạm vi (spec mục 6.3).
+  // Chỉ giữ kết quả còn đúng với workflow đang lưu (freshResults): tham số của node trong đồ thị của lần chạy đó (runs.graph_json)
+  // phải giống tham số hiện tại, và mọi node nối vào nó cũng còn kết quả. Node khác thì vắng ở `nodes` (giao diện hiện "Chưa chạy"); những node từng có kết quả mà bị bỏ nằm ở `outdated`.
   app.get<{ Params: { id: string } }>("/api/workflows/:id/runs/latest", async (req, reply) => {
     const wf = getWorkflowRow(deps.db, req.params.id);
     if (!wf) return reply.code(404).send({ error: "Không tìm thấy workflow" });
     const run = deps.db.select().from(runs).where(eq(runs.workflowId, wf.id)).orderBy(desc(runs.createdAt)).limit(1).get();
-    const ids = WorkflowGraphSchema.parse(JSON.parse(wf.graphJson)).nodes.map((n) => n.id);
+    const graph = WorkflowGraphSchema.parse(JSON.parse(wf.graphJson));
+    const ids = graph.nodes.map((n) => n.id);
     const rows =
       ids.length === 0
         ? []
@@ -64,10 +76,21 @@ export function registerRunRoutes(app: FastifyInstance, deps: AppDeps): void {
             .where(and(eq(runs.workflowId, wf.id), inArray(runNodes.nodeId, ids)))
             .orderBy(desc(runs.createdAt), desc(runNodes.updatedAt))
             .all();
-    const newest = new Map<string, typeof runNodes.$inferSelect>();
-    for (const { row } of rows) if (!newest.has(row.nodeId)) newest.set(row.nodeId, row);
-    const nodes = Object.fromEntries([...newest].map(([id, row]) => [id, toNodeState(row)]));
-    const res: LatestRunResponse = { run: run ? toRunResponse(deps, run) : null, nodes };
+    const runIds = [...new Set(rows.map(({ row }) => row.runId))];
+    const runParams = new Map<string, Map<string, string>>();
+    if (runIds.length > 0) {
+      for (const r of deps.db.select({ id: runs.id, graphJson: runs.graphJson }).from(runs).where(inArray(runs.id, runIds)).all()) {
+        const parsed = WorkflowGraphSchema.safeParse(safeJson(r.graphJson));
+        if (parsed.success) runParams.set(r.id, paramsOfGraph(parsed.data));
+      }
+    }
+    const { shown, outdated } = freshResults(
+      rows.map(({ row }) => ({ nodeId: row.nodeId, runId: row.runId, state: row })),
+      runParams,
+      graph,
+    );
+    const nodes = Object.fromEntries([...shown].map(([id, row]) => [id, toNodeState(row)]));
+    const res: LatestRunResponse = { run: run ? toRunResponse(deps, run) : null, nodes, outdated };
     return res;
   });
 }
