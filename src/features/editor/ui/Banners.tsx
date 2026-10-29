@@ -1,9 +1,9 @@
-import type { RunApi } from "./use-run";
+import type { RunView } from "./use-run";
 import type { WorkflowApi } from "./use-workflow";
 
 type Props = {
   wf: WorkflowApi;
-  run: RunApi;
+  run: RunView;
 };
 
 // Các dải báo dưới thanh trên: lời báo của máy chủ, hộp hỏi Thay/Giữ, hướng dẫn sau khi chọn, lỗi.

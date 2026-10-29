@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { useFakeSonLa } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -40,10 +41,8 @@ test("kéo tiêu đề nhóm 200px → cả 12 thẻ dời, lưu, chọn khung k
   await expect(page).toHaveURL(/wf=sinh-ton-son-la-/);
   const wfId = new URL(page.url()).searchParams.get("wf")!;
   await expect(page.getByTestId("node-scene-g1-12")).toBeVisible();
-  // Đổi mọi node sang dịch vụ giả qua API (để chạy được mà không tốn Muse), rồi mở lại.
-  const loaded = (await (await page.request.get(`/api/workflows/${wfId}`)).json()) as { graph: { nodes: { params: Record<string, unknown> }[] } };
-  const fake = { ...loaded.graph, nodes: loaded.graph.nodes.map((n) => ("provider" in n.params ? { ...n, params: { ...n.params, provider: "fake" } } : n)) };
-  expect((await page.request.put(`/api/workflows/${wfId}`, { data: { graph: fake } })).ok()).toBe(true);
+  // Dịch vụ giả, kết quả riêng của spec này (không dùng lại cache của spec khác).
+  await useFakeSonLa(page, wfId);
   await page.reload();
   await expect(page.getByTestId("node-scene-g1-12")).toBeVisible();
 

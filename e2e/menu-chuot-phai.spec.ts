@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { useFakeSonLa } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const at = (x: number, y: number) => ({ x, y });
@@ -66,10 +67,8 @@ test("chuột phải Cảnh 3 → Chạy node này → chỉ Cảnh 3 và node p
   await expect(page).toHaveURL(/wf=sinh-ton-son-la-/);
   const wfId = new URL(page.url()).searchParams.get("wf")!;
   await expect(page.getByTestId("node-scene-g1-12")).toBeVisible();
-  // Đổi mọi node sang dịch vụ giả qua API (không tốn Muse), rồi mở lại.
-  const loaded = await readGraph(page, wfId);
-  const fake = { ...loaded, nodes: loaded.nodes.map((n) => ("provider" in n.params ? { ...n, params: { ...n.params, provider: "fake" } } : n)) };
-  expect((await page.request.put(`/api/workflows/${wfId}`, { data: { graph: fake } })).ok()).toBe(true);
+  // Dịch vụ giả, kết quả riêng của spec này (không dùng lại cache của spec khác).
+  await useFakeSonLa(page, wfId);
   await page.reload();
   await expect(page.getByTestId("node-scene-g1-12")).toBeVisible();
 
@@ -99,7 +98,7 @@ test("chuột phải Cảnh 3 → Chạy node này → chỉ Cảnh 3 và node p
   await expect(page.getByTestId("node-status-combine-g1")).toHaveText("Chưa chạy");
 });
 
-test("Chạy lại (bản mới) → take của Cảnh 3 = 2, dịch vụ giả gọi thêm 1 video", async ({ page }) => {
+test("Chạy lại (bản mới) → take của Cảnh = 2, ước tính thiếu đúng 1 clip, Cảnh chạy thật còn Nhân vật và Không gian dùng lại", async ({ page }) => {
   test.setTimeout(300_000);
   const id = `chay-lai-${uid()}`;
   const scene = { size: "MS", angle: "eye", move: "static", subject: "character", start: "cô gái đứng bên suối, nhìn về phía lều", motion: "cô đi về phía lều", props: "", provider: "fake" };

@@ -34,7 +34,8 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
       left: Math.max(EDGE_GAP, Math.min(x, window.innerWidth - width - EDGE_GAP)),
       top: Math.max(EDGE_GAP, Math.min(y, window.innerHeight - height - EDGE_GAP)),
     });
-  }, [x, y, items]);
+  // Đo lại khi chỗ bấm đổi hoặc số lệnh đổi (không theo mảng `items`, vì mảng mới được dựng lại mỗi lần Editor vẽ lại).
+  }, [x, y, items.length]);
 
   useEffect(() => {
     ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();

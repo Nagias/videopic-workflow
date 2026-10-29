@@ -156,7 +156,7 @@ Thiết kế: `docs/superpowers/specs/2026-10-28-chat-luong-video-design.md`. K�
 
 ## 5. Luồng 4 — Cảnh riêng, Ghép phim, chạy một phần (29/10/2026)
 
-Thiết kế: `docs/superpowers/specs/2026-10-28-canvas-the-anh-design.md` mục 6.3, 6.5, 6.6. Giao diện tối thiểu (29/10/2026): nút Huỷ, Tạo thẻ cảnh, hộp hỏi Thay/Giữ. Hộp xác nhận ước tính và nút Chạy một node chưa có nút (đợt giao diện 1B); hiện gọi API.
+Thiết kế: `docs/superpowers/specs/2026-10-28-canvas-the-anh-design.md` mục 6.3, 6.5, 6.6. Giao diện tối thiểu (29/10/2026): nút Huỷ, Tạo thẻ cảnh, hộp hỏi Thay/Giữ. Nút Chạy một node có rồi (nút ▶ trên thẻ và menu chuột phải, luồng 5 bước 14); hộp xác nhận ước tính chưa có (đợt giao diện 1B), bấm chạy gọi API ngay.
 
 ### 5.1 Người dùng làm gì → hệ thống làm gì
 
@@ -181,7 +181,7 @@ Thiết kế: `docs/superpowers/specs/2026-10-28-canvas-the-anh-design.md` mục
 
 ## 6. Luồng 5 — Thẻ node và khung bên phải (Đợt 1B, 29/10/2026)
 
-Thiết kế: `docs/superpowers/specs/2026-10-28-canvas-the-anh-design.md` mục 8.1–8.2, bản phác `canvas-v1.html`. Thẻ không có ô nhập nào; mọi sửa đổi ở khung bên phải (cùng đường tự lưu và 409 của luồng 1 bước 2). Nút ▶ chạy riêng từng node chưa có lệnh (Task 6) nên chưa hiện.
+Thiết kế: `docs/superpowers/specs/2026-10-28-canvas-the-anh-design.md` mục 8.1–8.2, bản phác `canvas-v1.html`. Thẻ không có ô nhập nào; mọi sửa đổi ở khung bên phải (cùng đường tự lưu và 409 của luồng 1 bước 2). Nút ▶ chạy riêng từng node và menu chuột phải: bước 2 và bước 14.
 
 ### 6.1 Người dùng làm gì → hệ thống làm gì
 

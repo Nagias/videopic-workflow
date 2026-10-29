@@ -56,4 +56,11 @@ describe("take (lần tạo)", () => {
       .map(([type]) => type);
     expect(withTake).toEqual(["scene"]);
   });
+
+  it("mọi schema tham số của node là z.object trơn (bọc pipe/transform sẽ làm paramsHaveTake bỏ sót take)", () => {
+    const wrapped = Object.entries(webNodes)
+      .filter(([, impl]) => !(impl.definition.params instanceof z.ZodObject))
+      .map(([type]) => type);
+    expect(wrapped).toEqual([]);
+  });
 });

@@ -29,6 +29,8 @@ export function freshNodeId(type: string, nodes: readonly { id: string }[]): str
 }
 
 // Node có "lần tạo" (take) không? Đọc từ schema tham số của node (z.object có khoá `take`), không liệt kê loại node cứng.
+// Schema bọc kiểu pipe/transform không có `.shape` nên bị coi là không có take; node-ops.test.ts bắt buộc mọi schema tham số là z.object trơn
+// để một lần bọc như vậy làm test hỏng, không lặng lẽ ẩn mục ↻.
 export function paramsHaveTake(schema: unknown): boolean {
   if (typeof schema !== "object" || schema === null || !("shape" in schema)) return false;
   const shape = schema.shape;

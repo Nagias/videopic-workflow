@@ -40,6 +40,8 @@ export function useWorkflow() {
   // Tăng mỗi khi canvas bị thay bằng đồ thị máy chủ: lần lưu xếp hàng từ trước đó không được gửi canvas cũ lên nữa.
   const graphVersion = useRef(0);
   const latest = useRef({ nodes, edges });
+  // Gán ngay trong lúc render (không đợi useEffect): save() và "Chạy lại (bản mới)" (Editor.rerunNode: flushSync rồi startRun → save()) đọc
+  // `latest.current` ngay sau khi canvas đổi, nên nó phải đã mang đồ thị vừa render.
   latest.current = { nodes, edges };
   // Nhóm của workflow đang mở: nhóm Phân cảnh canvas không sửa nhưng lưu phải giữ nguyên để Biên kịch còn tạo lại được; nhóm tay
   // (Ctrl+G, rút node bị xoá) thì sửa qua setGroups(). `groups` (ref) là giá trị mới nhất cho hàm gọi sau,

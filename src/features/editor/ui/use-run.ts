@@ -199,3 +199,6 @@ export function useRun(wf: WorkflowApi) {
 }
 
 export type RunApi = ReturnType<typeof useRun>;
+// Phần của lượt chạy mà các thành phần giao diện (thanh trên, dải báo) được dùng: không có startRun. Muốn chạy thì gọi Editor.runScope,
+// chỗ duy nhất xin chạy, để không ai vô tình đi vòng qua nó.
+export type RunView = Omit<RunApi, "startRun">;
