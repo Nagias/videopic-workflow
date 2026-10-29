@@ -5,6 +5,7 @@ import type { ServerNode } from "../src/core/node-runtime";
 import { createQueue } from "../src/core/queue";
 import { fakeTextReply } from "../src/providers/fake/text";
 import { AssetListResponseSchema, LatestRunResponseSchema, RunResponseSchema, WorkflowResponseSchema } from "../src/shared/api";
+import { saveWorkflowGraph } from "../src/features/workflows/store";
 import { expandScenes } from "../src/shared/scenes";
 import type { WorkflowGraph } from "../src/shared/workflow";
 import { legacyIdeaGraph, legacySonLaGraph } from "./helpers/legacy";
@@ -73,14 +74,16 @@ describe("API luồng 1: lưu → chạy → xem clip", () => {
     const saved = WorkflowResponseSchema.parse(ok.json());
     expect(saved.updatedAt).toBeGreaterThanOrEqual(current.updatedAt);
 
-    // Một nơi khác ghi xen vào (vd Biên kịch tạo lại nhóm) làm updatedAt đổi: bản cũ bị từ chối và không ghi gì. (Ép lệch 5 giây để khỏi trùng mili giây.)
-    s.db.update(workflows).set({ updatedAt: saved.updatedAt + 5000 }).where(eq(workflows.id, "default")).run();
+    // Một nơi khác ghi xen vào (vd Biên kịch tạo lại nhóm, cùng đường saveWorkflowGraph) làm updatedAt đổi, kể cả khi trùng
+    // mili giây: bản cũ bị từ chối và không ghi gì.
+    const other = saveWorkflowGraph(s.db, "default", saved.graph);
+    expect(other.updatedAt).toBeGreaterThan(saved.updatedAt);
     const stale = await put(edit("Bản cũ đè"), saved.updatedAt);
     expect(stale.statusCode).toBe(409);
     const body = stale.json<{ error: string; workflow: unknown }>();
     expect(body.error).toMatch(/vừa được cập nhật ở nơi khác/);
     const server = WorkflowResponseSchema.parse(body.workflow);
-    expect(server.updatedAt).toBe(saved.updatedAt + 5000);
+    expect(server.updatedAt).toBe(other.updatedAt);
     expect(server.graph.nodes.find((n) => n.id === "p1")?.params.text).toBe("Rừng hai");
     const after = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/workflows/default" })).json());
     expect(after.graph.nodes.find((n) => n.id === "p1")?.params.text).toBe("Rừng hai");

@@ -17,13 +17,15 @@ export function toWorkflowResponse(row: WorkflowRow): WorkflowResponse {
 }
 
 // Lưu đồ thị (tạo mới nếu chưa có). Tên: tên truyền vào, không thì giữ tên cũ, chưa có thì "Workflow".
+// updatedAt là "phiên bản" để PUT so (baseUpdatedAt): mỗi lần ghi phải lớn hơn lần trước, kể cả hai lần ghi trong cùng một
+// mili giây (Date.now() trùng), nếu không bản cũ có thể lọt qua phép so.
 export function saveWorkflowGraph(db: Db, id: string, graph: WorkflowGraph, name?: string): WorkflowRow {
   const existing = getWorkflowRow(db, id);
   const row: WorkflowRow = {
     id,
     name: name ?? existing?.name ?? "Workflow",
     graphJson: JSON.stringify(WorkflowGraphSchema.parse(graph)),
-    updatedAt: Date.now(),
+    updatedAt: existing ? Math.max(Date.now(), existing.updatedAt + 1) : Date.now(),
   };
   db.insert(workflows).values(row).onConflictDoUpdate({ target: workflows.id, set: row }).run();
   return row;

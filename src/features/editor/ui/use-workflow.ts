@@ -4,6 +4,7 @@ import { api, WorkflowConflictError } from "../../../app/api-client";
 import type { LatestRunResponse, WorkflowListResponse, WorkflowResponse } from "../../../shared/api";
 import type { WorkflowGroup } from "../../../shared/workflow";
 import { fromFlow, toFlow } from "./graph-convert";
+import { GraphReplacedError, graphWasReplaced, reloadFromServer } from "./reload-graph";
 import type { FlowNode } from "./GraphNode";
 
 const SAVE_DELAY_MS = 600;
@@ -99,7 +100,7 @@ export function useWorkflow() {
       if (graphVersion.current !== version) {
         // Canvas đã bị thay bằng đồ thị máy chủ: không gửi bản canvas cũ lên, và báo để chỗ gọi (chạy, đổi workflow) dừng lại.
         setSaveState("idle");
-        throw new Error("Đồ thị trên màn hình vừa được thay bằng bản mới từ máy chủ — hãy xem lại rồi thử lại");
+        throw new GraphReplacedError();
       }
       const graph = fromFlow(latest.current.nodes, latest.current.edges, groups.current);
       // Ghi nhận ngay lúc gửi: sửa rồi sửa ngược về đúng bản đang gửi trong lúc chờ thì không cần lưu thêm lần nữa.
@@ -143,14 +144,19 @@ export function useWorkflow() {
   // Không tải được vì vẫn đang sửa thì ném lỗi.
   const reloadGraph = useCallback(
     async (id: string, withResults: boolean): Promise<LatestRunResponse | null> => {
-      for (let i = 0; i < SYNC_TRIES; i++) {
-        await flushEdits();
-        const [wf, last] = await Promise.all([api.getWorkflow(id), withResults ? api.getLatestRun(id) : Promise.resolve(null)]);
-        if (shownWorkflow.current !== id) return null;
-        if (saveTimer.current !== null || saving.current !== null) continue;
-        applyGraph(wf);
-        return last;
-      }
+      const outcome = await reloadFromServer<WorkflowResponse, LatestRunResponse | null>({
+        tries: SYNC_TRIES,
+        flush: flushEdits,
+        load: async () => {
+          const [wf, last] = await Promise.all([api.getWorkflow(id), withResults ? api.getLatestRun(id) : Promise.resolve(null)]);
+          return { wf, last };
+        },
+        isShown: () => shownWorkflow.current === id,
+        isBusy: () => saveTimer.current !== null || saving.current !== null,
+        apply: applyGraph,
+      });
+      if (outcome.kind === "applied") return outcome.last;
+      if (outcome.kind === "stale") return null;
       throw new Error("đồ thị trên máy chủ đã đổi nhưng bạn vẫn đang sửa nên chưa tải lại được: chọn lại workflow này để thấy thẻ cảnh mới");
     },
     [flushEdits, applyGraph],
@@ -163,7 +169,7 @@ export function useWorkflow() {
     saveTimer.current = setTimeout(() => {
       save().catch((e: unknown) => {
         // Bản máy chủ mới hơn: save() đã hiện đồ thị mới và báo lên thanh báo rồi.
-        if (!(e instanceof WorkflowConflictError)) setProblem(`Không lưu được: ${errText(e)}`);
+        if (!graphWasReplaced(e)) setProblem(`Không lưu được: ${errText(e)}`);
       });
     }, SAVE_DELAY_MS);
   }, [nodes, edges, workflowId, save]);
