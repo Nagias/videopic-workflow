@@ -1,0 +1,173 @@
+import { useEdgesState, useNodesState, type Edge } from "@xyflow/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "../../../app/api-client";
+import type { LatestRunResponse, WorkflowListResponse, WorkflowResponse } from "../../../shared/api";
+import type { WorkflowGroup } from "../../../shared/workflow";
+import { fromFlow, toFlow } from "./graph-convert";
+import type { FlowNode } from "./GraphNode";
+
+const SAVE_DELAY_MS = 600;
+// Sau lần chạy, người dùng vẫn đang sửa trong lúc tải đồ thị: lưu rồi tải lại, tối đa ngần này lần.
+const SYNC_TRIES = 5;
+
+export const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+export type SaveState = "idle" | "saving" | "saved" | "error";
+
+// Tải, mở và tự lưu workflow. Giữ đồ thị trên canvas (nodes/edges), nhóm (groups) và bản đã lưu (savedGraph).
+export function useWorkflow() {
+  const [workflowId, setWorkflowId] = useState<string | null>(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  // Lời báo của máy chủ khi mở workflow (chuyển workflow cũ bị lỗi).
+  const [notice, setNotice] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [problem, setProblem] = useState<string | null>(null);
+  const [workflowList, setWorkflowList] = useState<WorkflowListResponse["workflows"]>([]);
+  const shownWorkflow = useRef<string | null>(null);
+  const loaded = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saving = useRef<Promise<unknown> | null>(null);
+  // Đồ thị (dạng JSON như gửi lên) lần cuối tải về hoặc lưu xong. Canvas đổi mà đồ thị không đổi (đo kích thước node khi
+  // ảnh hiện ra, chọn node) thì không lưu: tránh gửi bản cũ đè nhóm thẻ cảnh máy chủ vừa tạo lại trong lúc chạy.
+  const savedGraph = useRef("");
+  const latest = useRef({ nodes, edges });
+  latest.current = { nodes, edges };
+  // Nhóm (Phân cảnh) của workflow đang mở: canvas chưa sửa nhóm, nhưng lưu phải giữ nguyên để Biên kịch còn tạo lại được.
+  const groups = useRef<WorkflowGroup[]>([]);
+  // Gọi mỗi khi một workflow vừa được mở: useRun đặt hàm dọn kết quả lần chạy cũ và tải lần chạy gần nhất.
+  const onShown = useRef<((id: string) => void) | null>(null);
+
+  // Hiện đồ thị máy chủ trả về (thay đồ thị trên canvas).
+  const applyGraph = useCallback(
+    (wf: WorkflowResponse) => {
+      loaded.current = false;
+      const flow = toFlow(wf.graph);
+      groups.current = wf.graph.groups;
+      savedGraph.current = JSON.stringify(fromFlow(flow.nodes, flow.edges, wf.graph.groups));
+      setNodes(flow.nodes);
+      setEdges(flow.edges);
+      setNotice(wf.notice ?? null);
+      loaded.current = true;
+    },
+    [setNodes, setEdges],
+  );
+
+  const showWorkflow = useCallback(
+    (wf: WorkflowResponse) => {
+      applyGraph(wf);
+      setWorkflowId(wf.id);
+      shownWorkflow.current = wf.id;
+      onShown.current?.(wf.id);
+      setSaveState("idle");
+      const url = new URL(window.location.href);
+      url.searchParams.set("wf", wf.id);
+      window.history.replaceState(null, "", url);
+      api.listWorkflows().then((l) => setWorkflowList(l.workflows), () => setWorkflowList([]));
+    },
+    [applyGraph],
+  );
+
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("wf");
+    (wanted ? api.getWorkflow(wanted).catch(() => api.getDefaultWorkflow()) : api.getDefaultWorkflow())
+      .then(showWorkflow)
+      .catch((e: unknown) => setProblem(`Không tải được workflow: ${errText(e)}`));
+  }, [showWorkflow]);
+
+  const save = useCallback(async () => {
+    if (!workflowId) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    setSaveState("saving");
+    const graph = fromFlow(latest.current.nodes, latest.current.edges, groups.current);
+    const pending = api.saveWorkflow(workflowId, { graph });
+    saving.current = pending;
+    // Ghi nhận ngay lúc gửi: sửa rồi sửa ngược về đúng bản đang gửi trong lúc chờ thì không cần lưu thêm lần nữa.
+    const before = savedGraph.current;
+    const sent = JSON.stringify(graph);
+    savedGraph.current = sent;
+    try {
+      await pending;
+      setSaveState("saved");
+    } catch (e) {
+      if (savedGraph.current === sent) savedGraph.current = before;
+      setSaveState("error");
+      throw e;
+    } finally {
+      if (saving.current === pending) saving.current = null;
+    }
+  }, [workflowId]);
+
+  // Lưu ngay sửa đổi đang chờ (hoặc chờ lần lưu đang gửi) trước khi lấy đồ thị từ máy chủ.
+  const flushEdits = useCallback(async () => {
+    if (saveTimer.current) await save();
+    else if (saving.current) await saving.current;
+  }, [save]);
+
+  // Máy chủ có thể đã tạo lại nhóm thẻ cảnh: lưu sửa đổi đang chờ rồi tải đồ thị máy chủ (canvas không giữ bản cũ để lần
+  // lưu sau ghi đè). Có sửa thêm trong lúc tải thì lưu rồi tải lại (không đè sửa đổi bằng bản máy chủ). withResults: tải cả
+  // kết quả mới nhất của từng node (sau khi chạy xong); khi đồ thị đã hiện thì trả kết quả đó để useRun gộp vào lần chạy.
+  // Không tải được vì vẫn đang sửa thì ném lỗi.
+  const reloadGraph = useCallback(
+    async (id: string, withResults: boolean): Promise<LatestRunResponse | null> => {
+      for (let i = 0; i < SYNC_TRIES; i++) {
+        await flushEdits();
+        const [wf, last] = await Promise.all([api.getWorkflow(id), withResults ? api.getLatestRun(id) : Promise.resolve(null)]);
+        if (shownWorkflow.current !== id) return null;
+        if (saveTimer.current !== null || saving.current !== null) continue;
+        applyGraph(wf);
+        return last;
+      }
+      throw new Error("đồ thị trên máy chủ đã đổi nhưng bạn vẫn đang sửa nên chưa tải lại được: chọn lại workflow này để thấy thẻ cảnh mới");
+    },
+    [flushEdits, applyGraph],
+  );
+
+  useEffect(() => {
+    if (!loaded.current || !workflowId) return;
+    if (!saveTimer.current && JSON.stringify(fromFlow(nodes, edges, groups.current)) === savedGraph.current) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      save().catch((e: unknown) => setProblem(`Không lưu được: ${errText(e)}`));
+    }, SAVE_DELAY_MS);
+  }, [nodes, edges, workflowId, save]);
+
+  // Lưu workflow đang mở rồi mở workflow `load` trả về (chọn workflow khác, tạo từ mẫu).
+  const switchTo = async (load: () => Promise<WorkflowResponse>) => {
+    setProblem(null);
+    try {
+      if (workflowId) await save();
+      showWorkflow(await load());
+    } catch (e) {
+      setProblem(errText(e));
+    }
+  };
+
+  return {
+    workflowId,
+    workflowList,
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    onNodesChange,
+    onEdgesChange,
+    groups,
+    latest,
+    saveState,
+    notice,
+    setNotice,
+    problem,
+    setProblem,
+    save,
+    flushEdits,
+    applyGraph,
+    reloadGraph,
+    switchTo,
+    shownWorkflow,
+    onShown,
+  };
+}
+
+export type WorkflowApi = ReturnType<typeof useWorkflow>;

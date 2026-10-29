@@ -1,0 +1,221 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "../../../app/api-client";
+import type { ExpandScenesBody, RunNodeState, RunResponse, RunScope } from "../../../shared/api";
+import { writersFinished } from "./run-sync";
+import { errText, type WorkflowApi } from "./use-workflow";
+
+const POLL_MS = 1000;
+
+const isActive = (r: RunResponse | null) => r !== null && (r.status === "queued" || r.status === "running");
+
+export const RUN_LABEL: Record<RunResponse["status"], string> = {
+  queued: "Đang xếp hàng…",
+  running: "Đang chạy…",
+  succeeded: "Chạy xong",
+  failed: "Lỗi",
+};
+
+const NO_STATES: Record<string, RunNodeState> = {};
+
+// Lượt chạy của workflow đang mở: bắt đầu, hỏi tiến độ, gộp kết quả vào các node, tải lại đồ thị giữa và cuối lượt chạy, huỷ,
+// và trả lời hộp hỏi Thay/Giữ của Biên kịch.
+export function useRun(wf: WorkflowApi) {
+  const { workflowId, shownWorkflow, groups, onShown, save, flushEdits, applyGraph, reloadGraph, setProblem } = wf;
+  const [run, setRun] = useState<RunResponse | null>(null);
+  // true khi `run` là lần chạy cũ tải lại lúc mở workflow (chưa xem trực tiếp trong phiên này).
+  const [runFromHistory, setRunFromHistory] = useState(false);
+  const [starting, setStarting] = useState(false);
+  // Đang tải lại đồ thị từ máy chủ (sau lần chạy, sau Tạo thẻ cảnh / Thay / Giữ): chưa cho chạy để không lưu đè bản cũ.
+  const [syncing, setSyncing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  // Hướng dẫn bước tiếp theo sau khi chọn Thay/Giữ.
+  const [info, setInfo] = useState<string | null>(null);
+  const currentRun = useRef<RunResponse | null>(null);
+  currentRun.current = run;
+  // Biên kịch đã tải lại đồ thị giữa lần chạy (mỗi Biên kịch một lần mỗi lần chạy).
+  const reloadedWriters = useRef<{ runId: string | null; ids: Set<string> }>({ runId: null, ids: new Set() });
+
+  // Vừa mở một workflow: bỏ kết quả của workflow trước, rồi tải kết quả lần chạy gần nhất của workflow này.
+  onShown.current = (id) => {
+    // Xoá ngay (không chờ render): lần hỏi tiến độ về muộn của workflow trước không được gộp vào workflow này.
+    currentRun.current = null;
+    setRun(null);
+    setRunFromHistory(false);
+    setInfo(null);
+    api.getLatestRun(id).then(
+      ({ run: last, nodes }) => {
+        // Đã đổi sang workflow khác, hoặc đã bấm Chạy trong lúc chờ: bỏ kết quả cũ.
+        if (shownWorkflow.current !== id || !last || currentRun.current) return;
+        // Mỗi node hiện kết quả mới nhất của nó qua mọi lần chạy (lần gần nhất có thể chỉ chạy một phần).
+        setRun({ ...last, nodes });
+        setRunFromHistory(true);
+      },
+      (e: unknown) => setProblem(`Không tải được kết quả lần chạy trước: ${errText(e)}`),
+    );
+  };
+
+  // Lần chạy vừa xong (xong hoặc lỗi): tải lại đồ thị và kết quả mới nhất. Trong lúc tải nút Chạy bị khoá.
+  const syncAfterRun = useCallback(
+    async (runId: string) => {
+      const id = shownWorkflow.current;
+      if (!id) return;
+      setSyncing(true);
+      try {
+        const last = await reloadGraph(id, true);
+        if (last) setRun((cur) => (cur?.id === runId ? { ...cur, nodes: last.nodes } : cur));
+      } catch (e) {
+        setProblem(`Không tải lại được workflow sau lần chạy: ${errText(e)}`);
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [reloadGraph, shownWorkflow, setProblem],
+  );
+
+  // Biên kịch xong giữa lần chạy: máy chủ ghi nhóm tạo lại vào db ngay lúc đó, nên tải lại đồ thị ngay (không chờ hết lần
+  // chạy, có khi vài phút với Muse) để lần tự lưu sau không gửi nhóm cũ đè lên. Trạng thái lần chạy giữ nguyên.
+  const syncMidRun = useCallback(
+    () => {
+      const id = shownWorkflow.current;
+      if (!id) return;
+      reloadGraph(id, false).catch((e: unknown) => setProblem(`Không tải lại được thẻ cảnh mới trong lúc chạy: ${errText(e)}`));
+    },
+    [reloadGraph, shownWorkflow, setProblem],
+  );
+
+  // Tạo/thay nhóm thẻ cảnh của Biên kịch (nút Tạo thẻ cảnh, hộp hỏi Thay/Giữ). Trả true khi máy chủ đã đổi đồ thị.
+  const expandScenes = useCallback(
+    async (writerId: string, choice?: ExpandScenesBody["choice"]) => {
+      const id = shownWorkflow.current;
+      if (!id) return false;
+      setProblem(null);
+      setInfo(null);
+      setSyncing(true);
+      try {
+        await flushEdits();
+        const next = await api.expandScenes(id, writerId, choice);
+        if (shownWorkflow.current !== id) return false;
+        applyGraph(next);
+        return true;
+      } catch (e) {
+        setProblem(errText(e));
+        return false;
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [flushEdits, applyGraph, shownWorkflow, setProblem],
+  );
+
+  const active = isActive(run);
+  const activeRunId = active ? run?.id : undefined;
+  useEffect(() => {
+    if (!activeRunId) return;
+    const t = setInterval(() => {
+      api
+        .getRun(activeRunId)
+        .then((r) => {
+          const prev = currentRun.current;
+          // Đã đổi workflow, đã bấm chạy lần khác, hoặc lần hỏi trước đã thấy chạy xong: bỏ.
+          if (!prev || prev.id !== r.id || !isActive(prev)) return;
+          // Gộp lên kết quả đang hiện: node ngoài phạm vi lần chạy vẫn giữ kết quả lần trước.
+          const merged: RunResponse = { ...r, nodes: { ...prev.nodes, ...r.nodes } };
+          currentRun.current = merged;
+          setRun(merged);
+          setRunFromHistory(false);
+          if (!isActive(merged)) {
+            void syncAfterRun(merged.id);
+            return;
+          }
+          if (reloadedWriters.current.runId !== r.id) reloadedWriters.current = { runId: r.id, ids: new Set() };
+          const done = writersFinished(groups.current, r.nodes, reloadedWriters.current.ids);
+          if (done.length === 0) return;
+          for (const w of done) reloadedWriters.current.ids.add(w);
+          syncMidRun();
+        })
+        .catch((e: unknown) => setProblem(`Mất kết nối khi theo dõi lần chạy: ${errText(e)}`));
+    }, POLL_MS);
+    return () => clearInterval(t);
+  }, [activeRunId, syncAfterRun, syncMidRun, groups, setProblem]);
+
+  // scope: chỉ chạy một phần workflow; không truyền thì chạy cả workflow.
+  const startRun = useCallback(
+    async (scope?: RunScope) => {
+      if (!workflowId) return;
+      setProblem(null);
+      setInfo(null);
+      setStarting(true);
+      try {
+        await save();
+        const { runId } = await api.startRun(workflowId, scope);
+        setRun((prev) => ({ id: runId, status: "queued", error: null, decision: null, nodes: prev?.nodes ?? {} }));
+        setRunFromHistory(false);
+      } catch (e) {
+        setProblem(errText(e));
+      } finally {
+        setStarting(false);
+      }
+    },
+    [workflowId, save, setProblem],
+  );
+
+  const cancel = async () => {
+    if (!run) return;
+    setCancelling(true);
+    try {
+      // Kết quả "cancelled" hay "finished" đều để lần hỏi tiến độ tiếp theo hiện trạng thái cuối.
+      await api.cancelRun(run.id);
+    } catch (e) {
+      setProblem(`Không huỷ được lần chạy: ${errText(e)}`);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const decide = async (choice: NonNullable<ExpandScenesBody["choice"]>) => {
+    const decision = run?.decision;
+    if (!decision) return;
+    if (!(await expandScenes(decision.writerId, choice))) return;
+    setRun((cur) => (cur ? { ...cur, decision: null, error: null } : cur));
+    setInfo(
+      choice === "keep"
+        ? "Đã giữ thẻ cảnh đang có. Bấm ▶ Chạy để chạy tiếp."
+        : "Đã thay bằng bộ cảnh mới của Biên kịch (bỏ phần sửa tay). Bấm ▶ Chạy để chạy tiếp.",
+    );
+  };
+
+  const fromHistory = runFromHistory && !active;
+  // Hộp hỏi chỉ cho lần chạy xem trực tiếp trong phiên này: lần chạy cũ tải lại có thể đã được trả lời.
+  const pendingDecision = run?.decision?.kind === "scenes-edited" && !fromHistory ? run.decision : null;
+  const runLabel = run ? (fromHistory ? `Lần trước: ${RUN_LABEL[run.status]}` : RUN_LABEL[run.status]) : "";
+  // Lần chạy cũ dừng để hỏi Thay/Giữ: hộp hỏi chỉ hiện cho lần chạy xem trong phiên (lần cũ có thể đã được trả lời),
+  // nên chỉ dặn bấm Chạy — Biên kịch vẫn ra bộ cảnh khác thì lần chạy mới sẽ hỏi lại.
+  const runError = !run?.error
+    ? null
+    : fromHistory && run.decision?.kind === "scenes-edited"
+      ? "Lần chạy trước dừng vì Biên kịch ra bộ cảnh mới mà thẻ cảnh đã được sửa tay. Bấm ▶ Chạy để chọn Thay hoặc Giữ."
+      : fromHistory
+        ? `Lần chạy trước lỗi: ${run.error}`
+        : run.error;
+
+  return {
+    run,
+    nodeStates: run?.nodes ?? NO_STATES,
+    fromHistory,
+    active,
+    starting,
+    syncing,
+    cancelling,
+    info,
+    setInfo,
+    pendingDecision,
+    runLabel,
+    runError,
+    expandScenes,
+    startRun,
+    cancel,
+    decide,
+  };
+}
+
+export type RunApi = ReturnType<typeof useRun>;
