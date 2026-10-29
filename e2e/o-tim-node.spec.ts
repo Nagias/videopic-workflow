@@ -44,7 +44,7 @@ test("Space và nút + mở ô tìm; ↑↓ chọn, Esc đóng; đang gõ trong 
   await text.fill("");
   await text.press("/");
   await text.press("Space");
-  await text.type("a");
+  await text.pressSequentially("a");
   await expect(text).toHaveValue("/ a");
   await expect(page.getByTestId("spotlight")).toHaveCount(0);
 
@@ -188,6 +188,43 @@ test("kéo từ cổng vào Nối tiếp ra chỗ trống → chỉ có node ra 
       return into.length === 1 && into[0]!.source !== old!.source && into[0]!.sourceHandle === "clip" && g.nodes.some((n) => n.id === into[0]!.source && n.type === "scene");
     })
     .toBe(true);
+});
+
+test("kéo từ cổng Không gian của Hồ sơ không gian ra chỗ trống → chọn Cảnh → dây vào cổng `location`, không phải `character`", async ({ page }) => {
+  const id = `loc-${Date.now().toString(36)}`;
+  const put = await page.request.put(`/api/workflows/${id}`, {
+    data: { graph: { nodes: [
+          { id: "loc", type: "location", position: { x: 0, y: 0 }, params: { name: "", description: "", provider: "fake" } },
+          // Node thứ hai ở xa để canvas vừa màn hình ở mức thu nhỏ, chừa khoảng trống giữa hai node để thả dây.
+          { id: "p", type: "prompt", position: { x: 1100, y: 0 }, params: { text: "x" } },
+        ],
+        edges: [],
+      },
+    },
+  });
+  expect(put.ok()).toBe(true);
+  await page.goto(`/?wf=${id}`);
+  await expect(page.getByTestId("node-loc")).toBeVisible();
+  // Vừa mở, canvas còn đang tự vừa màn hình: đợi nó đứng yên rồi mới đo cổng.
+  await page.waitForTimeout(800);
+  const from = await page.locator('[data-testid="node-loc"] .react-flow__handle.source[data-handleid="location"]').boundingBox();
+  const next = await page.getByTestId("node-p").boundingBox();
+  if (!from || !next) throw new Error("Không thấy cổng Không gian hoặc node Prompt");
+  const drop = { x: (from.x + next.x) / 2, y: from.y + from.height / 2 };
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(drop.x, drop.y, { steps: 12 });
+  await page.mouse.up();
+
+  await expect(page.getByTestId("spotlight-filter")).toContainText("Bộ ảnh");
+  await expect(page.getByTestId("spotlight-item-node-scene")).toContainText("vào cổng «Không gian»");
+  await page.getByTestId("spotlight-item-node-scene").click();
+  await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
+  await expect
+    .poll(async () => (await readGraph(page, id)).edges.map((e) => `${e.source}.${e.sourceHandle}->${e.targetHandle}`))
+    .toEqual(["loc.location->location"]);
+  const g = await readGraph(page, id);
+  expect(g.nodes.find((n) => n.id === g.edges[0]!.target)?.type).toBe("scene");
 });
 
 test("bấm vào cổng không kéo, hay thả dây lên thân thẻ khác: không mở ô tìm", async ({ page }) => {

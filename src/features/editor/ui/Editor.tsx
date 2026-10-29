@@ -88,7 +88,7 @@ export function Editor() {
       const port = (dir === "out" ? def?.outputs : def?.inputs)?.find((p) => p.name === from.id);
       const pointer = "changedTouches" in event ? event.changedTouches[0] : event;
       if (!port || !pointer) return;
-      openSpotlight({ x: pointer.clientX, y: pointer.clientY }, { kind: port.kind, dir }, { nodeId: from.nodeId, handleId: port.name, dir });
+      openSpotlight({ x: pointer.clientX, y: pointer.clientY }, { kind: port.kind, dir, handle: port.name }, { nodeId: from.nodeId, handleId: port.name, dir });
     },
     [setProblem, latest, openSpotlight],
   );

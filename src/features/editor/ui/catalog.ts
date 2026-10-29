@@ -46,7 +46,8 @@ export type CatalogItem = {
   tag: "have";
 };
 
-export type PortFilter = { kind: PortKind; dir: "out" | "in" };
+// `handle`: tên cổng đang kéo (để chọn đúng cổng đích khi node có nhiều cổng cùng loại); không biết thì để trống.
+export type PortFilter = { kind: PortKind; dir: "out" | "in"; handle?: string };
 
 export const RECENT_MAX = 6;
 
@@ -84,20 +85,28 @@ export function catalogItems(assets: readonly AssetSummary[] = []): CatalogItem[
   return [...nodes, ...fromLibrary, ...templates];
 }
 
-// Cổng đầu tiên của node khớp bộ lọc: kéo từ cổng RA thì cần cổng VÀO cùng loại, kéo từ cổng VÀO thì cần cổng RA cùng loại.
+// Cổng của node khớp bộ lọc: kéo từ cổng RA thì cần cổng VÀO cùng loại, kéo từ cổng VÀO thì cần cổng RA cùng loại.
+// Nhiều cổng cùng loại (Cảnh có Nhân vật và Không gian đều là Bộ ảnh): lấy cổng trùng TÊN với cổng đang kéo
+// (Không gian → cổng `location`, không phải `character`); không trùng tên thì lấy cổng đầu tiên cùng loại.
 export function portFor(item: CatalogItem, filter: PortFilter): PortDef | undefined {
   const def = webNodes[item.nodeType ?? ""]?.definition;
   if (!def) return undefined;
-  return (filter.dir === "out" ? def.inputs : def.outputs).find((p) => p.kind === filter.kind);
+  const same = (filter.dir === "out" ? def.inputs : def.outputs).filter((p) => p.kind === filter.kind);
+  return same.find((p) => p.name === filter.handle) ?? same[0];
 }
 
-// Mẫu workflow không có cổng nên bị loại khi đang lọc.
-export const filterByPort = (items: readonly CatalogItem[], filter: PortFilter): CatalogItem[] => items.filter((i) => portFor(i, filter) !== undefined);
+// Mẫu workflow không có cổng nên bị loại khi đang lọc. Node có cổng trùng tên với cổng đang kéo (kéo từ cổng vào `location` của Cảnh →
+// Hồ sơ không gian có cổng ra `location`) đứng đầu; còn lại giữ thứ tự danh mục.
+export function filterByPort(items: readonly CatalogItem[], filter: PortFilter): CatalogItem[] {
+  const hits = items.flatMap((item) => {
+    const port = portFor(item, filter);
+    return port ? [{ item, named: port.name === filter.handle }] : [];
+  });
+  return [...hits.filter((h) => h.named), ...hits.filter((h) => !h.named)].map((h) => h.item);
+}
 
 // Bỏ dấu tiếng Việt và chữ hoa để gõ "canh" vẫn ra "Cảnh".
-const COMBINING_MARKS = new RegExp(`[${String.fromCharCode(0x300)}-${String.fromCharCode(0x36f)}]`, "g");
-const D_STROKE = new RegExp(String.fromCharCode(0x111), "gi");
-const fold = (s: string): string => s.normalize("NFD").replace(COMBINING_MARKS, "").replace(D_STROKE, "d").toLowerCase();
+const fold = (s: string): string => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\u0111/gi, "d").toLowerCase();
 
 // Khớp tên trước (đầu tên hơn giữa tên), rồi mới tới mô tả; cùng hạng giữ thứ tự danh mục.
 export function searchItems(items: readonly CatalogItem[], query: string): CatalogItem[] {

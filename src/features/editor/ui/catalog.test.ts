@@ -69,6 +69,32 @@ describe("ô tìm node: lọc theo cổng", () => {
     expect(f.some((i) => i.asset?.id === "a2")).toBe(false);
   });
 
+  it("cổng đích là cổng trùng tên với cổng đang kéo: Bối cảnh → Cảnh / Biên kịch nối vào `location`, không phải `character`", () => {
+    const items = catalogItems();
+    const target = (type: string, filter: Parameters<typeof portFor>[1]) => portFor(items.find((i) => i.nodeType === type)!, filter)?.name;
+    const fromLocation = { kind: "imageset", dir: "out", handle: "location" } as const;
+    const fromCharacter = { kind: "imageset", dir: "out", handle: "character" } as const;
+    expect(target("scene", fromLocation)).toBe("location");
+    expect(target("writer", fromLocation)).toBe("location");
+    expect(target("scene", fromCharacter)).toBe("character");
+    expect(target("writer", fromCharacter)).toBe("character");
+    // Cổng Clip (Video) không trùng tên cổng nào: vẫn lấy cổng đầu tiên cùng loại.
+    expect(target("film-combine", { kind: "video", dir: "out", handle: "clip" })).toBe("clips");
+    expect(target("scene", { kind: "video", dir: "out", handle: "clip" })).toBe("follow");
+    // Kéo từ cổng vào: node có cổng ra trùng tên.
+    expect(target("location", { kind: "imageset", dir: "in", handle: "location" })).toBe("location");
+    expect(target("character", { kind: "imageset", dir: "in", handle: "character" })).toBe("character");
+    // Không biết tên cổng: cổng đầu tiên cùng loại như trước.
+    expect(target("scene", { kind: "imageset", dir: "out" })).toBe("character");
+  });
+
+  it("kéo từ cổng vào `location` của Cảnh: Hồ sơ không gian đứng đầu danh sách; từ `character`: Hồ sơ nhân vật", () => {
+    const items = catalogItems();
+    expect(types(filterByPort(items, { kind: "imageset", dir: "in", handle: "location" }))).toEqual(["location", "character"]);
+    expect(types(filterByPort(items, { kind: "imageset", dir: "in", handle: "character" }))).toEqual(["character", "location"]);
+    expect(types(filterByPort(items, { kind: "imageset", dir: "in" }))).toEqual(["character", "location"]);
+  });
+
   it("kéo từ cổng vào chữ: node có cổng ra chữ (Prompt)", () => {
     expect(types(filterByPort(catalogItems(), { kind: "text", dir: "in" }))).toEqual(["prompt"]);
   });
