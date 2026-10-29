@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { EstimateResponse, RunScope } from "../../../shared/api";
-import { estimateText, rowText } from "./estimate-view";
+import { estimateText, isFirmEstimate, rowText } from "./estimate-view";
 
 // Bấm "▶ Chạy" chậm ngần này sau khi hộp hiện: cú bấm đúp vào nút Chạy ở thanh trên (hoặc phím Enter giữ lâu) không rơi vào
 // nút "▶ Chạy" của hộp khi nó vừa hiện ra ngay dưới con trỏ.
@@ -25,6 +25,8 @@ export function RunConfirm({ scope, estimate, onOk, onCancel }: Props) {
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   const okRef = useRef<HTMLButtonElement | null>(null);
   const [armed, setArmed] = useState(false);
+  // Câu "không thấp hơn thực tế" chỉ đúng khi mọi node đều ước được: còn node chưa biết hay Biên kịch sắp viết lại thì không hứa.
+  const exact = isFirmEstimate(estimate);
 
   useEffect(() => {
     cancelRef.current?.focus();
@@ -57,7 +59,8 @@ export function RunConfirm({ scope, estimate, onOk, onCancel }: Props) {
     <div
       className="confirm-overlay"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onCancel();
+        // Chưa "lên nòng" (0,4 giây đầu): cú nhấp thứ hai của một cú bấm đúp chậm rơi vào lớp phủ vừa hiện thì không được huỷ hộp.
+        if (armed && e.target === e.currentTarget) onCancel();
       }}
     >
       <div className="confirm" data-testid="run-confirm" role="dialog" aria-modal="true" aria-label={TITLE[scope.mode]} onKeyDown={onDialogKey}>
@@ -73,7 +76,11 @@ export function RunConfirm({ scope, estimate, onOk, onCancel }: Props) {
             </li>
           ))}
         </ul>
-        <p className="confirm-note">Ước tính không bao giờ thấp hơn thực tế: bước con đã có sẵn kết quả thì lúc chạy không gọi lại.</p>
+        {exact ? (
+          <p className="confirm-note" data-testid="run-confirm-note">
+            Ước tính không bao giờ thấp hơn thực tế: bước con đã có sẵn kết quả thì lúc chạy không gọi lại.
+          </p>
+        ) : null}
         <div className="confirm-actions">
           <button type="button" ref={cancelRef} data-testid="run-confirm-cancel" onClick={onCancel}>
             Huỷ

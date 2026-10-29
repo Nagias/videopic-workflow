@@ -9,7 +9,7 @@ import { labelOf } from "../../../shared/node-label";
 import { Banners } from "./Banners";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { needsConfirm } from "./estimate-view";
-import { connectionProblem, droppedConnectionProblem, edgeKindClass, replaceTargetEdges, targetAcceptsMany } from "./graph-convert";
+import { connectionProblem, droppedConnectionProblem, edgeKindClass, fromFlow, replaceTargetEdges, targetAcceptsMany } from "./graph-convert";
 import { videoSecondsOf } from "./card-media";
 import { portFor, type CatalogItem, type PortFilter } from "./catalog";
 import { GraphNode, type FlowNode } from "./GraphNode";
@@ -49,15 +49,16 @@ type Placement = { at?: ScreenPoint; wire?: { origin: WireOrigin; port: PortDef 
 // Xin chạy phải qua hộp xác nhận (khi cần): ước tính đã có, đang chờ người dùng bấm. `edit` là sửa đồ thị đã làm ngay trước đó
 // (Chạy lại tăng take) kèm cách hoàn lại nếu không chạy nữa.
 type RunEdit = { apply: () => void; undo: () => void };
-type PendingRun = { scope: RunScope; estimate: EstimateResponse; edit?: RunEdit };
+// `graphKey`: dạng chữ của đồ thị lúc ước tính; đồ thị đổi từ đó (không nên xảy ra: giao diện bị khoá) thì không chạy theo con số cũ.
+type PendingRun = { scope: RunScope; estimate: EstimateResponse; edit?: RunEdit; graphKey: string };
 
 // MiniMap nhỏ gọn hơn mặc định (200x150) để che ít thẻ ở góc dưới phải canvas. Chỉ để nhìn (không kéo/thu phóng trong đó, và
 // không bắt chuột: .minimap-slot trong styles.css): thẻ nằm dưới nó vẫn bấm được, bản đồ không bao giờ chặn việc đang làm.
-const MINIMAP_SIZE = { width: 170, height: 115 };
+const MINIMAP_SIZE = { width: 150, height: 100 };
 
 // MiniMap: thẻ là ô đặc, khung nhóm chỉ là viền (ô đặc sẽ che hết thẻ bên trong).
 const isFrameType = (n: { type?: string }) => n.type === GROUP_FRAME_TYPE;
-const miniNodeColor = (n: { type?: string; selected?: boolean }) => (isFrameType(n) ? "transparent" : n.selected ? "#6c8cff" : "#4a5163");
+const miniNodeColor = (n: { type?: string; selected?: boolean }) => (isFrameType(n) ? "transparent" : n.selected ? "#6c8cff" : "rgb(120 130 155 / 0.55)");
 const miniNodeStroke = (n: { type?: string }) => (isFrameType(n) ? "#3a4150" : "transparent");
 
 const nodeTypes = { ...Object.fromEntries(Object.keys(webNodes).map((t) => [t, GraphNode])), [GROUP_FRAME_TYPE]: GroupFrame };
@@ -259,22 +260,26 @@ export function Editor() {
   // chạy nữa (Huỷ, lỗi) thì hoàn lại và lưu lại. `gate` chặn bấm lần hai trong lúc state chưa kịp cập nhật: chỉ một hộp, một lần chạy.
   const gate = useRef(false);
   const [pending, setPending] = useState<PendingRun | null>(null);
-  const pendingOpen = useRef(false);
-  pendingOpen.current = pending !== null;
 
   const release = useCallback(() => {
     gate.current = false;
     setChecking(false);
   }, []);
 
+  // Đồ thị trên canvas ở dạng chữ (đúng phần được lưu): so sánh "đã đổi chưa" giữa lúc ước tính và lúc bấm "▶ Chạy".
+  const graphKey = useCallback(() => JSON.stringify(fromFlow(latest.current.nodes, latest.current.edges, groups.current)), [latest, groups]);
+
+  // Hoàn lại sửa đổi của lần xin chạy không đi tiếp (Huỷ, lỗi). `prior`: lời báo lỗi đã có (ước tính hỏng...); lưu lại cũng hỏng thì
+  // báo cả hai, không để lỗi sau nuốt lỗi trước.
   const revert = useCallback(
-    async (edit: RunEdit | undefined) => {
+    async (edit: RunEdit | undefined, prior?: string) => {
       if (!edit) return;
       flushSync(() => edit.undo());
       try {
         await save();
       } catch (e) {
-        setProblem(`Không lưu lại được bản cũ sau khi bỏ chạy: ${errText(e)}`);
+        const second = `Không lưu lại được bản cũ sau khi bỏ chạy: ${errText(e)}`;
+        setProblem(prior ? `${prior} — ${second}` : second);
       }
     },
     [save, setProblem],
@@ -292,19 +297,19 @@ export function Editor() {
         await save();
         const estimate = await api.estimate(workflowId, scope);
         if (needsConfirm(scope, estimate)) {
-          setPending({ scope, estimate, edit });
+          setPending({ scope, estimate, edit, graphKey: graphKey() });
           waiting = true;
           return;
         }
         await startRun(scope);
       } catch (e) {
         setProblem(errText(e));
-        await revert(edit);
+        await revert(edit, errText(e));
       } finally {
         if (!waiting) release();
       }
     },
-    [workflowId, busy, save, startRun, setProblem, revert, release],
+    [workflowId, busy, save, startRun, setProblem, revert, release, graphKey],
   );
 
   const runScope = useCallback((scope: RunScope, edit?: RunEdit) => void confirmAndRun(scope, edit), [confirmAndRun]);
@@ -313,11 +318,26 @@ export function Editor() {
     const p = pending;
     if (!p) return;
     setPending(null);
+    let waiting = false;
     try {
-      if (ok) await startRun(p.scope);
-      else await revert(p.edit);
+      if (!ok) {
+        await revert(p.edit);
+      } else if (workflowId && graphKey() !== p.graphKey) {
+        // Đồ thị đã khác bản đã ước tính: không chạy theo con số cũ, ước tính lại rồi hỏi lại.
+        try {
+          await save();
+          const estimate = await api.estimate(workflowId, p.scope);
+          setPending({ ...p, estimate, graphKey: graphKey() });
+          waiting = true;
+        } catch (e) {
+          setProblem(errText(e));
+          await revert(p.edit, errText(e));
+        }
+      } else {
+        await startRun(p.scope);
+      }
     } finally {
-      release();
+      if (!waiting) release();
     }
   };
 
@@ -379,7 +399,7 @@ export function Editor() {
   // bảng phím tắt đang mở thì chỉ ? và Esc (đóng bảng). Giữ phím (e.repeat) chỉ chặn mặc định, không làm lại việc.
   const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
   onKeyRef.current = (e) => {
-    if (spotOpen.current || pendingOpen.current) return;
+    if (spotOpen.current || gate.current) return;
     const el = document.activeElement;
     const typing = el instanceof HTMLElement && el.matches("input, textarea, select, [contenteditable]:not([contenteditable=false])");
     const onControl = el instanceof HTMLElement && el.matches("button, a, summary, [role=button]");
@@ -500,7 +520,9 @@ export function Editor() {
 
   return (
     <EditorContext.Provider value={editorApi}>
-      <div className="editor">
+      {/* inert: đang kiểm ước tính hoặc hộp xác nhận đang mở thì cả thanh trên, canvas, khung phải không nhận chuột, phím, tiêu điểm:
+          đồ thị không đổi được giữa lúc ước tính và lúc bấm "▶ Chạy". Hộp xác nhận nằm NGOÀI vùng này. */}
+      <div className="editor" inert={checking}>
         <TopBar wf={wf} run={run} onAddNode={addNode} onRun={() => runScope({ mode: "all" })} checking={checking} estimate={estimateView} />
         <Banners wf={wf} run={run} />
         <div className="editor-body">
@@ -530,22 +552,36 @@ export function Editor() {
               colorMode="dark"
             >
               <Background gap={24} />
-              <Controls />
+              {/* Góc dưới phải (spec 8.1): nút phóng/thu/vừa màn hình nằm ngay trên minimap, không chồng nhau. */}
+              <Controls position="bottom-right" orientation="horizontal" style={{ marginBottom: MINIMAP_SIZE.height + 22 }} />
               <Panel position="bottom-right" className="minimap-slot" data-testid="minimap">
-                <MiniMap style={MINIMAP_SIZE} nodeColor={miniNodeColor} nodeStrokeColor={miniNodeStroke} nodeStrokeWidth={3} nodeBorderRadius={3} maskColor="rgb(15 17 21 / 0.65)" />
+                <MiniMap
+                  style={MINIMAP_SIZE}
+                  bgColor="rgb(23 26 33 / 0.55)"
+                  nodeColor={miniNodeColor}
+                  nodeStrokeColor={miniNodeStroke}
+                  nodeStrokeWidth={3}
+                  nodeBorderRadius={3}
+                  maskColor="rgb(15 17 21 / 0.25)"
+                />
               </Panel>
+              {!run.active && run.run ? (
+                <Panel position="bottom-left" className="queue-slot">
+                  <QueuePanel variant="floating" run={run} titleOf={nodeTitle} />
+                </Panel>
+              ) : null}
             </ReactFlow>
           </div>
           <aside className="right-panel">
-            <QueuePanel run={run} titleOf={nodeTitle} inspectorOpen={selectedNode !== null} />
+            <QueuePanel variant="panel" run={run} titleOf={nodeTitle} />
             <Inspector node={selectedNode} sources={inspectorSources} />
           </aside>
         </div>
-        {pending ? <RunConfirm scope={pending.scope} estimate={pending.estimate} onOk={() => void answerPending(true)} onCancel={() => void answerPending(false)} /> : null}
         {spot ? <Spotlight at={spot.at} filter={spot.filter} onPick={onSpotPick} onClose={() => setSpot(null)} /> : null}
         {menu ? <ContextMenu x={menu.x} y={menu.y} items={menuItems()} onClose={closeMenu} /> : null}
         {sheetOpen ? <ShortcutSheet onClose={() => setSheetOpen(false)} /> : null}
       </div>
+      {pending ? <RunConfirm scope={pending.scope} estimate={pending.estimate} onOk={() => void answerPending(true)} onCancel={() => void answerPending(false)} /> : null}
     </EditorContext.Provider>
   );
 }

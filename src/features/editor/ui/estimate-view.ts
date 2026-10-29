@@ -17,7 +17,16 @@ const unknownCount = (e: EstimateResponse) => e.nodes.filter((n) => n.status ===
 // Chữ trên ô "Lần chạy tới" và đầu hộp xác nhận: số lượt MUSE (không tính dịch vụ giả), kèm số node chưa biết.
 export function estimateText(e: EstimateResponse): string {
   const unknown = unknownCount(e);
-  let text = isZero(e.museTotal) ? (unknown > 0 ? "0 lượt Muse" : "0 lượt Muse (dùng lại hết)") : `${callsText(e.museTotal)} Muse`;
+  let text: string;
+  if (!isZero(e.museTotal)) {
+    text = `${callsText(e.museTotal)} Muse`;
+  } else if (e.nodes.every((n) => n.status === "cached")) {
+    text = "0 lượt Muse (dùng lại hết)";
+  } else {
+    // 0 lượt Muse nhưng vẫn có node sẽ chạy: "dùng lại hết" sẽ là nói sai. Node chạy bằng dịch vụ giả được đếm riêng.
+    const fake = e.nodes.filter((n) => n.status === "run" && n.provider === "fake").length;
+    text = fake > 0 ? `0 lượt Muse (dịch vụ giả: ${fake} node)` : "0 lượt Muse";
+  }
   if (unknown > 0) text += ` + chưa biết (${unknown} node)`;
   if (e.waitsOnWriter) text += " — số cảnh chưa biết đến khi Biên kịch viết xong";
   return text;
@@ -36,4 +45,9 @@ export function rowText(n: EstimateNode): string {
   if (n.provider === null) return "chạy, không gọi dịch vụ";
   if (isZero(n.calls)) return "chạy, không tốn lượt";
   return n.provider === "muse" ? `sẽ gọi Muse: ${callsText(n.calls)}` : `chạy bằng dịch vụ giả: ${callsText(n.calls)} (không tốn lượt Muse)`;
+}
+
+// Ước tính "không thấp hơn thực tế" chỉ đúng khi mọi node đều ước được: còn node chưa biết, hoặc Biên kịch sắp viết lại số cảnh, thì không hứa.
+export function isFirmEstimate(e: EstimateResponse): boolean {
+  return !e.waitsOnWriter && unknownCount(e) === 0;
 }

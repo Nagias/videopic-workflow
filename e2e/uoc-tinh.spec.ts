@@ -70,9 +70,20 @@ test("bấm Chạy cả workflow → hộp xác nhận (tiêu điểm ở Huỷ)
   // Mọi node trong phạm vi có một dòng; Tạo video giả ghi rõ không tốn lượt Muse.
   await expect(page.getByTestId("run-confirm-row-p")).toBeVisible();
   await expect(page.getByTestId("run-confirm-row-v")).toContainText("dịch vụ giả");
-  await expect(page.getByTestId("run-confirm-total")).toContainText("0 lượt Muse");
+  await expect(page.getByTestId("run-confirm-total")).toContainText("0 lượt Muse (dịch vụ giả: 1 node)");
+  await expect(page.getByTestId("run-confirm-total")).not.toContainText("dùng lại hết");
   // An toàn mặc định: tiêu điểm nằm ở Huỷ, nên Enter một mình là Huỷ chứ không chạy.
   await expect(page.getByTestId("run-confirm-cancel")).toBeFocused();
+  // Ước tính chắc chắn (không node chưa biết): có câu "không thấp hơn thực tế".
+  await expect(page.getByTestId("run-confirm-note")).toBeVisible();
+  // Mọi thứ phía sau hộp bị khoá (inert): bấm chữ trong hộp rồi Tab liên tục, tiêu điểm không lọt ra ô nào của canvas, thanh trên, khung phải.
+  await expect(page.locator(".editor")).toHaveAttribute("inert", "");
+  await page.getByTestId("run-confirm-total").click();
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.closest('[data-testid="run-confirm"]') !== null)).toBe(true);
+  }
+  await page.getByTestId("run-confirm-cancel").focus();
   await page.keyboard.press("Enter");
   await expect(box).toHaveCount(0);
   expect(await latestRunId(page, id)).toBeNull();
@@ -87,6 +98,7 @@ test("bấm Chạy cả workflow → hộp xác nhận (tiêu điểm ở Huỷ)
   await page.locator(".react-flow__pane").click({ position: { x: 700, y: 520 } });
   await page.keyboard.press("Control+Enter");
   await expect(box).toBeVisible();
+  await expect(page.getByTestId("run-confirm-ok")).toBeEnabled();
   await page.mouse.click(5, 5);
   await expect(box).toHaveCount(0);
 
@@ -125,6 +137,8 @@ test("chạy node Prompt (0 lượt) không hỏi: chạy thẳng", async ({ pag
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 60_000 });
   await expect(page.getByTestId("run-confirm")).toHaveCount(0);
   expect(runs.count()).toBe(1);
+  // Rảnh sau lần chạy: dòng "lần chạy trước" nổi ở góc dưới trái, không cần chọn node.
+  await expect(page.getByTestId("queue-last")).toContainText("Chạy xong");
 
   // Tạo video giả cũng không phải lượt Muse: không hỏi.
   await page.getByTestId("card-v").click({ button: "right" });
@@ -181,7 +195,9 @@ test("ước tính lỗi thì báo lỗi và không chạy; ô 'Lần chạy t�
   await page.getByTestId("card-s").click();
   await page.getByTestId("scene-provider-s").selectOption("fake");
   await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
-  await expect(pill).toContainText("0 lượt Muse (dùng lại hết)");
+  // Nhân vật và Không gian có thể đã có kết quả dùng chung từ spec khác (cache), nên số node giả không cố định.
+  await expect(pill).toContainText(/0 lượt Muse \(dịch vụ giả: \d+ node\)/);
+  await expect(pill).not.toContainText("dùng lại hết");
 
   // Ước tính hỏng: lời báo của máy chủ hiện ra, hộp không mở, không xin chạy.
   await page.route("**/api/workflows/*/estimate", (route) => route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Không ước tính được: thử nghiệm" }) }));
@@ -211,6 +227,10 @@ test("minimap góc dưới phải không che nút điều khiển; nhóm tay kh�
   expect(mini.y + mini.height).toBeLessThanOrEqual(canvas.y + canvas.height + 1);
   const overlap = mini.x < controls.x + controls.width && mini.x + mini.width > controls.x && mini.y < controls.y + controls.height && mini.y + mini.height > controls.y;
   expect(overlap).toBe(false);
+  // Nút điều khiển cùng góc dưới phải (spec 8.1), nằm trong canvas, không chạm khung bên phải.
+  expect(controls.x).toBeGreaterThan(canvas.x + canvas.width / 2);
+  expect(controls.x + controls.width).toBeLessThanOrEqual(canvas.x + canvas.width + 1);
+  expect(controls.y + controls.height).toBeLessThanOrEqual(mini.y + 1);
 
   await page.getByTestId("card-p").click();
   await page.getByTestId("card-q").click({ modifiers: ["Control"] });
@@ -246,7 +266,8 @@ test("đang chạy: ô hàng chờ có dòng node đang chạy, bấm Huỷ tron
   await expect(page.getByTestId("run-status")).toHaveText("Lỗi", { timeout: 60_000 });
   await expect(page.getByTestId("problem-banner")).toContainText("Đã huỷ");
   await expect(page.getByTestId("cancel-run")).toHaveCount(0);
-  // Rảnh rồi: hàng chờ ghi lần chạy trước khi khung bên phải mở vì chọn một node.
-  await page.getByTestId("card-character-1").click();
+  // Rảnh rồi: một dòng nhỏ ở góc dưới trái ghi lần chạy trước, kể cả khi chưa chọn node nào (khung bên phải không mở).
   await expect(page.getByTestId("queue-last")).toContainText("Lỗi");
+  await expect(page.getByTestId("queue-last")).toContainText("Đã huỷ");
+  await expect(page.getByTestId("inspector")).toHaveCount(0);
 });

@@ -6,15 +6,17 @@ type Props = {
   run: RunView;
   // Tên hiện trên thẻ của node (Cảnh 3, Nhân vật...).
   titleOf: (nodeId: string) => string;
-  // Khung bên phải đang mở vì có node được chọn: khi rảnh cũng hiện thêm dòng "Lần chạy trước". Khi đang chạy thì luôn hiện.
-  inspectorOpen: boolean;
+  // "panel": ô trong khung bên phải (khi đang chạy). "floating": một dòng nhỏ nổi ở góc dưới trái canvas (khi rảnh), không đẩy
+  // khung bên phải và không mở khung đó chỉ để ghi một dòng.
+  variant: "panel" | "floating";
 };
 
 // Hàng chờ của lần chạy: đang chạy thì liệt kê node `running` kèm bước đang làm và hồ sơ Muse (máy chủ ghi trong `message`), số node
-// xong / tổng, nút Huỷ. Rảnh thì chỉ ghi kết quả lần trước, và chỉ khi khung bên phải đã mở (không tự mở khung chỉ để ghi dòng này).
-export function QueuePanel({ run, titleOf, inspectorOpen }: Props) {
+// xong / tổng, nút Huỷ. Rảnh thì ghi kết quả lần chạy trước (khi đã có lần chạy nào).
+export function QueuePanel({ run, titleOf, variant }: Props) {
   const { run: current, nodeStates, runNodeIds } = run;
   if (run.active && current) {
+    if (variant !== "panel") return null;
     const summary = queueSummary(nodeStates, runNodeIds);
     const queued = current.status === "queued";
     return (
@@ -39,15 +41,11 @@ export function QueuePanel({ run, titleOf, inspectorOpen }: Props) {
       </section>
     );
   }
-  if (!inspectorOpen || !current) return null;
+  if (variant !== "floating" || !current) return null;
   return (
-    <section className="queue-panel" data-testid="queue-panel" aria-label="Hàng chờ">
-      <div className="qh">
-        <b>Hàng chờ</b>
-        <span data-testid="queue-progress">rảnh</span>
-      </div>
-      <div className="qlast" data-testid="queue-last">
-        Lần chạy trước: <b className={`run-${current.status}`}>{RUN_LABEL[current.status]}</b>
+    <section className="queue-panel floating" data-testid="queue-panel" aria-label="Hàng chờ">
+      <div className="qlast" data-testid="queue-last" title={current.error ?? undefined}>
+        Hàng chờ rảnh · lần chạy trước: <b className={`run-${current.status}`}>{RUN_LABEL[current.status]}</b>
         {current.error ? ` — ${current.error}` : ""}
       </div>
     </section>

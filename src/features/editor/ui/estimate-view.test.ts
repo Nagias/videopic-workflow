@@ -1,14 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type { EstimateNode, EstimateResponse } from "../../../shared/api";
-import { callsText, estimateText, needsConfirm, rowText } from "./estimate-view";
+import { callsText, estimateText, isFirmEstimate, needsConfirm, rowText } from "./estimate-view";
 
 const none = { image: 0, video: 0, text: 0 };
 const est = (over: Partial<EstimateResponse> = {}): EstimateResponse => ({ nodes: [], total: none, museTotal: none, waitsOnWriter: false, warnings: [], ...over });
 const node = (over: Partial<EstimateNode> = {}): EstimateNode => ({ id: "n", label: "Cảnh 1", provider: "muse", status: "run", calls: none, ...over });
 
 describe("estimateText", () => {
-  it("0 → '0 lượt Muse (dùng lại hết)'", () => {
+  it("0 → '0 lượt Muse (dùng lại hết)' khi mọi node đều dùng lại (hoặc không có node nào)", () => {
     expect(estimateText(est())).toBe("0 lượt Muse (dùng lại hết)");
+    expect(estimateText(est({ nodes: [node({ status: "cached" }), node({ id: "m", status: "cached", provider: null })] }))).toBe("0 lượt Muse (dùng lại hết)");
+  });
+
+  it("0 lượt Muse nhưng còn node sẽ chạy: không ghi 'dùng lại hết'; node dịch vụ giả được đếm riêng", () => {
+    const fake = (id: string) => node({ id, provider: "fake", calls: { image: 0, video: 1, text: 0 } });
+    expect(estimateText(est({ nodes: [fake("a"), fake("b"), node({ id: "c", status: "cached" })] }))).toBe("0 lượt Muse (dịch vụ giả: 2 node)");
+    // Node không gọi dịch vụ nào (Ghép phim, Prompt) mà vẫn chạy: cũng không phải "dùng lại hết".
+    expect(estimateText(est({ nodes: [node({ id: "g", provider: null, status: "run" })] }))).toBe("0 lượt Muse");
+    expect(estimateText(est({ nodes: [fake("a"), node({ id: "w", status: "unknown" })] }))).toBe("0 lượt Muse (dịch vụ giả: 1 node) + chưa biết (1 node)");
   });
 
   it("{image:1, video:2} + 1 unknown → '1 ảnh + 2 video Muse + chưa biết (1 node)'", () => {
@@ -75,5 +84,13 @@ describe("callsText", () => {
   it("liệt kê ảnh, video, chữ; bằng 0 hết thì '0 lượt'", () => {
     expect(callsText({ image: 2, video: 0, text: 1 })).toBe("2 ảnh + 1 chữ");
     expect(callsText(none)).toBe("0 lượt");
+  });
+});
+
+describe("isFirmEstimate", () => {
+  it("chắc chắn chỉ khi không có node chưa biết và Biên kịch không sắp viết lại", () => {
+    expect(isFirmEstimate(est({ nodes: [node(), node({ id: "m", status: "cached" })] }))).toBe(true);
+    expect(isFirmEstimate(est({ nodes: [node({ status: "unknown" })] }))).toBe(false);
+    expect(isFirmEstimate(est({ waitsOnWriter: true }))).toBe(false);
   });
 });

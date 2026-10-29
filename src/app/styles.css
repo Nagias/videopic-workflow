@@ -1314,3 +1314,24 @@ button.icon {
   border-radius: 8px;
   overflow: hidden;
 }
+
+/* Hàng chờ khi rảnh: một dòng nhỏ nổi ở góc dưới trái canvas, không bắt chuột. */
+.queue-slot {
+  pointer-events: none;
+}
+
+.queue-panel.floating {
+  position: static;
+  max-width: 360px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(23 26 33 / 0.9);
+}
+
+.queue-panel.floating .qlast {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
