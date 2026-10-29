@@ -10,6 +10,16 @@ export function stableStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
+// take = 1 là lần tạo mặc định nên không đưa vào khoá cache: kết quả đã có từ trước khi có take vẫn dùng lại được.
+// Dùng chung cho khoá cache của máy chủ (cacheKeyOf) và so tham số của kết quả đang hiện (runs/latest), để hai bên cùng một quy tắc.
+export function withoutDefaultTake(params: unknown): unknown {
+  if (!params || typeof params !== "object" || Array.isArray(params)) return params;
+  if ((params as { take?: unknown }).take !== 1) return params;
+  const rest = { ...(params as Record<string, unknown>) };
+  delete rest.take;
+  return rest;
+}
+
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
   0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,

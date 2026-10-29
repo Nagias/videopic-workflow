@@ -4,7 +4,13 @@ import { freshResults, paramsKey, paramsOfGraph, type ResultRow } from "./fresh-
 const node = (id: string, params: Record<string, unknown> = {}) => ({ id, type: "x", position: { x: 0, y: 0 }, params });
 const edge = (source: string, target: string) => ({ id: `${source}-${target}`, source, sourceHandle: "o", target, targetHandle: "i" });
 const graph = (nodes: ReturnType<typeof node>[], edges: ReturnType<typeof edge>[] = []) => ({ nodes, edges });
-const row = (nodeId: string, runId: string): ResultRow<string> => ({ nodeId, runId, state: `${nodeId}@${runId}` });
+const row = (nodeId: string, runId: string, cacheKey: string | null = null, status = "succeeded"): ResultRow<string> => ({
+  nodeId,
+  runId,
+  cacheKey,
+  status,
+  state: `${nodeId}@${runId}`,
+});
 const runs = (g: Record<string, ReturnType<typeof graph>>) => new Map(Object.entries(g).map(([id, gr]) => [id, paramsOfGraph(gr)]));
 
 describe("freshResults — kết quả cũ nào còn đúng với workflow đang lưu", () => {
@@ -87,10 +93,62 @@ describe("freshResults — kết quả cũ nào còn đúng với workflow đang
   });
 });
 
+describe("freshResults — nguồn được chạy lại riêng ở lần chạy sau", () => {
+  const g = graph([node("s1", { m: "x" }), node("combine", { order: ["s1"] })], [edge("s1", "combine")]);
+  const both = runs({ r1: g, r2: g });
+
+  it("cảnh chạy lại riêng ở r2 với khoá mới, Ghép phim vẫn là dòng của r1 → Ghép phim không còn đúng", () => {
+    const out = freshResults([row("s1", "r2", "k2"), row("s1", "r1", "k1"), row("combine", "r1", "c1")], both, g);
+    expect([...out.shown.keys()]).toEqual(["s1"]);
+    expect(out.outdated).toEqual(["combine"]);
+  });
+
+  it("dòng của cảnh ở r2 là 'dùng lại' với khoá y hệt khoá r1 đã dùng → Ghép phim được giữ", () => {
+    const out = freshResults([row("s1", "r2", "k1", "cached"), row("s1", "r1", "k1"), row("combine", "r1", "c1")], both, g);
+    expect([...out.shown.keys()].sort()).toEqual(["combine", "s1"]);
+    expect(out.outdated).toEqual([]);
+  });
+
+  it("cùng lần chạy thì không so khoá", () => {
+    const out = freshResults([row("s1", "r1", "k1"), row("combine", "r1", "c1")], both, g);
+    expect(out.outdated).toEqual([]);
+  });
+
+  it("dữ liệu cũ không có khoá (lần chạy hiển thị của workflow cũ): cùng lần chạy hoặc dòng 'dùng lại' thì giữ, còn lại bỏ", () => {
+    const legacySameRun = freshResults([row("s1", "r1", null, "cached"), row("combine", "r1", null, "cached")], both, g);
+    expect(legacySameRun.outdated).toEqual([]);
+    // Nguồn là dòng 'dùng lại' ở lần chạy khác, không có khoá: giữ.
+    const cached = freshResults([row("s1", "r2", null, "cached"), row("combine", "r1", null, "cached")], both, g);
+    expect(cached.outdated).toEqual([]);
+    // Nguồn chạy thật ở lần chạy khác mà không có khoá để so: bỏ.
+    const ran = freshResults([row("s1", "r2", null, "succeeded"), row("combine", "r1", null, "cached")], both, g);
+    expect(ran.outdated).toEqual(["combine"]);
+    // Một bên có khoá, một bên không: coi như không biết.
+    const mixed = freshResults([row("s1", "r2", "k2", "succeeded"), row("s1", "r1", null), row("combine", "r1", null, "cached")], both, g);
+    expect(mixed.outdated).toEqual(["combine"]);
+  });
+
+  it("lan tiếp: nguồn mới hơn làm bỏ node ngay sau nó, và các node sau nữa cũng bỏ", () => {
+    const chain = graph([node("a"), node("b"), node("c")], [edge("a", "b"), edge("b", "c")]);
+    const out = freshResults(
+      [row("a", "r2", "k2"), row("a", "r1", "k1"), row("b", "r1", "kb"), row("c", "r1", "kc")],
+      runs({ r1: chain, r2: chain }),
+      chain,
+    );
+    expect([...out.shown.keys()]).toEqual(["a"]);
+    expect(out.outdated.sort()).toEqual(["b", "c"]);
+  });
+});
+
 describe("paramsKey", () => {
   it("thứ tự khoá và trường undefined không phải là khác biệt; giá trị khác thì khác", () => {
     expect(paramsKey({ a: 1, b: { x: 1, y: undefined } })).toBe(paramsKey({ b: { x: 1 }, a: 1 }));
     expect(paramsKey({ a: 1 })).not.toBe(paramsKey({ a: 2 }));
     expect(paramsKey(undefined)).toBe(paramsKey(null));
+  });
+
+  it("take = 1 là mặc định, giống khoá cache: có hay không cũng như nhau; take khác 1 thì khác", () => {
+    expect(paramsKey({ a: 1, take: 1 })).toBe(paramsKey({ a: 1 }));
+    expect(paramsKey({ a: 1, take: 2 })).not.toBe(paramsKey({ a: 1 }));
   });
 });

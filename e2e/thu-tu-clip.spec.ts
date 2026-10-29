@@ -147,8 +147,14 @@ test("Tạo thẻ cảnh lại với Biên kịch đổi số cảnh → thẻ m
 
   // Tạo thẻ cảnh: bộ 10 cảnh mới của Biên kịch thay nhóm. Thẻ 3 bị thay bằng chữ của Biên kịch, thẻ 9 và 10 là thẻ mới: đều chưa chạy.
   await page.getByTestId("card-writer-1").click();
+  // Lần đầu: máy chủ không trả được kết quả (mạng hỏng) ngay sau khi đổi thẻ → thẻ bị thay vẫn không được hiện clip cũ, và có báo lỗi.
+  await page.route("**/runs/latest", (route) => route.abort());
   await page.getByTestId("writer-expand-writer-1").click();
   await expect(page.getByTestId("node-scene-g1-10")).toBeVisible();
+  await expect(page.getByTestId("problem-banner")).toContainText("Không tải được kết quả");
+  await expect(page.getByTestId("node-status-scene-g1-3")).toHaveText("Chưa chạy");
+  await expect(page.getByTestId("node-status-combine-g1")).toHaveText("Chưa chạy");
+  await page.unroute("**/runs/latest");
   await expect(page.getByTestId("node-status-scene-g1-10")).toHaveText("Chưa chạy");
   await expect(page.getByTestId("node-status-scene-g1-9")).toHaveText("Chưa chạy");
   await expect(page.getByTestId("node-status-scene-g1-3")).toHaveText("Chưa chạy");
@@ -178,4 +184,21 @@ test("Tạo thẻ cảnh lại với Biên kịch đổi số cảnh → thẻ m
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 300_000 });
   await expect(page.getByTestId("node-status-scene-g1-10")).toHaveText("Xong");
   await expect(page.getByTestId("node-status-scene-g1-3")).toHaveText("Xong");
+  await expect(page.getByTestId("node-status-combine-g1")).toHaveText("Xong");
+
+  // Chạy lại riêng một cảnh (bản mới): cảnh có clip mới, nhưng phim ghép vẫn làm từ clip cũ → Ghép phim "Chưa chạy" (ước tính cũng ghi chạy lại).
+  await page.getByTestId("card-scene-g1-4").click({ button: "right" });
+  await page.getByTestId("ctx-rerun").click();
+  await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 120_000 });
+  await expect(page.getByTestId("node-status-scene-g1-4")).toHaveText("Xong");
+  await expect(page.getByTestId("node-status-scene-g1-5")).toHaveText(/Xong|Dùng lại kết quả/);
+  await expect(page.getByTestId("node-status-combine-g1")).toHaveText("Chưa chạy");
+
+  // Sửa tay chữ của một cảnh ở khung bên phải: lưu xong thì thẻ hiện "Chưa chạy" ngay, không cần tải lại trang.
+  await expect(page.getByTestId("node-status-scene-g1-6")).toHaveText(/Xong|Dùng lại kết quả/);
+  await page.getByTestId("card-scene-g1-6").click();
+  await page.getByTestId("scene-motion-scene-g1-6").fill("cô ngồi xuống nghỉ bên đá (sửa sau khi chạy)");
+  await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
+  await expect(page.getByTestId("node-status-scene-g1-6")).toHaveText("Chưa chạy");
+  await expect(page.getByTestId("node-status-scene-g1-7")).toHaveText(/Xong|Dùng lại kết quả/);
 });

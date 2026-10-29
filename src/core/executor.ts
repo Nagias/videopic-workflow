@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { ZodError } from "zod";
 import type { ProviderRegistry } from "../providers/types";
 import type { RunDecision, RunScope } from "../shared/api";
-import { stableStringify } from "../shared/hash";
+import { stableStringify, withoutDefaultTake } from "../shared/hash";
 import type { SourceRef } from "../shared/node-definition";
 import { NodeOutputsSchema, type NodeOutputs, type PortValue } from "../shared/ports";
 import { orderSourceList } from "../shared/source-order";
@@ -128,15 +128,6 @@ export function planGraph(graph: WorkflowGraph, nodes: Record<string, ServerNode
   };
   for (const n of graph.nodes) visit(n.id);
   return order;
-}
-
-// take = 1 là lần tạo mặc định nên không đưa vào khoá: kết quả đã có từ trước khi có take vẫn dùng lại được.
-function withoutDefaultTake(params: unknown): unknown {
-  if (!params || typeof params !== "object" || Array.isArray(params)) return params;
-  if ((params as { take?: unknown }).take !== 1) return params;
-  const rest = { ...(params as Record<string, unknown>) };
-  delete rest.take;
-  return rest;
 }
 
 export function cacheKeyOf(type: string, params: unknown, upstream: Record<string, string>, version?: string): string {

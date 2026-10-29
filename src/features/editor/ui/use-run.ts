@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../app/api-client";
+import { groupCombineId, writerGroups } from "../../../shared/scenes";
+import type { WorkflowGraph } from "../../../shared/workflow";
 import type { ExpandScenesBody, RunNodeState, RunResponse, RunScope } from "../../../shared/api";
 import { writersFinished } from "./run-sync";
 import { isActive, runView } from "./run-view";
 import { errText, type WorkflowApi } from "./use-workflow";
 
 const POLL_MS = 1000;
+// Sau mỗi lần "Đã lưu" chờ ngần này rồi mới tải lại kết quả (gõ liên tục thì chỉ tải một lần khi dừng tay), như ô ước tính.
+const RESULTS_DELAY_MS = 1000;
 
 const NO_STATES: Record<string, RunNodeState> = {};
 const NO_IDS: readonly string[] = [];
@@ -14,7 +18,7 @@ const NO_OUTDATED: ReadonlySet<string> = new Set();
 // Lượt chạy của workflow đang mở: bắt đầu, hỏi tiến độ, gộp kết quả vào các node, tải lại đồ thị giữa và cuối lượt chạy, huỷ,
 // và trả lời hộp hỏi Thay/Giữ của Biên kịch.
 export function useRun(wf: WorkflowApi) {
-  const { workflowId, shownWorkflow, groups, onShown, save, flushEdits, applyGraph, reloadGraph, setProblem } = wf;
+  const { workflowId, shownWorkflow, saveState, groups, onShown, save, flushEdits, applyGraph, reloadGraph, setProblem } = wf;
   const [run, setRun] = useState<RunResponse | null>(null);
   // true khi `run` là lần chạy cũ tải lại lúc mở workflow (chưa xem trực tiếp trong phiên này).
   const [runFromHistory, setRunFromHistory] = useState(false);
@@ -87,25 +91,40 @@ export function useRun(wf: WorkflowApi) {
     [reloadGraph, shownWorkflow, setProblem],
   );
 
-  // Đồ thị vừa đổi ở máy chủ (Tạo thẻ cảnh / Thay / Giữ): kết quả hiện lại đúng như máy chủ trả, một nơi quyết định duy nhất. Thẻ có
-  // tham số khác (hoặc mới) và Ghép phim phía sau chúng không còn kết quả cũ, hiện "Chưa chạy" tới lần chạy sau.
+  // Tải kết quả của workflow `id` từ máy chủ và hiện đúng như máy chủ trả: một nơi quyết định duy nhất kết quả nào còn đúng
+  // (GET .../runs/latest, freshResults). Thẻ có tham số/đầu vào khác lần chạy hiện "Chưa chạy" tới lần chạy sau. Mỗi lần gọi làm các
+  // lần gọi trước còn đang chờ thành cũ (kết quả về muộn bị bỏ), cả khi đã đổi sang workflow khác. Trả false khi lỗi (đã báo lên thanh báo).
+  const fetchSeq = useRef(0);
   const showServerResults = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<boolean> => {
+      const mine = ++fetchSeq.current;
       try {
         const last = await api.getLatestRun(id);
-        if (shownWorkflow.current !== id) return;
+        if (fetchSeq.current !== mine || shownWorkflow.current !== id) return true;
         const shown = currentRun.current;
         if (shown) {
           currentRun.current = { ...shown, nodes: last.nodes };
           setRun(currentRun.current);
         }
         setOutdated(new Set(last.outdated));
+        return true;
       } catch (e) {
-        setProblem(`Không tải được kết quả của các thẻ cảnh mới: ${errText(e)}`);
+        setProblem(`Không tải được kết quả của các thẻ cảnh: ${errText(e)}`);
+        return false;
       }
     },
     [shownWorkflow, setProblem],
   );
+
+  // Ẩn kết quả đang hiện của các node `ids` (khi không hỏi được máy chủ): thà hiện "Chưa chạy" còn hơn hiện clip của thẻ cũ.
+  const hideResults = useCallback((ids: readonly string[]) => {
+    const shown = currentRun.current;
+    if (!shown) return;
+    const nodes = { ...shown.nodes };
+    for (const id of ids) delete nodes[id];
+    currentRun.current = { ...shown, nodes };
+    setRun(currentRun.current);
+  }, []);
 
   // Tạo/thay nhóm thẻ cảnh của Biên kịch (nút Tạo thẻ cảnh, hộp hỏi Thay/Giữ). Trả true khi máy chủ đã đổi đồ thị.
   const expandScenes = useCallback(
@@ -120,7 +139,7 @@ export function useRun(wf: WorkflowApi) {
         const next = await api.expandScenes(id, writerId, choice);
         if (shownWorkflow.current !== id) return false;
         applyGraph(next);
-        await showServerResults(id);
+        if (!(await showServerResults(id))) hideResults(expandedNodeIds(next.graph, writerId));
         return true;
       } catch (e) {
         setProblem(errText(e));
@@ -129,10 +148,23 @@ export function useRun(wf: WorkflowApi) {
         setSyncing(false);
       }
     },
-    [flushEdits, applyGraph, showServerResults, shownWorkflow, setProblem],
+    [flushEdits, applyGraph, showServerResults, hideResults, shownWorkflow, setProblem],
   );
 
   const active = isActive(run);
+
+  // Sửa tay một thẻ thì kết quả cũ của nó (và Ghép phim phía sau) không còn đúng: lưu xong thì tải lại kết quả, ô ước tính cũng làm vậy.
+  // Không tải trong lúc chạy / xin chạy / đồng bộ (lần chạy tự tải lại khi xong).
+  const idle = !active && !starting && !syncing;
+  useEffect(() => {
+    if (!workflowId || saveState !== "saved" || !idle) return;
+    const t = setTimeout(() => void showServerResults(workflowId), RESULTS_DELAY_MS);
+    return () => {
+      clearTimeout(t);
+      fetchSeq.current++;
+    };
+  }, [workflowId, saveState, idle, showServerResults]);
+
   const activeRunId = active ? run?.id : undefined;
   useEffect(() => {
     if (!activeRunId) return;
@@ -233,6 +265,14 @@ export function useRun(wf: WorkflowApi) {
     cancel,
     decide,
   };
+}
+
+// Các node của nhóm thẻ cảnh do Biên kịch `writerId` sinh ra: thẻ cảnh và Ghép phim của nhóm.
+function expandedNodeIds(graph: WorkflowGraph, writerId: string): string[] {
+  return writerGroups(graph, writerId).flatMap((g) => {
+    const combine = groupCombineId(graph, g.id);
+    return combine === undefined ? g.nodeIds : [...g.nodeIds, combine];
+  });
 }
 
 export type RunApi = ReturnType<typeof useRun>;
