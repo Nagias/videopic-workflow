@@ -39,7 +39,7 @@ export function groupCombineId(graph: WorkflowGraph, groupId: string): string | 
   return types.get(named) === "film-combine" ? named : undefined;
 }
 
-// Ảnh chụp nhóm: tham số từng cảnh theo thứ tự nhóm (không có toạ độ) và các dây chạm vào cảnh trong nhóm (không có mã dây).
+// Ảnh chụp nhóm: tham số từng cảnh theo thứ tự nhóm (không có toạ độ và không có take, số lần chạy lại) và các dây chạm vào cảnh trong nhóm (không có mã dây).
 // Kéo node, đổi thứ tự node/dây trong mảng hay vẽ lại một dây y hệt đều không đổi ảnh chụp; sửa chữ, dây, thêm/xoá cảnh,
 // đổi thứ tự clip trong Ghép phim thì đổi.
 export function snapshotGroup(graph: WorkflowGraph, groupId: string): string {
@@ -49,8 +49,12 @@ export function snapshotGroup(graph: WorkflowGraph, groupId: string): string {
   const members = new Set(group.nodeIds);
   const nodes = group.nodeIds.map((id) => {
     const n = byId.get(id);
+    if (!n) return { id, missing: true };
     // Qua JSON để trường undefined (mất khi lưu) không làm khác ảnh chụp.
-    return n ? { id, type: n.type, params: JSON.parse(JSON.stringify(n.params)) as unknown } : { id, missing: true };
+    const params = JSON.parse(JSON.stringify(n.params)) as Record<string, unknown>;
+    // "Chạy lại (bản mới)" tăng take của cảnh: đó là chạy lại, không phải sửa tay nhóm, nên take không vào ảnh chụp.
+    delete params.take;
+    return { id, type: n.type, params };
   });
   const edges = graph.edges
     .filter((e) => members.has(e.source) || members.has(e.target))

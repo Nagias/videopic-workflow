@@ -180,4 +180,21 @@ describe("nhóm Phân cảnh (expandScenes)", () => {
     const saved: WorkflowGraph = { ...graph, groups: graph.groups!.map((g) => ({ ...g, source: { ...g.source!, snapshot: LEGACY_SNAPSHOT } })) };
     expect(groupEdited(saved, groupId)).toBe(false);
   });
+
+  it("Chạy lại (bản mới) tăng take của một cảnh: ảnh chụp nhóm không đổi, nhóm chưa tính là sửa tay", () => {
+    const { graph, groupId } = expandScenes(refsGraph(), { writerId: "writer-1", shots: sonLaShots(), refs: REFS, provider: "fake", resultKey: "k1", origin: { x: 0, y: 0 } });
+    const sceneId = graph.groups![0]!.nodeIds[2]!;
+    const withTake = (take: number | undefined): WorkflowGraph => ({
+      ...graph,
+      nodes: graph.nodes.map((n) => (n.id === sceneId ? { ...n, params: take === undefined ? n.params : { ...n.params, take } } : n)),
+    });
+    const before = snapshotGroup(withTake(1), groupId);
+    expect(snapshotGroup(withTake(2), groupId)).toBe(before);
+    expect(snapshotGroup(withTake(7), groupId)).toBe(before);
+    expect(snapshotGroup(withTake(undefined), groupId)).toBe(before);
+    expect(groupEdited(withTake(2), groupId)).toBe(false);
+    // Sửa chữ thật vẫn tính là sửa tay, dù đã có take.
+    const edited: WorkflowGraph = { ...withTake(2), nodes: withTake(2).nodes.map((n) => (n.id === sceneId ? { ...n, params: { ...n.params, motion: "đổi hẳn chuyển động" } } : n)) };
+    expect(groupEdited(edited, groupId)).toBe(true);
+  });
 });

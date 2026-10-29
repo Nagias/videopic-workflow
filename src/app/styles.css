@@ -1015,3 +1015,122 @@ button.icon {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+
+/* Menu chuột phải (ContextMenu.tsx): thẻ nhỏ ngay chỗ bấm, nằm trên canvas và dưới ô tìm node. */
+.ctx-menu {
+  position: fixed;
+  z-index: 90;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgb(0 0 0 / 0.55);
+}
+
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ctx-item i {
+  width: 22px;
+  flex: none;
+  font-style: normal;
+  text-align: center;
+  color: var(--muted);
+}
+
+.ctx-item span {
+  flex: 1;
+}
+
+.ctx-item kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ctx-item:hover:not(:disabled),
+.ctx-item:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
+
+.ctx-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Bảng phím tắt (ShortcutSheet.tsx). */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.sheet {
+  width: 520px;
+  max-width: calc(100vw - 20px);
+  padding: 16px 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.65);
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 15px;
+}
+
+.sheet table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sheet td {
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.sheet-keys {
+  width: 190px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.sheet kbd {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.sheet-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}

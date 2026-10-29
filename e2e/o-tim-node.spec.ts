@@ -3,6 +3,15 @@ import { expect, test, type Page } from "@playwright/test";
 type SavedGraph = { graph: { nodes: { id: string; type: string }[]; edges: { source: string; sourceHandle: string; target: string; targetHandle: string }[] } };
 const readGraph = async (page: Page, id: string) => ((await (await page.request.get(`/api/workflows/${id}`)).json()) as SavedGraph).graph;
 
+const viewportOf = (page: Page) => page.locator(".react-flow__viewport").evaluate((el) => (el as HTMLElement).style.transform);
+
+// Bấm nút "vừa màn hình" của xyflow rồi đợi khung nhìn đổi xong (đo cổng, chỗ thả dây sau đó mới đúng).
+async function fitView(page: Page) {
+  const before = await viewportOf(page);
+  await page.locator(".react-flow__controls-fitview").click();
+  await expect.poll(() => viewportOf(page)).not.toBe(before);
+}
+
 const centerOf = async (page: Page, testid: string) => {
   const box = await page.getByTestId(testid).boundingBox();
   if (!box) throw new Error(`Không thấy ${testid}`);
@@ -92,8 +101,7 @@ test("kéo từ cổng Clip của Cảnh 12 ra chỗ trống → ô tìm chỉ c
   await expect(page).toHaveURL(/wf=sinh-ton-son-la-/);
   const wfId = new URL(page.url()).searchParams.get("wf")!;
   await expect(page.getByTestId("node-scene-g1-12")).toBeVisible();
-  await page.locator(".react-flow__controls-fitview").click();
-  await page.waitForTimeout(500);
+  await fitView(page);
 
   const combineIds = () => page.locator('[data-testid^="node-film-combine-"], [data-testid="node-film-combine"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")!));
   const before = await combineIds();
@@ -158,8 +166,7 @@ test("kéo từ cổng vào Nối tiếp ra chỗ trống → chỉ có node ra 
   await expect(page).toHaveURL(/wf=sinh-ton-son-la-/);
   const wfId = new URL(page.url()).searchParams.get("wf")!;
   await expect(page.getByTestId("node-scene-g1-6")).toBeVisible();
-  await page.locator(".react-flow__controls-fitview").click();
-  await page.waitForTimeout(500);
+  await fitView(page);
 
   const start = await readGraph(page, wfId);
   const old = start.edges.find((e) => e.target === "scene-g1-6" && e.targetHandle === "follow");
@@ -205,8 +212,8 @@ test("kéo từ cổng Không gian của Hồ sơ không gian ra chỗ trống �
   expect(put.ok()).toBe(true);
   await page.goto(`/?wf=${id}`);
   await expect(page.getByTestId("node-loc")).toBeVisible();
-  // Vừa mở, canvas còn đang tự vừa màn hình: đợi nó đứng yên rồi mới đo cổng.
-  await page.waitForTimeout(800);
+  // Vừa mở, canvas còn đang tự vừa màn hình (khung nhìn rời khỏi mặc định): đợi xong rồi mới đo cổng.
+  await expect.poll(() => viewportOf(page)).not.toBe("translate(0px, 0px) scale(1)");
   const from = await page.locator('[data-testid="node-loc"] .react-flow__handle.source[data-handleid="location"]').boundingBox();
   const next = await page.getByTestId("node-p").boundingBox();
   if (!from || !next) throw new Error("Không thấy cổng Không gian hoặc node Prompt");

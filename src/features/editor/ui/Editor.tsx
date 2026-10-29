@@ -1,10 +1,13 @@
 import { addEdge, Background, Controls, ReactFlow, type Connection, type Edge, type IsValidConnection, type NodeChange, type OnConnectEnd, type ReactFlowInstance } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { api } from "../../../app/api-client";
 import { webNodes } from "../../../nodes/registry.web";
+import type { RunScope } from "../../../shared/api";
 import type { PortDef } from "../../../shared/ports";
 import { labelOf } from "../../../shared/node-label";
 import { Banners } from "./Banners";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { connectionProblem, droppedConnectionProblem, edgeKindClass, replaceTargetEdges, targetAcceptsMany } from "./graph-convert";
 import { videoSecondsOf } from "./card-media";
 import { portFor, type CatalogItem, type PortFilter } from "./catalog";
@@ -15,8 +18,11 @@ import { COMPACT_ZOOM } from "./NodeCard";
 import { Inspector, sourcesOf, type InspectorSources } from "./Inspector";
 import { cardWidthOf, inheritProvider, placeNewNode } from "./new-node";
 import { EditorContext, type EditorApi } from "./node-kit";
+import { duplicateNode, freshNodeId, nextTake, paramsHaveTake } from "./node-ops";
 import { QueuePanel } from "./QueuePanel";
 import { Rail } from "./Rail";
+import { actionFor } from "./shortcuts";
+import { ShortcutSheet } from "./ShortcutSheet";
 import { Spotlight, type ScreenPoint } from "./Spotlight";
 import { TopBar } from "./TopBar";
 import { useRun } from "./use-run";
@@ -26,6 +32,12 @@ const EMPTY_SOURCES: InspectorSources = { nodes: [], edges: [] };
 
 // Dây kéo từ cổng ra chỗ trống: thẻ mới nằm cách chỗ thả ngần này (đơn vị canvas) để thấy được đoạn dây.
 const WIRE_GAP = 12;
+
+// Khung nhìn "vừa màn hình": dùng chung cho lúc mở workflow, phím F và lệnh trong menu chuột phải.
+const FIT_OPTIONS = { padding: 0.3, minZoom: COMPACT_ZOOM };
+
+// Menu chuột phải: trên nền canvas (pane), trên một node (nodeId), hoặc trên khung chọn nhiều node (không có nodeId).
+type MenuState = { x: number; y: number; kind: "pane" } | { x: number; y: number; kind: "node"; nodeId?: string };
 
 type WireOrigin = { nodeId: string; handleId: string; dir: PortFilter["dir"] };
 type SpotState = { at?: ScreenPoint; filter?: PortFilter; origin?: WireOrigin };
@@ -108,7 +120,7 @@ export function Editor() {
       : view && rect
         ? view.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
         : { x: 240 + existing.length * 40, y: 240 + existing.length * 30 };
-    const id = `${type}-${Date.now().toString(36)}`;
+    const id = freshNodeId(type, existing);
     const node: FlowNode = {
       id,
       type,
@@ -209,43 +221,169 @@ export function Editor() {
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0]! : null;
   const inspectorSources = selectedNode ? sourcesOf(selectedNode.id, nodes, edges) : EMPTY_SOURCES;
 
-  // Escape: đang gõ trong ô nhập thì chỉ thoát ô đó; không thì bỏ chọn node và khung (khung bên phải đóng).
-  // Ctrl+G: gom các node đang chọn (từ 2 node trở lên) thành nhóm tay; đang gõ trong ô nhập thì để yên.
-  // / hoặc Space: mở ô tìm node (Space không giành phím của nút đang được chọn; chặn luôn việc Space cuộn trang).
-  // Ô tìm node đang mở thì nó tự lo phím của mình; đang gõ trong ô nhập (kể cả khung bên phải) thì / và Space là chữ.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (spotOpen.current) return;
-      const el = document.activeElement;
-      const typing = el instanceof HTMLElement && el.matches("input, textarea, select, [contenteditable]:not([contenteditable=false])");
-      if ((e.key === "/" || e.key === " ") && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (typing || (e.key === " " && el instanceof HTMLElement && el.matches("button, a, summary, [role=button]"))) return;
-        e.preventDefault();
-        if (!e.repeat) openSpotlight();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "g") {
-        if (typing) return;
-        e.preventDefault();
-        const ids = latest.current.nodes.filter((n) => n.selected && !isFrame(n)).map((n) => n.id);
-        if (ids.length >= 2) setGroups(addManualGroup(groups.current, ids));
-        return;
-      }
-      if (e.key !== "Escape") return;
-      if (typing) {
-        el.blur();
-        return;
-      }
-      setSelectedFrames((prev) => (prev.size > 0 ? new Set() : prev));
-      setNodes((ns) => (ns.some((n) => n.selected) ? ns.map((n) => (n.selected ? { ...n, selected: false } : n)) : ns));
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [setNodes, setGroups, groups, latest, openSpotlight]);
-
   const runId = run.run?.id ?? "";
   const runStatus = run.run?.status ?? "";
   const busy = run.active || run.starting || run.syncing;
+  const { startRun } = run;
+
+  // Mọi đường bấm chạy (nút Chạy, menu chuột phải, Ctrl+Enter, Shift+Enter, nút ▶ trên thẻ) đi qua MỘT hàm này. `beforeRun` chạy
+  // ngay trước khi xin chạy (Chạy lại tăng take ở đó); startRun lưu đồ thị rồi mới gửi lên, nên bản gửi đã có sửa đổi đó.
+  const runScope = useCallback(
+    (scope: RunScope, beforeRun?: () => void) => {
+      if (!workflowId || busy) return;
+      beforeRun?.();
+      void startRun(scope);
+    },
+    [workflowId, busy, startRun],
+  );
+
+  // Node `nodeId` sẽ chạy một "bản mới": tăng take ngay (flushSync để canvas, nơi startRun lấy đồ thị để lưu, thấy số mới).
+  const rerunNode = (nodeId: string) =>
+    runScope({ mode: "node", nodeId }, () =>
+      flushSync(() => setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, params: { ...n.data.params, take: nextTake(n.data.params) } } } : n)))),
+    );
+
+  const fitAll = () => void flow.current?.fitView(FIT_OPTIONS);
+
+  const duplicate = (nodeId: string) => {
+    const nodesNow = latest.current.nodes;
+    const source = nodesNow.find((n) => n.id === nodeId);
+    const next = source ? duplicateNode(nodesNow, nodeId, freshNodeId(source.type ?? "node", nodesNow)) : null;
+    if (next) setNodes(next);
+  };
+
+  // Ctrl+G và "▢ Nhóm" trong menu: cùng hàm này.
+  const groupSelected = () => {
+    const ids = latest.current.nodes.filter((n) => n.selected && !isFrame(n)).map((n) => n.id);
+    if (ids.length >= 2) setGroups(addManualGroup(groups.current, ids));
+  };
+
+  // Phím Delete/Backspace và "🗑 Xoá" trong menu: cùng hàm này. deleteElements báo qua onNodesChange ở trên (rút nhóm tay, xoá cả
+  // dây gốc đang bị gộp); khung nhóm không bao giờ vào danh sách xoá.
+  const deleteSelection = () => {
+    const nodeIds = latest.current.nodes.filter((n) => n.selected && !isFrame(n)).map((n) => ({ id: n.id }));
+    const edgeIds = latest.current.edges.filter((e) => e.selected).map((e) => ({ id: e.id }));
+    if (nodeIds.length > 0 || edgeIds.length > 0) void flow.current?.deleteElements({ nodes: nodeIds, edges: edgeIds });
+  };
+
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  // Workflow khác: menu và bảng đang mở không còn đúng.
+  useEffect(() => {
+    setMenu(null);
+    setSheetOpen(false);
+  }, [workflowId]);
+
+  // Mọi phím tắt qua actionFor (shortcuts.ts, hàm thuần): ở đây chỉ làm việc. preventDefault chỉ khi phím có việc để làm. Ô tìm node
+  // đang mở thì nó tự lo phím của mình; đang gõ trong ô nhập (kể cả khung bên phải) thì chỉ Esc còn tác dụng (thoát ô);
+  // bảng phím tắt đang mở thì chỉ ? và Esc (đóng bảng). Giữ phím (e.repeat) chỉ chặn mặc định, không làm lại việc.
+  const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  onKeyRef.current = (e) => {
+    if (spotOpen.current) return;
+    const el = document.activeElement;
+    const typing = el instanceof HTMLElement && el.matches("input, textarea, select, [contenteditable]:not([contenteditable=false])");
+    const onControl = el instanceof HTMLElement && el.matches("button, a, summary, [role=button]");
+    const action = actionFor(e, typing, onControl);
+    if (!action) return;
+    if (sheetOpen && action !== "escape" && action !== "help") return;
+    e.preventDefault();
+    if (e.repeat) return;
+    if (action !== "escape") setMenu(null);
+    switch (action) {
+      case "spotlight":
+        openSpotlight();
+        return;
+      case "run-all":
+        runScope({ mode: "all" });
+        return;
+      case "run-selected":
+        if (selectedNode) runScope({ mode: "node", nodeId: selectedNode.id });
+        return;
+      case "duplicate":
+        if (selectedNode) duplicate(selectedNode.id);
+        return;
+      case "group":
+        groupSelected();
+        return;
+      case "delete":
+        deleteSelection();
+        return;
+      case "fit":
+        fitAll();
+        return;
+      case "help":
+        setSheetOpen((open) => !open);
+        return;
+      case "escape":
+        if (menu) setMenu(null);
+        else if (sheetOpen) setSheetOpen(false);
+        else if (typing && el instanceof HTMLElement) el.blur();
+        else {
+          setSelectedFrames((prev) => (prev.size > 0 ? new Set() : prev));
+          setNodes((ns) => (ns.some((n) => n.selected) ? ns.map((n) => (n.selected ? { ...n, selected: false } : n)) : ns));
+        }
+        return;
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => onKeyRef.current(e);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Chuột phải node: chưa được chọn thì chọn riêng nó (đang nằm trong nhóm node chọn thì giữ nguyên nhóm chọn). Khung nhóm không
+  // có lệnh riêng: chuột phải tiêu đề khung ra menu chỗ trống.
+  const onNodeContextMenu = (event: { preventDefault(): void; clientX: number; clientY: number }, node: FlowNode) => {
+    event.preventDefault();
+    const at = { x: event.clientX, y: event.clientY };
+    if (isFrame(node)) {
+      setMenu({ ...at, kind: "pane" });
+      return;
+    }
+    if (!latest.current.nodes.some((n) => n.id === node.id && n.selected)) {
+      setSelectedFrames((prev) => (prev.size > 0 ? new Set() : prev));
+      setNodes((ns) => ns.map((n) => (n.selected !== (n.id === node.id) ? { ...n, selected: n.id === node.id } : n)));
+    }
+    setMenu({ ...at, kind: "node", nodeId: node.id });
+  };
+  const onSelectionContextMenu = (event: { preventDefault(): void; clientX: number; clientY: number }) => {
+    event.preventDefault();
+    setMenu({ x: event.clientX, y: event.clientY, kind: "node" });
+  };
+  const onPaneContextMenu = (event: { preventDefault(): void; clientX: number; clientY: number }) => {
+    event.preventDefault();
+    setMenu({ x: event.clientX, y: event.clientY, kind: "pane" });
+  };
+
+  // Lệnh của menu đang mở. Lệnh chưa làm trong đợt này thì không có mặt (không để lệnh chết).
+  const menuItems = (): MenuItem[] => {
+    if (!menu) return [];
+    if (menu.kind === "pane") {
+      const here = { x: menu.x, y: menu.y };
+      return [
+        { testid: "ctx-add-here", icon: "＋", label: "Thêm node ở đây", run: () => openSpotlight(here) },
+        { testid: "ctx-fit", icon: "⤢", label: "Vừa màn hình", hint: "F", run: fitAll },
+      ];
+    }
+    const target = menu.nodeId ? latest.current.nodes.find((n) => n.id === menu.nodeId) : undefined;
+    const impl = target ? webNodes[target.type ?? ""] : undefined;
+    const items: MenuItem[] = [];
+    if (target && impl) {
+      items.push(
+        { testid: "ctx-run-node", icon: "▶", label: "Chạy node này", hint: "Shift+Enter", disabled: busy, run: () => runScope({ mode: "node", nodeId: target.id }) },
+        { testid: "ctx-run-downstream", icon: "▶▶", label: "Chạy từ đây trở đi", disabled: busy, run: () => runScope({ mode: "downstream", nodeId: target.id }) },
+      );
+      if (paramsHaveTake(impl.definition.params)) {
+        items.push({ testid: "ctx-rerun", icon: "↻", label: "Chạy lại (bản mới)", disabled: busy, run: () => rerunNode(target.id) });
+      }
+    }
+    if (target) items.push({ testid: "ctx-duplicate", icon: "⧉", label: "Nhân bản", hint: "Ctrl+D", run: () => duplicate(target.id) });
+    if (selectedNodes.length >= 2) items.push({ testid: "ctx-group", icon: "▢", label: "Nhóm", hint: "Ctrl+G", run: groupSelected });
+    items.push({ testid: "ctx-delete", icon: "🗑", label: "Xoá", hint: "Delete", run: deleteSelection });
+    return items;
+  };
+
   const editorApi: EditorApi = useMemo(
     () => ({
       setParams: (nodeId, patch) =>
@@ -256,14 +394,15 @@ export function Editor() {
       busy,
       expandScenes: (writerId) => void expandScenes(writerId),
       titleOf: (nodeId, baseLabel, params) => labelOf({ id: nodeId, params }, baseLabel, { groups: groups.current }),
+      runNode: (nodeId) => runScope({ mode: "node", nodeId }),
     }),
-    [nodeStates, setNodes, workflowId, runId, runStatus, busy, expandScenes, groups],
+    [nodeStates, setNodes, workflowId, runId, runStatus, busy, expandScenes, groups, runScope],
   );
 
   return (
     <EditorContext.Provider value={editorApi}>
       <div className="editor">
-        <TopBar wf={wf} run={run} onAddNode={addNode} />
+        <TopBar wf={wf} run={run} onAddNode={addNode} onRun={() => runScope({ mode: "all" })} />
         <Banners wf={wf} run={run} />
         <div className="editor-body">
           <Rail onAdd={() => openSpotlight()} />
@@ -279,10 +418,15 @@ export function Editor() {
               onEdgesChange={wf.onEdgesChange}
               onConnect={onConnect}
               onConnectEnd={onConnectEnd}
+              onNodeContextMenu={onNodeContextMenu}
+              onSelectionContextMenu={onSelectionContextMenu}
+              onPaneContextMenu={onPaneContextMenu}
+              onMoveStart={closeMenu}
               panActivationKeyCode={null}
+              deleteKeyCode={null}
               isValidConnection={isValidConnection}
               fitView
-              fitViewOptions={{ padding: 0.3, minZoom: COMPACT_ZOOM }}
+              fitViewOptions={FIT_OPTIONS}
               minZoom={0.1}
               colorMode="dark"
             >
@@ -296,6 +440,8 @@ export function Editor() {
           </aside>
         </div>
         {spot ? <Spotlight at={spot.at} filter={spot.filter} onPick={onSpotPick} onClose={() => setSpot(null)} /> : null}
+        {menu ? <ContextMenu x={menu.x} y={menu.y} items={menuItems()} onClose={closeMenu} /> : null}
+        {sheetOpen ? <ShortcutSheet onClose={() => setSheetOpen(false)} /> : null}
       </div>
     </EditorContext.Provider>
   );

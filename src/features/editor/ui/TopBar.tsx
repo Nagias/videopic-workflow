@@ -11,9 +11,11 @@ type Props = {
   wf: WorkflowApi;
   run: RunApi;
   onAddNode: (type: string) => void;
+  // Bấm Chạy cả workflow: Editor lo (mọi đường chạy đi qua một chỗ).
+  onRun: () => void;
 };
 
-export function TopBar({ wf, run, onAddNode }: Props) {
+export function TopBar({ wf, run, onAddNode, onRun }: Props) {
   const [muse, setMuse] = useState<MuseAccountsResponse | null>(null);
   useEffect(() => {
     api
@@ -70,7 +72,7 @@ export function TopBar({ wf, run, onAddNode }: Props) {
         className="primary"
         data-testid="run-button"
         disabled={!workflowId || run.active || run.starting || run.syncing}
-        onClick={() => void run.startRun()}
+        onClick={onRun}
       >
         {busy ? "Đang chạy…" : "▶ Chạy"}
       </button>
