@@ -1,7 +1,8 @@
 import type { Edge } from "@xyflow/react";
 import { fmtSec } from "../../../shared/card-line";
 import { PORT_KINDS, type PortKind } from "../../../shared/ports";
-import { isSceneGroup, type WorkflowGroup } from "../../../shared/workflow";
+import { groupCombineId } from "../../../shared/scenes";
+import { isSceneGroup, type WorkflowGraph, type WorkflowGroup } from "../../../shared/workflow";
 import type { FlowNode, FrameInfo } from "./GraphNode";
 import { cardWidthOf } from "./new-node";
 
@@ -41,6 +42,8 @@ export type FrameExtra = {
   // Lỗi kiểm luật chặn chạy của cùng ước tính (EstimateResponse.problems). Thành viên còn lỗi thì khung không bao giờ ghi "✓":
   // ghi lỗi trước, cảnh báo sau.
   problems?: readonly DirectorWarning[];
+  // Node ngoài nhóm mà lỗi chặn của chúng vẫn là lỗi của nhóm (problemScopeOf: Ghép phim của nhóm và mọi clip cắm vào nó).
+  problemScope?: (groupId: string) => readonly string[];
   // Mã khung đang được chọn.
   selected?: ReadonlySet<string>;
   // Dây đang hiển thị (từ bundleEdges): khung vẽ một cổng vào cho mỗi loại dây gộp tới nó.
@@ -82,7 +85,8 @@ export function groupFrames(nodes: readonly FlowNode[], groups: readonly Workflo
     let rule: FrameInfo["rule"];
     if (scene && extra.warnings) {
       const ids = new Set(members.map((n) => n.id));
-      const lines = [...(extra.problems ?? []), ...extra.warnings].filter((w) => ids.has(w.nodeId)).map((w) => w.message);
+      const blocking = new Set([...ids, ...(extra.problemScope?.(g.id) ?? [])]);
+      const lines = [...(extra.problems ?? []).filter((p) => blocking.has(p.nodeId)), ...extra.warnings.filter((w) => ids.has(w.nodeId))].map((w) => w.message);
       rule = lines.length === 0 ? { ok: true, lines: [RULE_OK] } : { ok: false, lines };
     }
     const id = frameIdOf(g.id);
@@ -113,6 +117,16 @@ export function groupFrames(nodes: readonly FlowNode[], groups: readonly Workflo
     });
   }
   return frames;
+}
+
+// Lỗi chặn của node nào cũng là lỗi của nhóm: Ghép phim của nhóm (groupCombineId(), vd hai dây cùng nguồn vào cổng Clip) và mọi node
+// cắm clip vào Ghép phim đó (vd một cảnh ngoài nhóm nối tiếp sai chỗ), vì luật giữa các cảnh kiểm trên cả chuỗi Ghép phim ghép.
+export function problemScopeOf(graph: WorkflowGraph): (groupId: string) => string[] {
+  return (groupId) => {
+    const combine = groupCombineId(graph, groupId);
+    if (combine === undefined) return [];
+    return [combine, ...graph.edges.filter((e) => e.target === combine && e.targetHandle === "clips").map((e) => e.source)];
+  };
 }
 
 const sameFrame = (a: FlowNode, b: FlowNode): boolean =>

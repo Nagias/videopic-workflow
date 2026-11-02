@@ -14,6 +14,7 @@ import {
   GROUP_FRAME_TYPE,
   measuredFrom,
   moveFramesTo,
+  problemScopeOf,
   pruneEdgesFor,
   pruneManualGroups,
 } from "./groups";
@@ -102,6 +103,29 @@ describe("khung nhóm Phân cảnh", () => {
     // Lỗi của node ngoài nhóm không làm hỏng khung này.
     const outside = groupFrames(nodes, graph.groups!, SIZE, { warnings: [], problems: [{ nodeId: "node-ngoai-nhom", message: "lỗi chỗ khác" }] })[0]!;
     expect(outside.data.frame?.rule).toEqual({ ok: true, lines: ["✓ Luật đạo diễn đạt"] });
+  });
+
+  it("lỗi chặn chỉ nằm ở Ghép phim của nhóm, hoặc ở cảnh ngoài nhóm cắm clip vào Ghép phim đó: khung không ghi '✓' (problemScopeOf)", () => {
+    const base = sonLa();
+    const combine = base.nodes.find((n) => n.type === "film-combine")!.id;
+    // Một cảnh ngoài nhóm cắm thêm clip vào Ghép phim của nhóm.
+    const foreign = { ...base.nodes.find((n) => n.id === scenes(base.groups!)[0])!, id: "canh-ngoai", position: { x: 5000, y: 5000 } };
+    const graph: WorkflowGraph = {
+      ...base,
+      nodes: [...base.nodes, foreign],
+      edges: [...base.edges, { id: "e-ngoai", source: "canh-ngoai", sourceHandle: "clip", target: combine, targetHandle: "clips" }],
+    };
+    const { nodes } = toFlow(graph);
+    const scope = problemScopeOf(graph);
+    expect(scope("g1")).toContain(combine);
+    expect(scope("g1")).toContain("canh-ngoai");
+    expect(scope("khong-co")).toEqual([]);
+    const onCombine = groupFrames(nodes, graph.groups!, SIZE, { warnings: [], problems: [{ nodeId: combine, message: "hai dây cùng nguồn vào Clip" }], problemScope: scope })[0]!;
+    expect(onCombine.data.frame?.rule).toEqual({ ok: false, lines: ["hai dây cùng nguồn vào Clip"] });
+    const onForeign = groupFrames(nodes, graph.groups!, SIZE, { warnings: [], problems: [{ nodeId: "canh-ngoai", message: "cảnh ngoài nối tiếp sai chỗ" }], problemScope: scope })[0]!;
+    expect(onForeign.data.frame?.rule).toEqual({ ok: false, lines: ["cảnh ngoài nối tiếp sai chỗ"] });
+    // Không truyền problemScope thì như cũ: chỉ thành viên.
+    expect(groupFrames(nodes, graph.groups!, SIZE, { warnings: [], problems: [{ nodeId: combine, message: "x" }] })[0]!.data.frame?.rule?.ok).toBe(true);
   });
 
   it("nhóm tay: tiêu đề theo tên nhóm, đếm node, không có dòng kiểm luật; thành viên đã xoá thì bỏ qua, hết thành viên thì không có khung", () => {

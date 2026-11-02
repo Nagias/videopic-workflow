@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 8787
+    },
+    {
+      "name": "videopic-thu-1b",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:PORT='8788'; $env:WEB_PORT='5191'; $env:DATA_DIR='D:\\29. Workflow VideoPic\\.data'; npx concurrently -k -n server,web \"tsx src/server.ts\" \"vite\""],
+      "port": 5191
     }
   ]
 }

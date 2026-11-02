@@ -14,7 +14,7 @@ import { videoSecondsOf } from "./card-media";
 import { portFor, type CatalogItem, type PortFilter } from "./catalog";
 import { GraphNode, type FlowNode } from "./GraphNode";
 import { GroupFrame } from "./GroupFrame";
-import { addManualGroup, bundleEdges, GROUP_FRAME_TYPE, groupFrames, isFrame, measuredFrom, moveFramesTo, pruneEdgesFor, pruneManualGroups, reuseFrames } from "./groups";
+import { addManualGroup, bundleEdges, GROUP_FRAME_TYPE, groupFrames, isFrame, measuredFrom, moveFramesTo, problemScopeOf, pruneEdgesFor, pruneManualGroups, reuseFrames } from "./groups";
 import { COMPACT_ZOOM } from "./NodeCard";
 import { Inspector, sourcesOf, type InspectorSources } from "./Inspector";
 import { cardWidthOf, inheritProvider, placeNewNode } from "./new-node";
@@ -198,11 +198,13 @@ export function Editor() {
         // Chưa có ước tính (đang tính, lỗi) thì khung không ghi dòng luật nào, chứ không ghi "✓" giả.
         warnings: estimateView.estimate?.warnings,
         problems: estimateView.estimate?.problems,
+        // Lỗi của Ghép phim của nhóm và của clip cắm vào nó cũng là lỗi của nhóm (khung không ghi "✓" khi Ghép phim còn lỗi).
+        problemScope: problemScopeOf(fromFlow(nodes, edges, groupList)),
       }),
     );
     shownFrames.current = next;
     return next;
-  }, [nodes, groupList, nodeStates, selectedFrames, bundles, estimateView.estimate]);
+  }, [nodes, edges, groupList, nodeStates, selectedFrames, bundles, estimateView.estimate]);
   const displayNodes = useMemo(() => (frames.length > 0 ? [...frames, ...nodes] : nodes), [frames, nodes]);
 
   // Thay đổi canvas báo lên từ xyflow: thay đổi của khung (không có trong state) đổi thành dời cả nhóm / chọn khung; thẻ thành
@@ -326,6 +328,11 @@ export function Editor() {
     try {
       if (!ok) {
         await revert(p.edit);
+      } else if (p.estimate.problems.length > 0) {
+        // Chốt chặn thứ hai (nút "▶ Chạy" đã khoá khi có lỗi): còn lỗi kiểm luật thì không xin chạy, máy chủ cũng sẽ từ chối.
+        const why = `Sửa lỗi trước khi chạy: ${p.estimate.problems.map((x) => x.message).join(" | ")}`;
+        setProblem(why);
+        await revert(p.edit, why);
       } else if (workflowId && graphKey() !== p.graphKey) {
         // Đồ thị đã khác bản đã ước tính: không chạy theo con số cũ, ước tính lại rồi hỏi lại.
         try {

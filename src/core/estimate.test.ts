@@ -374,5 +374,66 @@ describe("ước tính lượt trước khi chạy (POST /api/workflows/:id/esti
       expect(e.nodes.every((n) => n.status === "cached")).toBe(true);
       expect(await run()).toEqual(ZERO);
     });
+
+    // Lỗi chặn (problems) với nhóm của Biên kịch: phải khớp đúng lúc executor kiểm (đầu lần chạy, hoặc ngay sau Biên kịch trong regroup()).
+    describe("lỗi chặn trong nhóm của Biên kịch (luật hoãn kiểm)", () => {
+      // Chạy và trả lần chạy (không đòi "succeeded") kèm số lượt thật đã tốn.
+      const runRaw = async () => {
+        const before = counts();
+        const start = await s.app.inject({ method: "POST", url: `/api/workflows/${wf}/runs`, payload: {} });
+        expect(start.statusCode, start.body).toBe(202);
+        while (await s.deps.queue.processNext());
+        const done = RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${start.json<{ runId: string }>().runId}` })).json());
+        const after = counts();
+        return { done, spent: { image: after.image - before.image, video: after.video - before.video, text: after.text - before.text } };
+      };
+      const motionMissing = (id: string) => `Cảnh "${id}" (clip 2): chưa tả chuyển động`;
+
+      it("(a) Biên kịch dùng lại kết quả, nhóm khớp kết quả: cảnh thiếu chuyển động có trong problems; lần chạy dừng ở kiểm luật với đúng lỗi đó, 0 lượt", async () => {
+        await save(ideaGraph(IDEA_A));
+        await run();
+        const graph = (await open()).graph;
+        const ids = sceneIds(graph);
+        await save(setParam(graph, ids[1]!, "motion", ""));
+        const e = await estimate();
+        expect(statusOf(e, "writer-1")).toBe("cached");
+        expect(e.problems.map((p) => p.nodeId)).toEqual([ids[1]]);
+        expect(e.problems[0]!.message).toContain(motionMissing(ids[1]!));
+        const { done, spent } = await runRaw();
+        expect(done.status).toBe("failed");
+        expect(done.decision).toBeNull();
+        expect(done.error).toContain(e.problems[0]!.message);
+        expect(spent).toEqual(ZERO);
+      });
+
+      it("(b) Biên kịch dùng lại kết quả KHÁC nhóm đang giữ, nhóm đã sửa tay (cảnh thiếu chuyển động): problems rỗng (hoãn), lần chạy dừng hỏi Thay/Giữ", async () => {
+        await save(ideaGraph(IDEA_A));
+        await run();
+        await save(setParam((await open()).graph, "writer-1", "idea", IDEA_B));
+        await run();
+        // Biên kịch quay về ý tưởng A (có cache) trong khi nhóm đang giữ bộ cảnh của B, và một cảnh bị sửa tay.
+        const graph = setParam((await open()).graph, "writer-1", "idea", IDEA_A);
+        const ids = sceneIds(graph);
+        await save(setParam(graph, ids[1]!, "motion", ""));
+        const e = await estimate();
+        expect(statusOf(e, "writer-1")).toBe("cached");
+        expect(e.problems).toEqual([]);
+        const { done, spent } = await runRaw();
+        expect(done.status).toBe("failed");
+        expect(done.decision).toMatchObject({ kind: "scenes-edited", writerId: "writer-1" });
+        expect(spent).toEqual(ZERO);
+      });
+
+      it("(c) Biên kịch sẽ viết (chưa có cache), cảnh của nhóm có lỗi: problems rỗng (bộ cảnh chưa biết, executor hoãn kiểm)", async () => {
+        await save(ideaGraph(IDEA_A));
+        await run();
+        const graph = setParam((await open()).graph, "writer-1", "idea", IDEA_B);
+        const ids = sceneIds(graph);
+        await save(setParam(graph, ids[1]!, "motion", ""));
+        const e = await estimate();
+        expect(statusOf(e, "writer-1")).toBe("run");
+        expect(e.problems).toEqual([]);
+      });
+    });
   });
 });
