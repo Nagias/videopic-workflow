@@ -6,7 +6,9 @@ import type { WorkflowGraph, WorkflowGroup } from "./workflow";
 // và kết quả cũ giữ nguyên.
 //
 // `previous`: nhóm trong đồ thị của các lần chạy, mới nhất trước. Lần chạy nào có nhóm gồm đúng các cảnh đó thì lấy y nguyên nhóm ấy
-// (giữ `source` để Thay/Giữ của Biên kịch vẫn đúng). Không có thì tạo nhóm mới tên "Phân cảnh", cảnh theo thứ tự clip của Ghép phim.
+// (giữ `source` để Thay/Giữ của Biên kịch vẫn đúng). Không có thì chỉ tạo nhóm mới "Phân cảnh" (cảnh theo thứ tự clip) khi mã node
+// cho thấy đây từng là một nhóm: Ghép phim "combine-<g>" và mọi cảnh "scene-<g>-<n>" (cách mẫu, Biên kịch và bước chuyển workflow cũ
+// đặt). Cảnh và Ghép phim người dùng tự thêm (mã theo thời gian) thì để yên: không có gì bị mất, không tự nhóm.
 // Ghép phim mà một phần cảnh đã có nhóm thì để yên (không đoán).
 export function restoreSceneGroups(graph: WorkflowGraph, previous: readonly (readonly WorkflowGroup[])[]): { graph: WorkflowGraph; restored: WorkflowGroup[] } {
   const groups = [...(graph.groups ?? [])];
@@ -25,7 +27,11 @@ export function restoreSceneGroups(graph: WorkflowGraph, previous: readonly (rea
     const same = previous
       .flat()
       .find((g) => g.manual !== true && g.nodeIds.length === members.size && g.nodeIds.every((id) => members.has(id)) && !taken(g.id));
-    const group: WorkflowGroup = same ?? { id: freshGroupId(combine.id, taken), label: "Phân cảnh", nodeIds: ordered };
+    const named = namedGroupId(combine.id, ordered);
+    let group: WorkflowGroup;
+    if (same) group = same;
+    else if (named !== undefined) group = { id: taken(named) ? nextGroupId(taken) : named, label: "Phân cảnh", nodeIds: ordered };
+    else continue;
     groups.push(group);
     restored.push(group);
     for (const id of group.nodeIds) grouped.add(id);
@@ -34,11 +40,15 @@ export function restoreSceneGroups(graph: WorkflowGraph, previous: readonly (rea
   return restored.length === 0 ? { graph, restored } : { graph: { ...graph, groups }, restored };
 }
 
-// Mã nhóm: Ghép phim tên "combine-<x>" (cách các mẫu và Biên kịch đặt) thì nhóm là "<x>", để groupCombineId() tìm lại đúng; trùng
-// thì "g1", "g2"...
-function freshGroupId(combineId: string, taken: (id: string) => boolean): string {
-  const named = combineId.startsWith("combine-") ? combineId.slice("combine-".length) : "";
-  if (named && !taken(named)) return named;
+// Mã nhóm suy từ mã node: Ghép phim "combine-<g>" và mọi cảnh "scene-<g>-<số>" → "<g>" (groupCombineId() tìm lại đúng Ghép phim).
+// Không khớp kiểu đặt tên đó thì undefined.
+function namedGroupId(combineId: string, sceneIds: readonly string[]): string | undefined {
+  if (!combineId.startsWith("combine-")) return undefined;
+  const g = combineId.slice("combine-".length);
+  return g && sceneIds.every((id) => id.startsWith(`scene-${g}-`) && /^\d+$/.test(id.slice(`scene-${g}-`.length))) ? g : undefined;
+}
+
+function nextGroupId(taken: (id: string) => boolean): string {
   let k = 1;
   while (taken(`g${k}`)) k++;
   return `g${k}`;

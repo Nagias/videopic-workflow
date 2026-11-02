@@ -52,6 +52,34 @@ describe("restoreSceneGroups", () => {
     expect(r.graph).toBe(partial);
   });
 
+  it("cảnh và Ghép phim tự thêm tay (mã theo thời gian), không lần chạy nào có nhóm: để yên, không tự nhóm", () => {
+    const hand: WorkflowGraph = {
+      nodes: [scene("scene-mvz1", 0), scene("scene-mvz2", 230), { id: "film-combine-mvz3", type: "film-combine", position: { x: 600, y: 0 }, params: {} }],
+      edges: ["scene-mvz1", "scene-mvz2"].map((id) => ({ id: `e-${id}`, source: id, sourceHandle: "clip", target: "film-combine-mvz3", targetHandle: "clips" })),
+      groups: [],
+    };
+    const r = restoreSceneGroups(hand, []);
+    expect(r.restored).toEqual([]);
+    expect(r.graph).toBe(hand);
+    // Có lần chạy giữ nhóm đúng các cảnh đó thì vẫn khôi phục (nhóm thật đã bị mất).
+    const old: WorkflowGroup = { id: "g7", label: "Phân cảnh", nodeIds: ["scene-mvz1", "scene-mvz2"] };
+    expect(restoreSceneGroups(hand, [[old]]).restored).toEqual([old]);
+  });
+
+  it("Ghép phim nhận cả clip không phải Cảnh, order xen kẽ: chỉ nhóm các Cảnh, giữ thứ tự", () => {
+    const g = lost(["scene-g1-3", "v", "scene-g1-1", "scene-g1-2"]);
+    g.nodes.push({ id: "v", type: "generate-video", position: { x: 0, y: 300 }, params: {} });
+    g.edges.push({ id: "e-v", source: "v", sourceHandle: "video", target: "combine-g1", targetHandle: "clips" });
+    expect(restoreSceneGroups(g, []).restored[0]?.nodeIds).toEqual(["scene-g1-3", "scene-g1-1", "scene-g1-2"]);
+  });
+
+  it("cảnh không theo mẫu tên scene-g1-<số> (ví dụ một cảnh thêm tay chen vào): không tự tạo nhóm", () => {
+    const g = lost();
+    g.nodes.push(scene("scene-mvz9", 700));
+    g.edges.push(clip("scene-mvz9"));
+    expect(restoreSceneGroups(g, []).restored).toEqual([]);
+  });
+
   it("mã g1 đã bị nhóm khác dùng: lấy g2", () => {
     const g = { ...lost(), groups: [{ id: "g1", label: "Nhóm", manual: true, nodeIds: ["character-1"] }] };
     expect(restoreSceneGroups(g, []).restored[0]?.id).toBe("g2");

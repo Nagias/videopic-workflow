@@ -334,6 +334,23 @@ describe("API mẫu workflow", () => {
     const opened = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf.id}` })).json());
     expect(opened.graph.groups).toEqual([{ id: wf.graph.groups[0]!.id, label: "Phân cảnh", nodeIds: wf.graph.groups[0]!.nodeIds }]);
 
+    // Lần chạy cũ đọc không được: vẫn tạo nhóm mới (mã node theo mẫu), lời báo nói rõ.
+    const wf2 = WorkflowResponseSchema.parse((await s.app.inject({ method: "POST", url: "/api/workflows/from-template/sinh-ton-son-la", payload: {} })).json());
+    s.db.insert(runs).values({ id: "run-hong", workflowId: wf2.id, graphJson: "{không phải json", status: "succeeded", createdAt: 1, startedAt: 1, finishedAt: 1 }).run();
+    await s.app.inject({ method: "PUT", url: `/api/workflows/${wf2.id}`, payload: { graph: { nodes: wf2.graph.nodes, edges: wf2.graph.edges } } });
+    const opened2 = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf2.id}` })).json());
+    expect(opened2.graph.groups.map((g) => g.nodeIds.length)).toEqual([12]);
+    expect(opened2.notice).toContain("1 lần chạy cũ không đọc được");
+
+    // Đang có lần chạy xếp hàng: không đụng (lần đó đang ghi đồ thị).
+    const wf3 = WorkflowResponseSchema.parse((await s.app.inject({ method: "POST", url: "/api/workflows/from-template/sinh-ton-son-la", payload: {} })).json());
+    await s.app.inject({ method: "PUT", url: `/api/workflows/${wf3.id}`, payload: { graph: { nodes: wf3.graph.nodes, edges: wf3.graph.edges } } });
+    s.db.insert(runs).values({ id: "run-cho", workflowId: wf3.id, graphJson: JSON.stringify(wf3.graph), status: "queued", createdAt: 2 }).run();
+    const opened3 = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf3.id}` })).json());
+    expect(opened3.graph.groups).toEqual([]);
+    expect(opened3.notice).toBeUndefined();
+    s.db.delete(runs).where(eq(runs.id, "run-cho")).run();
+
     saveWorkflowGraph(s.db, `${wf.id}-ban-cu`, stripped, "bản cũ");
     const backup = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf.id}-ban-cu` })).json());
     expect(backup.graph.groups).toEqual([]);
