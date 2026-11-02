@@ -9,6 +9,7 @@ import { keepWriterGroup, rebuildWriterGroup, writerGroups } from "../../shared/
 import { WORKFLOW_TEMPLATES } from "../../shared/templates";
 import { WorkflowGraphSchema, type WorkflowGraph } from "../../shared/workflow";
 import { getWorkflowRow, saveWorkflowGraph, toWorkflowResponse } from "./store";
+import { restoreGroupsOnOpen } from "./regroup";
 import { upgradeWorkflowOnOpen } from "./upgrade";
 
 export const DEFAULT_WORKFLOW_ID = "default";
@@ -44,9 +45,18 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: AppDeps): voi
     return shots?.kind === "shotlist" ? { key: row.cacheKey, shots: shots.shots } : undefined;
   };
 
+  // Mở workflow: workflow cũ (có Dựng phim) chuyển sang Cảnh + Ghép phim (upgrade.ts), rồi nhóm Phân cảnh bị mất thì khôi phục
+  // (regroup.ts). Cả hai một lần, không tốn lượt, chỉ ghi khi có gì để đổi.
+  const open = (row: NonNullable<ReturnType<typeof get>>) =>
+    restoreGroupsOnOpen(
+      deps.db,
+      upgradeWorkflowOnOpen(deps.db, row, (err) => app.log.error(err)),
+      (msg, runId) => app.log.warn({ workflowId: row.id, runId }, msg),
+    );
+
   app.get("/api/workflows/default", () => {
     const row = get(DEFAULT_WORKFLOW_ID);
-    return row ? upgradeWorkflowOnOpen(deps.db, row, (err) => app.log.error(err)) : toWorkflowResponse(saveWorkflowGraph(deps.db, DEFAULT_WORKFLOW_ID, DEFAULT_GRAPH, "Workflow đầu tiên"));
+    return row ? open(row) : toWorkflowResponse(saveWorkflowGraph(deps.db, DEFAULT_WORKFLOW_ID, DEFAULT_GRAPH, "Workflow đầu tiên"));
   });
 
   app.get("/api/workflows", () => {
@@ -58,8 +68,7 @@ export function registerWorkflowRoutes(app: FastifyInstance, deps: AppDeps): voi
   app.get<{ Params: { id: string } }>("/api/workflows/:id", async (req, reply) => {
     const row = get(req.params.id);
     if (!row) return reply.code(404).send({ error: "Không tìm thấy workflow" });
-    // Workflow cũ (có Dựng phim) chuyển sang Cảnh + Ghép phim ngay lúc mở, một lần, không tốn lượt (upgrade.ts).
-    return upgradeWorkflowOnOpen(deps.db, row, (err) => app.log.error(err));
+    return open(row);
   });
 
   app.post<{ Params: { templateId: string } }>("/api/workflows/from-template/:templateId", async (req, reply) => {

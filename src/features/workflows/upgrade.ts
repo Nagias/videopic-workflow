@@ -16,7 +16,9 @@ import { getWorkflowRow, saveWorkflowGraph, toWorkflowResponse, type WorkflowRow
 // Dựng phim: bấm Chạy thì cảnh đã có clip dùng lại bước con, ra đúng phim cũ. Cache node không bị ghi ở đây.
 
 export const BACKUP_SUFFIX = "-ban-cu";
-export const OLD_RESULT_MESSAGE = "Kết quả cũ từ Dựng phim — bấm Chạy để kiểm lại (0 lượt)";
+// Đầu lời báo khi chuyển workflow cũ lỗi (workflow trả về nguyên như cũ); regroup.ts nhận ra nó để không ghi gì thêm.
+export const UPGRADE_FAILED_NOTICE = "Không chuyển được workflow cũ sang node Cảnh/Ghép phim: workflow chưa bị đổi, chưa tạo bản cũ.";
+export const OLD_RESULT_MESSAGE ="Kết quả cũ từ Dựng phim — bấm Chạy để kiểm lại (0 lượt)";
 
 const REF_PORTS = ["character", "location", "props"] as const;
 const DONE = ["succeeded", "cached"] as const;
@@ -247,7 +249,7 @@ export function upgradeWorkflowOnOpen(db: Db, row: WorkflowRow, logError: (err: 
   } catch (err) {
     logError(err);
     const message = err instanceof Error ? err.message : String(err);
-    return { ...toWorkflowResponse(row), notice: `Không chuyển được workflow cũ sang node Cảnh/Ghép phim: workflow chưa bị đổi, chưa tạo bản cũ. Lỗi: ${message}` };
+    return { ...toWorkflowResponse(row), notice: `${UPGRADE_FAILED_NOTICE} Lỗi: ${message}` };
   }
 }
 

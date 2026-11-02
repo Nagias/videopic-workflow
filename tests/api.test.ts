@@ -306,6 +306,57 @@ describe("API mẫu workflow", () => {
     expect((await s.app.inject({ method: "POST", url: "/api/workflows/from-template/khong-co", payload: {} })).statusCode).toBe(404);
   });
 
+  it("nhóm Phân cảnh bị một lần lưu làm mất (giao diện cũ không biết nhóm): mở lại thì khôi phục y nguyên từ lần chạy gần nhất, báo một lần", async () => {
+    const wf = WorkflowResponseSchema.parse((await s.app.inject({ method: "POST", url: "/api/workflows/from-template/sinh-ton-son-la", payload: {} })).json());
+    const original = { ...wf.graph.groups[0]!, source: { writerId: "writer-x", resultKey: "k", snapshot: "s" } };
+    const ran: WorkflowGraph = { ...wf.graph, groups: [original] };
+    s.db.insert(runs).values({ id: "run-co-nhom", workflowId: wf.id, graphJson: JSON.stringify(ran), status: "succeeded", createdAt: 1, startedAt: 1, finishedAt: 1 }).run();
+    // Giao diện cũ lưu đè: gửi đồ thị không có `groups`.
+    const stripped = { nodes: wf.graph.nodes, edges: wf.graph.edges };
+    expect((await s.app.inject({ method: "PUT", url: `/api/workflows/${wf.id}`, payload: { graph: stripped } })).statusCode).toBe(200);
+
+    const opened = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf.id}` })).json());
+    expect(opened.graph.groups).toEqual([original]);
+    expect(opened.notice).toContain("Đã khôi phục nhóm Phân cảnh (12 cảnh)");
+    expect(opened.graph.nodes).toEqual(wf.graph.nodes);
+    expect(opened.graph.edges).toEqual(wf.graph.edges);
+
+    // Mở lần nữa: không ghi gì, không báo nữa.
+    const again = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf.id}` })).json());
+    expect(again.notice).toBeUndefined();
+    expect(again.updatedAt).toBe(opened.updatedAt);
+  });
+
+  it("nhóm bị mất mà chưa có lần chạy nào giữ nhóm: tạo nhóm 'Phân cảnh' mới theo thứ tự clip; bản sao lưu '-ban-cu' thì không đụng", async () => {
+    const wf = WorkflowResponseSchema.parse((await s.app.inject({ method: "POST", url: "/api/workflows/from-template/sinh-ton-son-la", payload: {} })).json());
+    const stripped = { nodes: wf.graph.nodes, edges: wf.graph.edges };
+    await s.app.inject({ method: "PUT", url: `/api/workflows/${wf.id}`, payload: { graph: stripped } });
+    const opened = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf.id}` })).json());
+    expect(opened.graph.groups).toEqual([{ id: wf.graph.groups[0]!.id, label: "Phân cảnh", nodeIds: wf.graph.groups[0]!.nodeIds }]);
+
+    // Lần chạy cũ đọc không được: vẫn tạo nhóm mới (mã node theo mẫu), lời báo nói rõ.
+    const wf2 = WorkflowResponseSchema.parse((await s.app.inject({ method: "POST", url: "/api/workflows/from-template/sinh-ton-son-la", payload: {} })).json());
+    s.db.insert(runs).values({ id: "run-hong", workflowId: wf2.id, graphJson: "{không phải json", status: "succeeded", createdAt: 1, startedAt: 1, finishedAt: 1 }).run();
+    await s.app.inject({ method: "PUT", url: `/api/workflows/${wf2.id}`, payload: { graph: { nodes: wf2.graph.nodes, edges: wf2.graph.edges } } });
+    const opened2 = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf2.id}` })).json());
+    expect(opened2.graph.groups.map((g) => g.nodeIds.length)).toEqual([12]);
+    expect(opened2.notice).toContain("1 lần chạy cũ không đọc được");
+
+    // Đang có lần chạy xếp hàng: không đụng (lần đó đang ghi đồ thị).
+    const wf3 = WorkflowResponseSchema.parse((await s.app.inject({ method: "POST", url: "/api/workflows/from-template/sinh-ton-son-la", payload: {} })).json());
+    await s.app.inject({ method: "PUT", url: `/api/workflows/${wf3.id}`, payload: { graph: { nodes: wf3.graph.nodes, edges: wf3.graph.edges } } });
+    s.db.insert(runs).values({ id: "run-cho", workflowId: wf3.id, graphJson: JSON.stringify(wf3.graph), status: "queued", createdAt: 2 }).run();
+    const opened3 = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf3.id}` })).json());
+    expect(opened3.graph.groups).toEqual([]);
+    expect(opened3.notice).toBeUndefined();
+    s.db.delete(runs).where(eq(runs.id, "run-cho")).run();
+
+    saveWorkflowGraph(s.db, `${wf.id}-ban-cu`, stripped, "bản cũ");
+    const backup = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf.id}-ban-cu` })).json());
+    expect(backup.graph.groups).toEqual([]);
+    expect(backup.notice).toBeUndefined();
+  });
+
   it("mọi mẫu đi qua kiểm đồ thị và kiểm luật Ghép phim; cảnh Sơn La qua luật đạo diễn với đúng danh sách đồ vật, không cảnh báo", async () => {
     const { orderSources, planGraph } = await import("../src/core/executor");
     const { preflightErrors } = await import("../src/core/preflight");
