@@ -277,6 +277,9 @@ test("menu chuột phải: chỗ trống chỉ có Thêm node + Vừa màn hình
   await expect(page.getByTestId("inspector")).toHaveCount(0);
 
   // Vừa màn hình bằng phím F và bằng menu cho cùng một khung nhìn (cùng thông số với lúc mở workflow).
+  // Thanh trên luôn một dòng dù ô "Lần chạy tới" đổi chữ, nên canvas không đổi chiều cao giữa hai lần vừa màn hình.
+  const barHeight = (await page.locator(".toolbar").boundingBox())!.height;
+  expect(barHeight).toBeLessThan(64);
   await panCanvas(page);
   const panned = await viewportOf(page);
   await page.keyboard.press("f");
@@ -288,6 +291,7 @@ test("menu chuột phải: chỗ trống chỉ có Thêm node + Vừa màn hình
   await page.mouse.click(spot.x, spot.y, { button: "right" });
   await page.getByTestId("ctx-fit").click();
   await expect.poll(() => viewportOf(page)).toBe(fitted);
+  expect((await page.locator(".toolbar").boundingBox())!.height).toBe(barHeight);
 
   // Chọn hai node → chuột phải có "Nhóm" → nhóm tay hiện thành khung. Chọn một node thì không có "Nhóm".
   await page.getByTestId("card-p1").click();

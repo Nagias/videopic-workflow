@@ -72,8 +72,11 @@ button.primary {
   height: 100%;
 }
 
+/* Thanh trên luôn một dòng: chữ ô "Lần chạy tới" đổi dài/ngắn (đang tính, lỗi, số lượt) mà thanh xuống dòng thì canvas đổi
+   chiều cao, khung nhìn nhảy và "Vừa màn hình" ra kết quả khác nhau. Ô ước tính co lại (dấu …), các nút giữ nguyên bề rộng. */
 .toolbar {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -86,6 +89,15 @@ button.primary {
 .toolbar h1 {
   font-size: 16px;
   margin: 0 12px 0 0;
+  white-space: nowrap;
+}
+
+.toolbar > * {
+  flex-shrink: 0;
+}
+
+.toolbar > .estimate-pill {
+  flex-shrink: 1;
 }
 
 .tool-group {
@@ -98,6 +110,7 @@ button.primary {
 .run-state {
   color: var(--muted);
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .muse-accounts {
@@ -1235,6 +1248,8 @@ button.icon {
   color: var(--muted);
   font-size: 12px;
   max-width: 460px;
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
