@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { runAllConfirmed } from "./helpers";
+import { fitView, runAllConfirmed } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const at = (x: number, y: number) => ({ x, y });
@@ -168,7 +168,11 @@ test("Tạo thẻ cảnh lại với Biên kịch đổi số cảnh → thẻ m
   await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 120_000 });
   await expect(page.getByTestId("node-status-character-1")).toHaveText(/Xong|Dùng lại kết quả/);
   for (const id of ["scene-g1-3", "scene-g1-9", "scene-g1-10", "combine-g1"]) await expect(page.getByTestId(`node-status-${id}`)).toHaveText("Chưa chạy");
+  // Thẻ Cảnh 3 có thể đang ngoài khung nhìn (máy tải nặng, canvas chưa đứng yên): vừa màn hình trước khi bấm, và chắc chắn khung
+  // bên phải đang mở đúng Cảnh 3 rồi mới xem tab Kết quả.
+  await fitView(page);
   await page.getByTestId("card-scene-g1-3").click();
+  await expect(page.getByTestId("inspector")).toContainText("Cảnh 3");
   await page.getByTestId("inspector-tab-result").click();
   await expect(page.getByTestId("result-outdated-scene-g1-3")).toContainText("đã đổi sau lần chạy cuối");
   await expect(page.getByTestId("result-media-scene-g1-3")).toHaveCount(0);
