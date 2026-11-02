@@ -33,7 +33,16 @@ export type NodeDefinition<P> = {
   // Có lỗi thì cả lần chạy dừng (src/core/preflight.ts). Lỗi là chuỗi (gắn vào chính node này) hoặc {nodeId, message}
   // khi lỗi thuộc về node khác (vd Ghép phim báo lỗi ở đúng thẻ Cảnh) để lỗi hiện ở thẻ đó.
   preflight?(ctx: PreflightCtx): PreflightIssue[];
+  // Cảnh báo luật (không chặn chạy) trên cùng đầu vào với preflight(); chỉ ước tính (src/core/estimate.ts) đọc để hiện cho người dùng.
+  warnings?(ctx: PreflightCtx): PreflightIssue[];
+  // Một dòng mô tả ở chân thẻ node trên canvas (src/features/editor/ui/NodeCard.tsx), ví dụ "MS · cắt · cô đi về phía lều".
+  // output: kết quả mới nhất của node (chưa chạy thì vắng); wires: số dây đang cắm vào từng cổng vào (cổng chưa nối thì vắng).
+  // Tham số có thể hỏng hoặc thiếu (workflow cũ, dữ liệu lạ): phải trả được một dòng chứ không ném lỗi.
+  cardLine?(params: P, output?: NodeOutputs, wires?: CardWires): string;
 };
+
+// Số dây đang cắm vào từng cổng vào của node (tên cổng → số dây); cổng chưa nối thì không có khoá.
+export type CardWires = Readonly<Record<string, number>>;
 
 export type PreflightIssue = string | { nodeId: string; message: string };
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { checkShotList, type KnownProp, type Shot } from "../../shared/director";
 import { defineNode, type PreflightCtx, type PreflightIssue } from "../../shared/node-definition";
+import { fmtSec } from "../../shared/card-line";
 import { params as propsParams, rowsToSpec } from "../props/definition";
 import { params as sceneParams } from "../scene/definition";
 
@@ -79,19 +80,33 @@ export const definition = defineNode<FilmCombineParams>({
   stepScope: "film",
   params,
   defaults: { fixBrightness: true },
+  cardLine: (_p, out, wires) => {
+    const video = out?.video;
+    return [video?.kind === "video" ? fmtSec(video.durationSec) : "", `${wires?.clips ?? 0} clip`].filter(Boolean).join(" · ");
+  },
   estimate: () => ({ image: 0, video: 0, text: 0 }),
   // Luật giữa các cảnh (nối, trạng thái đồ vật liên tục, tên/trạng thái đồ vật) trên cả chuỗi cảnh cắm vào.
   preflight(ctx) {
-    const { shots, positions, errors, known } = scenesFeeding(ctx.node.node.id, ctx);
-    if (shots.length === 0) return errors;
-    // checkShotList đánh số theo shots; đổi về mã node và vị trí clip trong phim. Lỗi của một cảnh gắn vào thẻ cảnh đó,
-    // lỗi chung của cả chuỗi (không mở đầu bằng "Cảnh N:") ở lại Ghép phim.
-    const checked = checkShotList(shots, known).errors.map((e): PreflightIssue => {
-      const n = /^Cảnh (\d+):/.exec(e)?.[1];
-      if (n === undefined) return e;
-      const shot = shots[Number(n) - 1]!;
-      return { nodeId: shot.id, message: e.replace(/^Cảnh \d+:/, `Cảnh "${shot.id}" (clip ${positions[Number(n) - 1]!}):`) };
-    });
-    return [...errors, ...checked];
+    const { errors, checked } = checkFeeding(ctx);
+    return [...errors, ...(checked?.errors ?? [])];
+  },
+  // Cảnh báo cùng bộ luật (luật 30°, khung đầu giống chuyển động...): không chặn chạy, ước tính trả cho giao diện.
+  warnings(ctx) {
+    return checkFeeding(ctx).checked?.warnings ?? [];
   },
 });
+
+// Chạy checkShotList trên các cảnh cắm vào Ghép phim. checkShotList đánh số theo shots; đổi về mã node và vị trí clip trong phim.
+// Điều ở một cảnh gắn vào thẻ cảnh đó, điều chung của cả chuỗi (không mở đầu bằng "Cảnh N:") ở lại Ghép phim.
+function checkFeeding(ctx: PreflightCtx): { errors: { nodeId: string; message: string }[]; checked?: { errors: PreflightIssue[]; warnings: PreflightIssue[] } } {
+  const { shots, positions, errors, known } = scenesFeeding(ctx.node.node.id, ctx);
+  if (shots.length === 0) return { errors };
+  const place = (text: string): PreflightIssue => {
+    const n = /^Cảnh (\d+):/.exec(text)?.[1];
+    if (n === undefined) return text;
+    const shot = shots[Number(n) - 1]!;
+    return { nodeId: shot.id, message: text.replace(/^Cảnh \d+:/, `Cảnh "${shot.id}" (clip ${positions[Number(n) - 1]!}):`) };
+  };
+  const result = checkShotList(shots, known);
+  return { errors, checked: { errors: result.errors.map(place), warnings: result.warnings.map(place) } };
+}

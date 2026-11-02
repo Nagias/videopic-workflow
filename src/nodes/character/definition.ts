@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { defineNode } from "../../shared/node-definition";
+import { shorten } from "../../shared/card-line";
 import { CHARACTER_SHEET, codeVersion, DEFAULT_LOOK } from "../../shared/prompts";
 import { PROVIDER_IDS } from "../../shared/providers";
 
@@ -20,6 +21,11 @@ export const definition = defineNode<CharacterParams>({
   cacheVersion: codeVersion(CHARACTER_SHEET),
   params,
   defaults: { name: "", description: "", provider: "fake" },
+  cardLine: (p, out) => {
+    const set = out?.character;
+    const who = shorten(p.name, 24) || shorten(p.description, 24) || "chưa mô tả";
+    return set?.kind === "imageset" ? `${who} · ${set.images.length} ảnh` : who;
+  },
   // 1 ảnh mỗi góc của bộ ảnh mẫu (mặt cận, toàn thân chính diện, nghiêng, sau lưng: 4).
   estimate: (p) => ({ image: CHARACTER_SHEET(p.description, DEFAULT_LOOK).length, video: 0, text: 0 }),
 });

@@ -104,11 +104,11 @@ Tổng lượt Muse thật Đợt 1A: 1.
 
 ### Việc chuyển sang Đợt 1B (từ soát cuối 1A)
 
-- [ ] Bảng ước tính hiện "chưa biết" cho node unknown và không cộng 0 vào tổng
-- [ ] `snapshotGroup` phải tính `order` của Ghép phim trước khi có dải đổi thứ tự
-- [ ] Cảnh báo luật đạo diễn (30°) hiện lại ở nhóm Phân cảnh
-- [ ] Sau Tạo thẻ cảnh / Thay / Giữ thẻ cùng mã còn kết quả cũ
-- [ ] Kiểm phiên bản khi `PUT /api/workflows/:id` (DEBT N-016)
+- [x] Bảng ước tính hiện "chưa biết" cho node unknown và không cộng 0 vào tổng (Task 7: `rowText()`, `estimateText()` không ghi "dùng lại hết" khi còn node chưa biết)
+- [x] `snapshotGroup` phải tính `order` của Ghép phim trước khi có dải đổi thứ tự (`37a5d57`)
+- [x] Cảnh báo luật đạo diễn (30°) hiện lại ở nhóm Phân cảnh (Task 7: `warnings` của ước tính vào `groupFrames()`)
+- [x] Sau Tạo thẻ cảnh / Thay / Giữ thẻ cùng mã còn kết quả cũ (`freshResults()` ở `runs/latest`, `6023862`..`76e5c8a`; giao diện `hideResults()` + tải lại)
+- [x] Kiểm phiên bản khi `PUT /api/workflows/:id` (DEBT N-016, `37a5d57`)
 - [ ] Đồ vật / Nhân vật / Bối cảnh / Biên kịch / Tạo video chưa qua `ctx.shared.slot` và cầu dao
 - [ ] `estimateRun` đổi lỗi không phải `GraphError` thành 500
 - [ ] Regroup xoá đúng node của `scope.nodeId` thì báo lỗi chung chung

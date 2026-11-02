@@ -1,58 +1,62 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { webNodes } from "../../../nodes/registry.web";
-import { PORT_KIND_LABEL } from "../../../shared/ports";
+import { PORT_KIND_LABEL, type PortDef, type PortKind } from "../../../shared/ports";
+import { cardWidthOf } from "./new-node";
+import { NodeCard, useCompact } from "./NodeCard";
 import { NodeErrorBoundary } from "./NodeErrorBoundary";
-import { STATUS_LABEL, useEditor } from "./node-kit";
+import { useEditor } from "./node-kit";
 
-export type FlowNodeData = { params: Record<string, unknown> };
+// Thông tin vẽ của khung nhóm (node "group-frame", groups.ts): chỉ có ở node khung, không bao giờ được lưu.
+export type FrameInfo = {
+  groupId: string;
+  title: string;
+  count: number;
+  // Nhóm Phân cảnh (true) hay nhóm tay (false).
+  scene: boolean;
+  // Dòng kiểm luật đạo diễn; vắng khi chưa có kết quả ước tính.
+  rule?: { ok: boolean; lines: string[] };
+  // Loại dữ liệu của các dây gộp tới mép khung: mỗi loại một cổng vào `in-<loại>`.
+  inKinds: PortKind[];
+};
+export type FlowNodeData = { params: Record<string, unknown>; frame?: FrameInfo };
 export type FlowNode = Node<FlowNodeData>;
+
+// Cổng nằm ở mép thẻ, rải đều theo chiều cao; tên cổng chỉ hiện khi rê chuột vào thẻ.
+function Port({ port, side, index, count }: { port: PortDef; side: "in" | "out"; index: number; count: number }) {
+  const top = `${((index + 1) / (count + 1)) * 100}%`;
+  return (
+    <>
+      <Handle
+        type={side === "in" ? "target" : "source"}
+        position={side === "in" ? Position.Left : Position.Right}
+        id={port.name}
+        className={`handle kind-${port.kind}`}
+        style={{ top }}
+      />
+      <span className={`plabel ${side} kind-${port.kind}`} style={{ top }}>
+        {port.label} <em>{PORT_KIND_LABEL[port.kind]}</em>
+      </span>
+    </>
+  );
+}
 
 export function GraphNode({ id, type, data, selected }: NodeProps<FlowNode>) {
   const editor = useEditor();
+  const compact = useCompact();
   const impl = webNodes[type];
-  const state = editor.stateOf(id);
-  if (!impl) return <div className="gnode status-failed">Loại node lạ: {type}</div>;
-  const { definition, View } = impl;
-  const status = state?.status;
-
+  const style = { width: cardWidthOf(type) };
+  if (!impl) return <div className="gnode status-failed" style={style}>Loại node lạ: {type}</div>;
+  const { definition } = impl;
   return (
-    <div className={`gnode type-${type} ${selected ? "selected" : ""} status-${status ?? "idle"}`} data-testid={`node-${id}`}>
-      <header className="gnode-head">
-        <strong>{definition.label}</strong>
-        <span className="badge" data-testid={`node-status-${id}`}>
-          {status ? STATUS_LABEL[status] : "Chưa chạy"}
-        </span>
-      </header>
-      {definition.inputs.map((p) => (
-        <div className={`port in kind-${p.kind}`} key={p.name}>
-          <Handle type="target" position={Position.Left} id={p.name} className={`handle kind-${p.kind}`} />
-          <span>
-            {p.label} <em>{PORT_KIND_LABEL[p.kind]}</em>
-          </span>
-        </div>
+    <div className={`gnode type-${type} ${compact ? "compact" : ""}`} style={style} data-testid={`node-${id}`}>
+      <NodeErrorBoundary>
+        <NodeCard id={id} type={type} params={data.params} state={editor.stateOf(id)} selected={Boolean(selected)} />
+      </NodeErrorBoundary>
+      {definition.inputs.map((p, i) => (
+        <Port key={p.name} port={p} side="in" index={i} count={definition.inputs.length} />
       ))}
-      <div className="gnode-body">
-        <NodeErrorBoundary>
-          <View id={id} params={data.params} setParams={(patch) => editor.setParams(id, patch)} replaceParams={(params) => editor.replaceParams(id, params)} state={state} />
-        </NodeErrorBoundary>
-      </div>
-      {state?.message && status !== "failed" ? (
-        <div className="node-message" data-testid={`node-message-${id}`}>
-          {state.message}
-        </div>
-      ) : null}
-      {state?.error ? (
-        <div className="node-error" data-testid={`node-error-${id}`}>
-          {state.error}
-        </div>
-      ) : null}
-      {definition.outputs.map((p) => (
-        <div className={`port out kind-${p.kind}`} key={p.name}>
-          <span>
-            {p.label} <em>{PORT_KIND_LABEL[p.kind]}</em>
-          </span>
-          <Handle type="source" position={Position.Right} id={p.name} className={`handle kind-${p.kind}`} />
-        </div>
+      {definition.outputs.map((p, i) => (
+        <Port key={p.name} port={p} side="out" index={i} count={definition.outputs.length} />
       ))}
     </div>
   );

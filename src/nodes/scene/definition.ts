@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CAMERA_ANGLES, CAMERA_MOVES, SHOT_SIZES, SUBJECTS, type Shot } from "../../shared/director";
 import { defineNode, type EstimateKnown } from "../../shared/node-definition";
+import { shorten } from "../../shared/card-line";
 import { mediaIdOf, pickInput, type NodeOutputs } from "../../shared/ports";
 import { chainFrameKey, shotFromCache, type ShotCacheInputs } from "../../shared/shot-plan";
 import { PROVIDER_IDS, type ProviderId } from "../../shared/providers";
@@ -69,6 +70,8 @@ export const definition = defineNode<SceneParams>({
   cacheVersion: SHOT_CACHE_VERSION,
   params,
   defaults: { size: "MS", angle: "eye", move: "static", subject: "character", start: "", motion: "", props: "", provider: "fake" },
+  cardLine: (p, _out, wires) =>
+    [p.size, (wires?.follow ?? 0) > 0 ? "nối" : "cắt", shorten(p.motion, 40) || "chưa viết chuyển động"].filter(Boolean).join(" · "),
   // Theo đúng khoá bước con của makeShot(): biết đầu vào thì chỉ đếm bước còn thiếu cache; chưa biết thì cảnh nối hoặc
   // chữ→video 1 video, còn lại 1 ảnh + 1 video.
   estimate: (p, connected, known) => shotFromCache(sceneShot(p, connected.has("follow")), cacheInputs(p, known), (k) => known?.step(k)).calls,

@@ -22,6 +22,9 @@ export type WorkflowListResponse = z.infer<typeof WorkflowListResponseSchema>;
 export const SaveWorkflowBodySchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   graph: WorkflowGraphSchema,
+  // updatedAt của bản giao diện đã tải hoặc lưu gần nhất. Máy chủ đang giữ bản khác (vd Biên kịch vừa tạo lại thẻ cảnh)
+  // thì từ chối 409 kèm bản mới (SaveConflictSchema) thay vì đè. Không gửi thì lưu như cũ.
+  baseUpdatedAt: z.number().int().optional(),
 });
 // Thân gửi lên (kiểu đầu vào của schema): `graph.groups` được bỏ, máy chủ hiểu là không có nhóm.
 export type SaveWorkflowBody = z.input<typeof SaveWorkflowBodySchema>;
@@ -57,6 +60,11 @@ export const EstimateResponseSchema = z.object({
   total: CallsSchema,
   museTotal: CallsSchema,
   waitsOnWriter: z.boolean(),
+  // Cảnh báo luật đạo diễn (không chặn chạy), mỗi cảnh báo gắn mã node cảnh liên quan.
+  warnings: z.array(z.object({ nodeId: z.string(), message: z.string() })),
+  // Lỗi kiểm luật CHẶN chạy của các node trong phạm vi (preflightErrors(), đúng hàm executor gọi trước node đầu tiên): còn lỗi thì
+  // lần chạy sẽ bị từ chối, nên hộp xác nhận không cho bấm "▶ Chạy" và khung nhóm không ghi "✓".
+  problems: z.array(z.object({ nodeId: z.string(), message: z.string() })),
 });
 export type EstimateResponse = z.infer<typeof EstimateResponseSchema>;
 export type EstimateNode = EstimateResponse["nodes"][number];
@@ -97,8 +105,13 @@ export const RunResponseSchema = z.object({
 export type RunResponse = z.infer<typeof RunResponseSchema>;
 
 // run: lần chạy mới nhất. nodes: với mỗi node của workflow hiện tại, trạng thái mới nhất của nó trong mọi lần chạy
-// (chạy một phần thì node ngoài phạm vi vẫn hiện kết quả lần trước).
-export const LatestRunResponseSchema = z.object({ run: RunResponseSchema.nullable(), nodes: z.record(z.string(), RunNodeStateSchema) });
+// (chạy một phần thì node ngoài phạm vi vẫn hiện kết quả lần trước), trừ node đã đổi tham số/đầu vào từ đó (xem `outdated`).
+export const LatestRunResponseSchema = z.object({
+  run: RunResponseSchema.nullable(),
+  nodes: z.record(z.string(), RunNodeStateSchema),
+  // Node từng có kết quả nhưng không còn đúng với workflow đang lưu (tham số hoặc đầu vào đã đổi sau lần chạy đó): không có trong `nodes`.
+  outdated: z.array(z.string()),
+});
 export type LatestRunResponse = z.infer<typeof LatestRunResponseSchema>;
 
 export const MuseAccountsResponseSchema = z.object({
@@ -119,5 +132,7 @@ export const AssetListResponseSchema = z.object({ assets: z.array(AssetSummarySc
 export type AssetListResponse = z.infer<typeof AssetListResponseSchema>;
 
 export const ApiErrorSchema = z.object({ error: z.string() });
+// Thân 409 của PUT /api/workflows/:id: bản đang lưu trên máy chủ.
+export const SaveConflictSchema = z.object({ error: z.string(), workflow: WorkflowResponseSchema });
 
 export const mediaUrl = (mediaId: string) => `/api/media/${encodeURIComponent(mediaId)}`;

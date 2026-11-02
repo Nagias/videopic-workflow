@@ -27,6 +27,12 @@ export const definition = defineNode<WriterParams>({
   cacheVersion: codeVersion(writerPrompt, repairPrompt),
   params,
   defaults: { idea: "", shotCount: 12, provider: "fake" },
+  cardLine: (p, out) => {
+    const shots = out?.shots;
+    if (shots?.kind !== "shotlist") return `${p.shotCount} cảnh dự kiến`;
+    const items = out?.props;
+    return `${shots.shots.length} cảnh · ${items?.kind === "propspec" ? items.items.length : 0} đồ vật`;
+  },
   // Ước dư (spec mục 6.5): 1 lượt viết, kịch bản sai luật thì nhờ sửa thêm tối đa WRITER_MAX_TRIES − 1 lượt → tối đa WRITER_MAX_TRIES.
   estimate: () => ({ image: 0, video: 0, text: WRITER_MAX_TRIES }),
 });

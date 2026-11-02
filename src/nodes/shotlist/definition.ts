@@ -22,6 +22,7 @@ export const definition = defineNode<ShotListParams>({
   hidden: true,
   params,
   defaults: { shots: [] },
+  cardLine: (p) => `${Array.isArray(p.shots) ? p.shots.length : 0} cảnh`,
   // Chỉ chép tham số ra cổng: không gọi dịch vụ; kết quả biết trước (Dựng phim phía sau ước theo đúng danh sách cảnh).
   estimate: () => ({ image: 0, video: 0, text: 0 }),
   predict: (p) => ({ shots: shotListValue(p) }),

@@ -5,6 +5,7 @@ import type { ServerNode } from "../src/core/node-runtime";
 import { createQueue } from "../src/core/queue";
 import { fakeTextReply } from "../src/providers/fake/text";
 import { AssetListResponseSchema, LatestRunResponseSchema, RunResponseSchema, WorkflowResponseSchema } from "../src/shared/api";
+import { saveWorkflowGraph } from "../src/features/workflows/store";
 import { expandScenes } from "../src/shared/scenes";
 import type { WorkflowGraph } from "../src/shared/workflow";
 import { legacyIdeaGraph, legacySonLaGraph } from "./helpers/legacy";
@@ -56,6 +57,39 @@ describe("API luồng 1: lưu → chạy → xem clip", () => {
     const res = await s.app.inject({ method: "PUT", url: "/api/workflows/default", payload: { graph: { edges: [] } } });
     expect(res.statusCode).toBe(400);
     expect(res.json<{ error: string }>().error).toMatch(/Workflow không hợp lệ/);
+  });
+
+  it("PUT với baseUpdatedAt cũ → 409 kèm workflow mới; đúng baseUpdatedAt → 200", async () => {
+    await s.app.inject({ method: "GET", url: "/api/workflows/default" });
+    const put = (graph: WorkflowGraph, baseUpdatedAt?: number) =>
+      s.app.inject({ method: "PUT", url: "/api/workflows/default", payload: { graph, ...(baseUpdatedAt === undefined ? {} : { baseUpdatedAt }) } });
+    const edit = (text: string) => promptToVideoGraph(text);
+
+    // Thiếu baseUpdatedAt: chạy như cũ.
+    expect((await put(edit("Rừng một"))).statusCode).toBe(200);
+    // Đúng baseUpdatedAt của bản đang lưu → 200 và updatedAt mới.
+    const current = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/workflows/default" })).json());
+    const ok = await put(edit("Rừng hai"), current.updatedAt);
+    expect(ok.statusCode, ok.body).toBe(200);
+    const saved = WorkflowResponseSchema.parse(ok.json());
+    expect(saved.updatedAt).toBeGreaterThanOrEqual(current.updatedAt);
+
+    // Một nơi khác ghi xen vào (vd Biên kịch tạo lại nhóm, cùng đường saveWorkflowGraph) làm updatedAt đổi, kể cả khi trùng
+    // mili giây: bản cũ bị từ chối và không ghi gì.
+    const other = saveWorkflowGraph(s.db, "default", saved.graph);
+    expect(other.updatedAt).toBeGreaterThan(saved.updatedAt);
+    const stale = await put(edit("Bản cũ đè"), saved.updatedAt);
+    expect(stale.statusCode).toBe(409);
+    const body = stale.json<{ error: string; workflow: unknown }>();
+    expect(body.error).toMatch(/vừa được cập nhật ở nơi khác/);
+    const server = WorkflowResponseSchema.parse(body.workflow);
+    expect(server.updatedAt).toBe(other.updatedAt);
+    expect(server.graph.nodes.find((n) => n.id === "p1")?.params.text).toBe("Rừng hai");
+    const after = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: "/api/workflows/default" })).json());
+    expect(after.graph.nodes.find((n) => n.id === "p1")?.params.text).toBe("Rừng hai");
+
+    // Lưu lại với updatedAt mới tải về thì được.
+    expect((await put(edit("Rừng ba"), server.updatedAt)).statusCode).toBe(200);
   });
 
   it("workflow có prompt trống: run thất bại, báo lỗi ở node, không gọi dịch vụ", async () => {
@@ -682,6 +716,7 @@ describe("API chuyển workflow cũ (Dựng phim → Cảnh + Ghép phim) khi m�
     return RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${start.json<{ runId: string }>().runId}` })).json());
   };
   const latest = async (id: string) => LatestRunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${id}/runs/latest` })).json()).run;
+  const latestAll = async (id: string) => LatestRunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${id}/runs/latest` })).json());
   const putLegacy = async (id: string, graph: WorkflowGraph, name: string) =>
     expect((await s.app.inject({ method: "PUT", url: `/api/workflows/${id}`, payload: { graph, name } })).statusCode).toBe(200);
   const videoId = (v: unknown) => (v && typeof v === "object" && (v as { kind?: string }).kind === "video" ? (v as { mediaId: string }).mediaId : undefined);
@@ -733,6 +768,13 @@ describe("API chuyển workflow cũ (Dựng phim → Cảnh + Ghép phim) khi m�
     expect(shown?.nodes["film-1"]).toBeUndefined();
     expect(allCalls()).toEqual(before);
 
+    // Thứ giao diện thật sự hiện (kết quả gộp theo node, lọc theo tham số): workflow vừa chuyển vẫn hiện đủ 12 clip, phim cũ và các node giữ mã.
+    const merged = await latestAll("son-la");
+    expect(merged.outdated).toEqual([]);
+    for (const id of sceneIds) expect(videoId(merged.nodes[id]?.output?.clip), id).toBeTruthy();
+    expect(videoId(merged.nodes[combineId]?.output?.video)).toBe(oldFilm);
+    expect(merged.nodes["character-1"]?.output).toEqual(old.nodes["character-1"]?.output);
+
     // Mở lần nữa: không chuyển lại, không ghi gì.
     expect(await open("son-la")).toEqual(wf);
     expect(runCount()).toBe(runsBefore + 1);
@@ -742,6 +784,95 @@ describe("API chuyển workflow cũ (Dựng phim → Cảnh + Ghép phim) khi m�
     expect(rerun.status, rerun.error ?? "").toBe("succeeded");
     expect(allCalls()).toEqual(before);
     expect(videoId(rerun.nodes[combineId]?.output?.video)).toBe(oldFilm);
+  });
+
+  it("runs/latest: sửa tham số một cảnh thì cảnh đó và Ghép phim phía sau hiện 'Chưa chạy' (outdated), cảnh khác vẫn giữ kết quả; sửa lại đúng như cũ thì kết quả hiện lại", async () => {
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    expect((await runOf("son-la")).status).toBe("succeeded");
+    const wf = await open("son-la");
+    const sceneIds = wf.graph.groups[0]!.nodeIds;
+    const combineId = wf.graph.nodes.find((n) => n.type === "film-combine")!.id;
+    const edit = (motion: string): WorkflowGraph => ({
+      ...wf.graph,
+      nodes: wf.graph.nodes.map((n) => (n.id === sceneIds[0] ? { ...n, params: { ...n.params, motion } } : n)),
+    });
+    const put = async (graph: WorkflowGraph) => expect((await s.app.inject({ method: "PUT", url: "/api/workflows/son-la", payload: { graph } })).statusCode).toBe(200);
+
+    expect((await latestAll("son-la")).outdated).toEqual([]);
+    await put(edit("cô đi sang hướng khác hẳn"));
+    const after = await latestAll("son-la");
+    expect(after.nodes[sceneIds[0]!]).toBeUndefined();
+    expect(after.nodes[combineId]).toBeUndefined();
+    expect([...after.outdated].sort()).toEqual([combineId, sceneIds[0]!].sort());
+    expect(videoId(after.nodes[sceneIds[1]!]?.output?.clip)).toBeTruthy();
+    expect(after.nodes["character-1"]?.output).toBeTruthy();
+
+    const original = wf.graph.nodes.find((n) => n.id === sceneIds[0])!.params.motion as string;
+    await put(edit(original));
+    const back = await latestAll("son-la");
+    expect(back.outdated).toEqual([]);
+    expect(videoId(back.nodes[sceneIds[0]!]?.output?.clip)).toBeTruthy();
+    expect(videoId(back.nodes[combineId]?.output?.video)).toBeTruthy();
+  });
+
+  it("runs/latest sau khi chuyển: Chạy lại (take mới) một cảnh rồi 'Chạy node này' (dòng 'dùng lại') thì Ghép phim vẫn không hiện phim cũ; chạy cả workflow thì hiện lại", async () => {
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    expect((await runOf("son-la")).status).toBe("succeeded");
+    const wf = await open("son-la");
+    const sceneIds = wf.graph.groups[0]!.nodeIds;
+    const combineId = wf.graph.nodes.find((n) => n.type === "film-combine")!.id;
+    const target = sceneIds[3]!;
+    const bumped: WorkflowGraph = { ...wf.graph, nodes: wf.graph.nodes.map((n) => (n.id === target ? { ...n, params: { ...n.params, take: 2 } } : n)) };
+    expect((await s.app.inject({ method: "PUT", url: "/api/workflows/son-la", payload: { graph: bumped } })).statusCode).toBe(200);
+    const runScope = async () => {
+      const start = await s.app.inject({ method: "POST", url: "/api/workflows/son-la/runs", payload: { scope: { mode: "node", nodeId: target } } });
+      expect(start.statusCode).toBe(202);
+      while (await s.deps.queue.processNext());
+    };
+
+    await runScope();
+    const first = await latestAll("son-la");
+    expect(videoId(first.nodes[target]?.output?.clip)).toBeTruthy();
+    expect(first.nodes[combineId]).toBeUndefined();
+    expect(first.outdated).toContain(combineId);
+
+    // Lần thứ hai cảnh chỉ "dùng lại" kết quả take 2: vẫn không chứng minh Ghép phim đã dùng nó.
+    await runScope();
+    const second = await latestAll("son-la");
+    expect(second.nodes[target]?.status).toBe("cached");
+    expect(second.nodes[combineId]).toBeUndefined();
+    expect(second.outdated).toContain(combineId);
+
+    expect((await runOf("son-la")).status).toBe("succeeded");
+    const full = await latestAll("son-la");
+    expect(full.outdated).toEqual([]);
+    expect(videoId(full.nodes[combineId]?.output?.video)).toBeTruthy();
+  });
+
+  it("runs/latest: khoá lưu không tính lại được (phiên bản prompt đã đổi) chỉ được kiểm yếu ở lần chạy hiển thị của workflow cũ; ở lần chạy thường thì bỏ, như ước tính", async () => {
+    await putLegacy("son-la", legacySonLaGraph(), "Sinh tồn Sơn La");
+    expect((await runOf("son-la")).status).toBe("succeeded");
+    const wf = await open("son-la");
+    const sceneIds = wf.graph.groups[0]!.nodeIds;
+    const combineId = wf.graph.nodes.find((n) => n.type === "film-combine")!.id;
+    const driftKey = (runId: string, nodeId: string) =>
+      s.db.update(runNodes).set({ cacheKey: `khoa-phien-ban-truoc-${nodeId}` }).where(and(eq(runNodes.runId, runId), eq(runNodes.nodeId, nodeId))).run();
+
+    const displayRunId = s.db.select().from(runNodes).where(eq(runNodes.message, OLD_MESSAGE)).get()!.runId;
+    driftKey(displayRunId, "character-1");
+    const display = await latestAll("son-la");
+    expect(display.outdated).toEqual([]);
+    expect(display.nodes["character-1"]?.output).toBeTruthy();
+
+    const rerun = await runOf("son-la");
+    expect(rerun.status, rerun.error ?? "").toBe("succeeded");
+    expect((await latestAll("son-la")).outdated).toEqual([]);
+    driftKey(rerun.id, "character-1");
+    const normal = await latestAll("son-la");
+    expect(normal.nodes["character-1"]).toBeUndefined();
+    expect(normal.outdated).toContain("character-1");
+    expect(normal.outdated).toContain(combineId);
+    for (const id of sceneIds) expect(normal.nodes[id], id).toBeUndefined();
   });
 
   it("bản '-ban-cu' vẫn chạy được (cached)", async () => {

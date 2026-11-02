@@ -4,9 +4,10 @@ import { and, eq } from "drizzle-orm";
 import { ZodError } from "zod";
 import type { ProviderRegistry } from "../providers/types";
 import type { RunDecision, RunScope } from "../shared/api";
-import { stableStringify } from "../shared/hash";
+import { stableStringify, withoutDefaultTake } from "../shared/hash";
 import type { SourceRef } from "../shared/node-definition";
 import { NodeOutputsSchema, type NodeOutputs, type PortValue } from "../shared/ports";
+import { orderSourceList } from "../shared/source-order";
 import { groupCombineId, groupEdited, rebuildWriterGroup, SCENES_EDITED_MESSAGE, writerGroups, writerWaits } from "../shared/scenes";
 import { WorkflowGraphSchema, type WorkflowGraph, type WorkflowGroup, type WorkflowNode } from "../shared/workflow";
 import type { Db } from "./db/client";
@@ -49,25 +50,11 @@ export function takeOf(params: unknown): number {
 }
 
 // Thứ tự dây vào của một cổng nhiều dây: theo params.order (mã node nguồn) trước,
-// phần còn lại theo toạ độ x rồi y của node nguồn (trái sang phải, trên xuống dưới).
+// phần còn lại theo toạ độ x rồi y của node nguồn (trái sang phải, trên xuống dưới). Cùng hàm với dải thứ tự ở giao diện.
 export function orderSources(p: PlannedNode, name: string, graph: WorkflowGraph): SourceRef[] {
-  const sources = p.inputs.get(name) ?? [];
   const rawOrder = p.params && typeof p.params === "object" ? (p.params as { order?: unknown }).order : undefined;
-  const order = Array.isArray(rawOrder) ? rawOrder.filter((x): x is string => typeof x === "string") : [];
   const pos = new Map(graph.nodes.map((n) => [n.id, n.position]));
-  const rank = (s: SourceRef) => {
-    const i = order.indexOf(s.source);
-    return i < 0 ? Number.POSITIVE_INFINITY : i;
-  };
-  return [...sources].sort((a, b) => {
-    const ra = rank(a);
-    const rb = rank(b);
-    if (ra !== rb) return ra < rb ? -1 : 1;
-    if (ra !== Number.POSITIVE_INFINITY) return 0;
-    const pa = pos.get(a.source);
-    const pb = pos.get(b.source);
-    return (pa?.x ?? 0) - (pb?.x ?? 0) || (pa?.y ?? 0) - (pb?.y ?? 0);
-  });
+  return orderSourceList(p.inputs.get(name) ?? [], rawOrder, (id) => pos.get(id));
 }
 
 export type ExecuteDeps = {
@@ -141,15 +128,6 @@ export function planGraph(graph: WorkflowGraph, nodes: Record<string, ServerNode
   };
   for (const n of graph.nodes) visit(n.id);
   return order;
-}
-
-// take = 1 là lần tạo mặc định nên không đưa vào khoá: kết quả đã có từ trước khi có take vẫn dùng lại được.
-function withoutDefaultTake(params: unknown): unknown {
-  if (!params || typeof params !== "object" || Array.isArray(params)) return params;
-  if ((params as { take?: unknown }).take !== 1) return params;
-  const rest = { ...(params as Record<string, unknown>) };
-  delete rest.take;
-  return rest;
 }
 
 export function cacheKeyOf(type: string, params: unknown, upstream: Record<string, string>, version?: string): string {

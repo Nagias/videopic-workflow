@@ -89,6 +89,46 @@ describe("executeRun", () => {
     expect(counter.calls()).toBe(2);
   });
 
+  // Khoá cứng cho nhánh kiểm yếu ở runs/latest (fresh-results.ts): dòng run_nodes do executor ghi mà đã có kết quả (kể cả kết quả
+  // từng phần của node lỗi, và node dùng lại cache) thì luôn có cacheKey; không có khoá thì kết quả cũ không lọc được theo đồ thị hiện tại.
+  it("mọi dòng run_nodes có outputJson đều có cacheKey: chạy mới, dùng lại cache, kết quả từng phần rồi lỗi", async () => {
+    const counter = countingFakeProviders();
+    const failing = countingFakeProviders({ failVideoWhen: () => true });
+    const partialThenFail = probeNode({
+      type: "partial-fail",
+      inputs: [],
+      run: (ctx) => {
+        ctx.partial({ out: { kind: "text", text: "dở dang" } });
+        return Promise.reject(new Error("hỏng giữa chừng"));
+      },
+    });
+    const runWith = async (graph: WorkflowGraph, providers: ReturnType<typeof countingFakeProviders>["providers"], nodes: Record<string, ServerNode>, failMessage?: RegExp) => {
+      const runId = randomUUID();
+      const done = executeRun({ ...env, providers, nodes, chatLocks: createChatLocks() }, runId, "wf", graph, new AbortController().signal, { mode: "all" });
+      if (failMessage) await expect(done).rejects.toThrow(failMessage);
+      else await done;
+      return runId;
+    };
+    const first = await runWith(promptToVideoGraph("Khóa cache A"), counter.providers, testNodes);
+    const reuse = await runWith(promptToVideoGraph("Khóa cache A"), counter.providers, testNodes);
+    const failed = await runWith(promptToVideoGraph("Khóa cache B"), failing.providers, testNodes, /Lỗi giả lập/);
+    const partialRun = await runWith(
+      { nodes: [{ id: "p", type: "partial-fail", position: { x: 0, y: 0 }, params: {} }], edges: [] },
+      counter.providers,
+      { "partial-fail": partialThenFail },
+      /hỏng giữa chừng/,
+    );
+    const runIds = [first, reuse, failed, partialRun];
+
+    expect(nodeRow(reuse, "v1")?.status).toBe("cached");
+    expect(nodeRow(failed, "v1")?.status).toBe("failed");
+    expect(nodeRow(partialRun, "p")?.status).toBe("failed");
+    expect(nodeRow(partialRun, "p")?.outputJson).not.toBeNull();
+    const withOutput = runIds.flatMap((id) => env.db.select().from(runNodes).where(eq(runNodes.runId, id)).all()).filter((r) => r.outputJson !== null);
+    expect(withOutput.length).toBeGreaterThanOrEqual(4);
+    expect(withOutput.filter((r) => r.cacheKey === null).map((r) => `${r.runId}/${r.nodeId}`)).toEqual([]);
+  });
+
   it("prompt trống bị chặn trước khi gọi provider", async () => {
     const counter = countingFakeProviders();
     await expect(run(promptToVideoGraph("   "), counter.providers)).rejects.toThrow(/Prompt đang trống/);
