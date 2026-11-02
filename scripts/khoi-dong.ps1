@@ -43,8 +43,12 @@ if ($dirty) {
 } else {
   git fetch origin main --quiet
   if ($LASTEXITCODE -ne 0) { Say "Không tải được bản mới từ GitHub (mạng?) — chạy bản đang có." Yellow }
+  elseif ($branch -ne "main" -and (git rev-list HEAD --not --remotes)) {
+    # Nhánh còn commit chưa có trên GitHub (việc đang làm dở): không tự chuyển, để khỏi tưởng việc đó đã mất.
+    Say "Nhánh '$branch' còn commit chưa đẩy lên GitHub — giữ nguyên nhánh này, không chuyển sang 'main'." Yellow
+  }
   elseif ($branch -ne "main") {
-    Say "Đang ở nhánh '$branch' (bản cũ) — chuyển sang 'main' (bản mới nhất)…" Cyan
+    Say "Đang ở nhánh '$branch' (đã có trên GitHub) — chuyển sang 'main' (bản mới nhất)…" Cyan
     # Bản sao chưa theo dõi của chính file khởi động sẽ vướng lệnh chuyển (git không ghi đè file chưa theo dõi): cất tạm, chuyển, rồi
     # main mang bản chính thức về. Chuyển lỗi thì trả lại bản cất tạm.
     $stash = Join-Path $env:TEMP "videopic-khoi-dong"

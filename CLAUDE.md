@@ -66,7 +66,7 @@ Nguồn gốc (Lauren Tan, SpaceXAI): agent thích đi đường tắt nên làm
 |---|---|
 | Cài lần đầu | `npm ci` (cache npm nằm `.cache/npm` trên ổ D; script cài đặt bị tắt trong `package.json` → `allowScripts`) |
 | Chạy app (dev) | `npm run dev` → giao diện `http://127.0.0.1:5190`, API `http://localhost:8787` |
-| Mở app cho chủ dự án (bấm đúp) | `Khoi-dong-VideoPic.cmd` → `scripts/khoi-dong.ps1`: thư mục sạch thì lên bản mới nhất của `main` (có thay đổi chưa lưu thì giữ nguyên), thư viện đổi thì `npm ci`, rồi `npm run dev` và mở trình duyệt; đang chạy sẵn thì chỉ mở trình duyệt. Thử bước chuyển bản: `scripts/khoi-dong.ps1 -ChiCapNhat` |
+| Mở app cho chủ dự án (bấm đúp) | `Khoi-dong-VideoPic.cmd` → `scripts/khoi-dong.ps1`: thư mục sạch thì lên bản mới nhất của `main` (có thay đổi chưa lưu, hoặc nhánh còn commit chưa đẩy lên GitHub, thì giữ nguyên), thư viện đổi thì `npm ci`, rồi `npm run dev` và mở trình duyệt; đang chạy sẵn thì chỉ mở trình duyệt. Thử bước chuyển bản: `scripts/khoi-dong.ps1 -ChiCapNhat` |
 | Kiểm tra (hook commit + CI chạy đúng lệnh này) | `npm run verify` = kiểm registry node + lint + typecheck + test |
 | Kiểm tra đầy đủ (trước khi mở PR) | `npm run verify:full` = verify + e2e (Playwright bấm thật trên giao diện, dịch vụ giả) |
 | Thêm loại node | `npm run new:node <ten-node>` (sinh thư mục + cập nhật registry) |
