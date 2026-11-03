@@ -17,6 +17,8 @@ import {
   type RunScope,
   type SaveWorkflowBody,
   type WorkflowResponse,
+  UPLOAD_PATH,
+  UploadResponseSchema,
 } from "../shared/api";
 
 // Máy chủ từ chối: lời báo tiếng Việt của máy chủ (hoặc mã lỗi), kèm mã trạng thái và thân trả về.
@@ -128,5 +130,10 @@ export const api = {
   getRun: (runId: string) => call(RunResponseSchema, `/api/runs/${encodeURIComponent(runId)}`),
   getLatestRun: (workflowId: string) => call(LatestRunResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/runs/latest`),
   getMuseAccounts: () => call(MuseAccountsResponseSchema, "/api/muse/accounts"),
+  // Ảnh thật từ máy: gửi nguyên byte, máy chủ kiểm loại và cỡ. File không phải ảnh thì báo ngay, không gửi.
+  uploadImage: (file: File) => {
+    if (!file.type.startsWith("image/")) return Promise.reject(new Error("Chỉ nhận ảnh JPG, PNG hoặc WebP"));
+    return call(UploadResponseSchema, UPLOAD_PATH, { method: "POST", body: file, headers: { "Content-Type": file.type } });
+  },
   listAssets: (kind: AssetKind) => call(AssetListResponseSchema, `/api/assets?kind=${encodeURIComponent(kind)}`),
 };

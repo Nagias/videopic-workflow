@@ -264,3 +264,19 @@ Thiết kế: `docs/superpowers/specs/2026-10-28-canvas-the-anh-design.md` mục
 | `npx vitest run src/core/executor.test.ts -t "cacheKey"` | khoá cứng cho nhánh kiểm yếu của `freshResults()`: mọi dòng `run_nodes` do `executeRun()` ghi mà có `outputJson` đều có `cacheKey` (chạy mới, dùng lại cache, kết quả từng phần rồi lỗi). Ngoại lệ có chủ đích: lần chạy hiển thị do `writeDisplayRun()` ghi cho cảnh của workflow cũ không có khoá |
 | `npx vitest run tests/api.test.ts -t "runs/latest"` | Sơn La cũ vừa chuyển: `runs/latest` vẫn trả đủ 12 clip và phim cũ; sửa tham số một cảnh thì cảnh đó và Ghép phim vào `outdated`, cảnh khác giữ; sửa lại đúng như cũ thì hiện lại; chạy lại một cảnh với take mới rồi "Chạy node này" (dòng dùng lại) thì Ghép phim vẫn không hiện phim cũ, chạy cả workflow thì hiện lại; khoá lệch phiên bản ở lần chạy hiển thị vẫn hiện, ở lần chạy thường thì node đó và mọi node phía sau vào `outdated` |
 | `npx playwright test e2e/thu-tu-clip.spec.ts` | bấm thật (dịch vụ giả): kéo clip 12 lên đầu → `params.order` đổi, ước tính ghi Ghép phim chạy lại và 0 lượt Muse, đổi ý tưởng rồi chạy → decision `scenes-edited`, không cảnh nào chạy; Alt+mũi tên đổi chỗ và giữ tiêu điểm; Tạo thẻ cảnh với số cảnh khác → thẻ mới, thẻ bị thay và Ghép phim hiện "Chưa chạy", chạy riêng node Nhân vật và tải lại trang vẫn "Chưa chạy" (khung Kết quả ghi lý do), tải kết quả lỗi thì vẫn ẩn; chạy lại thì "Xong"; chạy lại riêng một cảnh (bản mới, rồi "Chạy node này") thì Ghép phim "Chưa chạy"; sửa tay chữ một cảnh thì thẻ đó "Chưa chạy" sau "Đã lưu" không cần tải lại |
+
+## 9. Luồng 8 — Ảnh thật cho sản phẩm và bối cảnh (03/11/2026)
+
+Thiết kế: `docs/superpowers/specs/2026-11-03-anh-that-design.md`. Kế hoạch: `docs/superpowers/plans/2026-11-03-anh-that.md`.
+
+### 9.1 Người dùng làm gì → hệ thống làm gì
+
+| Bước | Thao tác (phần tử) | Phía giao diện | API | Phía máy chủ | Tốn |
+|---|---|---|---|---|---|
+| 1 | Tải ảnh thật lên (jpg, png, webp, tối đa 20 MB) | `api.uploadImage()` (file không phải ảnh thì báo ngay, không gửi) | `POST /api/media/upload` (thân là byte ảnh; lớp chặn `localRequestProblem()` chỉ nhận `image/*` ở đúng đường này) | `registerMediaRoutes()`: `storage.writeTemp` → `ffmpeg.probeImage` (hỏng → 400) → `storage.importFile` (`source: "upload"`, trùng sha256 thì trả bản cũ); HEIC, loại khác → 415; quá cỡ → 413 | — |
+
+### 9.2 Kiểm chứng tự động
+
+| Lệnh | Kiểm gì |
+|---|---|
+| `npx vitest run tests/upload.test.ts tests/local-only.test.ts` | tải jpg/png giữ định dạng và khung gốc, GET trả đúng `Content-Type`; tải trùng → cùng `mediaId`; chữ giả ảnh → 400 không thêm media; HEIC/gif → 415; `text/plain` → 403; quá 20 MB → 413; `image/*` chỉ được nhận ở đường tải ảnh, Origin lạ vẫn bị chặn |
