@@ -173,3 +173,4 @@ Giải nghĩa các mục A/B/C (agent ghi lại đề xuất đã được duy�
 | Muse không trả ảnh/video, chat Muse ghi "tạm lỗi", "lỗi hệ thống" | node báo `MUSE_FAILED` | lỗi phía Muse: đợi rồi bấm Chạy lại (các cảnh đã xong được giữ). Xem ô nhiệm vụ bên phải trang Muse trong ảnh lỗi `.data/debug/` |
 | Muse từ chối ảnh có người | node báo `REFUSED` | không đính kèm ảnh người chân thực (chính sách Muse, `docs/ARCHITECTURE.md` mục 6.1) |
 | Muốn xem Chrome điều khiển Muse | — | chạy với `MUSE_HEADLESS=0` |
+| Mở app thấy "Máy chủ của app chưa trả lời (lỗi 502)" | giao diện đã tự thử lại ~40 giây mà máy chủ (cổng 8787) vẫn không lên | cửa sổ VideoPic Workflow đã đóng hoặc máy chủ lỗi khi bật: xem dòng báo trong cửa sổ đó, hoặc bấm đúp `Khoi-dong-VideoPic.cmd`. Máy chủ tự khởi động lại vài giây mỗi khi code trong thư mục đổi (`tsx watch`), giao diện tự chờ qua |

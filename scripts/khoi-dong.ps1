@@ -101,10 +101,12 @@ if ($installed -ne $lockHash) {
 # --- 3. Chạy app ------------------------------------------------------------------------------------------------------
 Say "Đang bật app… trình duyệt tự mở khi sẵn sàng ($url)." Cyan
 Say "Đóng cửa sổ này (hoặc bấm Ctrl+C) là tắt app. Dữ liệu nằm ở thư mục .data, không mất khi tắt." DarkGray
+# Chờ cả máy chủ (gọi API qua trang giao diện), không chỉ trang giao diện: trang bật nhanh hơn máy chủ vài giây (đo 03/11/2026:
+# 17,2 giây so với 21,7 giây), mở sớm thì lần tải đầu gặp lỗi 502.
 Start-Job -ScriptBlock {
   param($u)
-  for ($i = 0; $i -lt 120; $i++) {
-    try { Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 2 | Out-Null; Start-Process $u; return } catch { Start-Sleep -Seconds 1 }
+  for ($i = 0; $i -lt 180; $i++) {
+    try { Invoke-WebRequest -Uri "$u/api/workflows/default" -UseBasicParsing -TimeoutSec 2 | Out-Null; Start-Process $u; return } catch { Start-Sleep -Seconds 1 }
   }
 } -ArgumentList $url | Out-Null
 npm run dev
