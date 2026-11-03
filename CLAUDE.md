@@ -31,7 +31,7 @@ Cách đọc nhãn:
 | Workflow kéo-nối node, viết prompt trên node | Canvas React Flow, node Prompt và Tạo video (luồng 1 `FEATURE_MAP.md`) | Mới 2 loại node |
 | Đổi model | Node Tạo video chọn dịch vụ `fake` / `muse` (`src/providers/`) | Chưa có dịch vụ thứ ba |
 | Kết nối tài khoản Muse bằng Playwright + Chrome | `src/providers/muse/`, hồ sơ `.data/chrome_profiles/muse_vid_0N` | Chưa đính kèm ảnh |
-| Giữ mặt người, sản phẩm, không gian | — | Tính năng 2 (`docs/ARCHITECTURE.md` mục 6) |
+| Giữ mặt người, sản phẩm, không gian | Nhân vật vẽ bằng Muse trong một chat phụ; sản phẩm và bối cảnh nhận ảnh thật tải lên (`docs/ARCHITECTURE.md` mục 6.3) | Chưa tải ảnh người thật; khung dọc 9:16 chưa có |
 | Cảnh cuối video này là cảnh đầu video kia, ghép nối | — | Tính năng 2 |
 | Video ~2 phút, sau đó 10–60 phút | — | Tính năng 2 và 4 |
 | Kiến thức đạo diễn | — | Tính năng 3 |

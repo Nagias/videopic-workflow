@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 8787
+    },
+    {
+      "name": "videopic-thu",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "env": { "DATA_DIR": ".data-test/thu-tay", "PORT": "8789", "WEB_PORT": "5192" },
+      "port": 5192
     }
   ]
 }
