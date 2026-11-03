@@ -47,6 +47,14 @@ describe("promptPreview — Cảnh", () => {
     expect(text).toContain("cô gái tóc đen, áo khoác xám");
   });
 
+  it("cảnh có sản phẩm (cổng Sản phẩm): cả hai prompt dặn giữ chữ và logo in trên sản phẩm, như máy chủ dựng", () => {
+    const p = scene({ props: "Bàn gấp: gấp phẳng" });
+    const product = node("sp", "props", { items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", states: "gấp phẳng" }], provider: "fake" });
+    const r = promptPreview("s", [...nodes(p), product], [...edges, wire("sp", "props", "s", "product")], noOutput);
+    if ("note" in r) throw new Error("phải có prompt");
+    for (const sec of r.sections) expect(sec.text).toContain("giữ nguyên chữ và logo in trên sản phẩm");
+  });
+
   it("cảnh nối (có dây Nối tiếp): không có prompt ảnh, chỉ prompt video", () => {
     const prev = node("prev", "scene", scene());
     const r = promptPreview("s", [...nodes(scene({ start: "" })), prev], [...edges, wire("prev", "clip", "s", "follow")], noOutput);

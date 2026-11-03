@@ -66,11 +66,12 @@ function scenePreview(node: PreviewNode, nodes: readonly PreviewNode[], edges: r
     return { sections: [{ title: "Prompt video (chữ → video, không có ảnh khung)", text: textClipStep(shot, p.provider, location).prompt }] };
   }
   const props = propsOf(sourceOf(node.id, "props", nodes, edges), outputOf);
-  const clip: PromptSection = { title: "Prompt video (gửi kèm ảnh khung đầu)", text: clipStep(shot, p.provider, character, "").prompt };
+  const product = propsOf(sourceOf(node.id, "product", nodes, edges), outputOf);
+  const clip: PromptSection = { title: "Prompt video (gửi kèm ảnh khung đầu)", text: clipStep(shot, p.provider, character, "", product).prompt };
   if (shot.link === "chain") {
     return { sections: [clip], notes: ["Khung đầu: lấy khung cuối của clip cảnh trước nối vào, không gửi prompt tạo ảnh."] };
   }
-  const frame = keyframeStep({ shot, providerId: p.provider, character, location, ...(props ? { props } : {}) });
+  const frame = keyframeStep({ shot, providerId: p.provider, character, location, ...(props ? { props } : {}), ...(product ? { product } : {}) });
   return { sections: [{ title: "Prompt tạo ảnh khung đầu", text: frame.prompt }, clip] };
 }
 

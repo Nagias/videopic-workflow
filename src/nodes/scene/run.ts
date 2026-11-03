@@ -1,6 +1,6 @@
 import { optionalInput, requireInput, type NodeRun, type NodeRunContext } from "../../core/node-runtime";
 import { checkShotList, type Shot } from "../../shared/director";
-import type { ImageValue } from "../../shared/ports";
+import { mergePropSets, propSetClash, propStates, type ImageValue } from "../../shared/ports";
 import { lastFrameOf, makeShot } from "../film/shot-steps";
 import { sceneShot, type SceneParams } from "./definition";
 
@@ -15,12 +15,15 @@ export const run: NodeRun<SceneParams> = async (ctx, inputs, params) => {
   const character = requireInput(inputs, "character", "imageset");
   const location = requireInput(inputs, "location", "imageset");
   const props = optionalInput(inputs, "props", "props");
+  const product = optionalInput(inputs, "product", "props");
+  const clash = propSetClash(product, props);
+  if (clash) throw new Error(clash);
   const follow = optionalInput(inputs, "follow", "video");
 
   const shot = sceneShot(params, follow !== undefined);
   // Luật của riêng cảnh này (chữ, đồ vật) kiểm trước khi tốn lượt. Luật giữa các cảnh (nối, trạng thái đồ vật liên tục)
   // do Ghép phim kiểm trên cả chuỗi; cảnh nối được kiểm như cảnh cắt có khung đầu là khung cuối cảnh trước.
-  const known = props?.items.map((p) => ({ name: p.name, states: p.images.map((x) => x.state) }));
+  const known = mergePropSets(product, props)?.items.map((p) => ({ name: p.name, states: propStates(p) }));
   const alone: Shot = follow ? { ...shot, link: "cut", start: shot.start.trim() || "khung cuối cảnh trước" } : shot;
   const errors = checkShotList([alone], known).errors.map((e) => e.replace(/^Cảnh 1: /, ""));
   if (errors.length) throw new Error(errors.join("; "));
@@ -31,6 +34,7 @@ export const run: NodeRun<SceneParams> = async (ctx, inputs, params) => {
     character,
     location,
     ...(props ? { props } : {}),
+    ...(product ? { product } : {}),
     ...(follow ? { prevClipId: follow.mediaId } : {}),
     measure: true,
     onKeyframe: (keyframeId) => ctx.partial({ frame: imageOf(ctx, keyframeId) }),

@@ -1,7 +1,7 @@
 import { MAX_PROP_REFS, parsePropLines, SHOT_SECONDS, textOnly, type Shot } from "./director";
 import type { Calls } from "./node-definition";
-import { mediaIdOf, type ImageSetValue, type PropSetValue } from "./ports";
-import { DEFAULT_LOOK, keyframePrompt, motionPrompt, textVideoPrompt, type KeyframeCtx } from "./prompts";
+import { mediaIdOf, mergePropSets, type ImageSetValue, type PropSetValue } from "./ports";
+import { DEFAULT_LOOK, keyframePrompt, motionPrompt, productKeyframePrompt, productMotionPrompt, textVideoPrompt, type KeyframeCtx } from "./prompts";
 
 // Khoá bước con (ctx.step) và yêu cầu gửi dịch vụ của từng bước tạo một cảnh. Một nơi duy nhất:
 // makeShot() (src/nodes/film/shot-steps.ts) chạy theo đây, ước tính lượt của node Cảnh tra cache theo đây (shotCalls()).
@@ -10,7 +10,8 @@ import { DEFAULT_LOOK, keyframePrompt, motionPrompt, textVideoPrompt, type Keyfr
 export type ShotRef = { mediaId: string; role: string };
 type ChatRef = NonNullable<ImageSetValue["session"]>;
 
-export type ShotInputs = { shot: Shot; providerId: string; character: ImageSetValue; location: ImageSetValue; props?: PropSetValue };
+// product: đồ vật có ảnh thật (cổng Sản phẩm của Cảnh), gộp trước đồ phụ; không có thì mọi khoá và prompt y hệt bản trước.
+export type ShotInputs = { shot: Shot; providerId: string; character: ImageSetValue; location: ImageSetValue; props?: PropSetValue; product?: PropSetValue };
 
 export type KeyframeStep = {
   keyParts: unknown[];
@@ -24,11 +25,17 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 
 const pickView = (set: ImageSetValue, view: string): ShotRef[] => set.images.filter((i) => i.view === view).map((i) => ({ mediaId: i.mediaId, role: set.role }));
 
-// Đồ vật trong khung: mô tả cho prompt (mọi món) + ảnh mẫu đúng trạng thái đầu (tối đa MAX_PROP_REFS, ưu tiên món đổi trạng thái).
-function propsInFrame(shot: Shot, props: PropSetValue | undefined): { described: KeyframeCtx["props"]; refs: ShotRef[]; captions: string[] } {
+// Cảnh có sản phẩm: trường đồ vật của cảnh có tên một món của node Sản phẩm.
+export const productInShot = (shot: Shot, product: PropSetValue | undefined): boolean =>
+  product !== undefined && parsePropLines(shot.props).items.some((u) => product.items.some((p) => same(p.name, u.name)));
+
+// Đồ vật trong khung: mô tả cho prompt (mọi món) + ảnh mẫu đúng trạng thái đầu (tối đa MAX_PROP_REFS; ưu tiên sản phẩm, rồi món đổi trạng thái).
+function propsInFrame(shot: Shot, props: PropSetValue | undefined, product?: PropSetValue): { described: KeyframeCtx["props"]; refs: ShotRef[]; captions: string[] } {
   const uses = parsePropLines(shot.props).items;
   const described = uses.map((u) => ({ name: u.name, state: u.from, description: props?.items.find((p) => same(p.name, u.name))?.description ?? "" }));
-  const ordered = [...uses].sort((a, b) => Number(Boolean(b.to && !same(b.to, b.from))) - Number(Boolean(a.to && !same(a.to, a.from))));
+  const isProduct = (name: string) => Number(product?.items.some((p) => same(p.name, name)) ?? false);
+  const changes = (u: (typeof uses)[number]) => Number(Boolean(u.to && !same(u.to, u.from)));
+  const ordered = [...uses].sort((a, b) => isProduct(b.name) - isProduct(a.name) || changes(b) - changes(a));
   const refs: ShotRef[] = [];
   const captions: string[] = [];
   for (const u of ordered) {
@@ -43,10 +50,12 @@ function propsInFrame(shot: Shot, props: PropSetValue | undefined): { described:
 
 // Ảnh khung: có người → nối tiếp trong chat phụ của nhân vật; không người → chat mới, đính kèm bối cảnh + đồ vật.
 export function keyframeStep(a: ShotInputs): KeyframeStep {
-  const { shot, providerId, character, location, props } = a;
+  const { shot, providerId, character, location, product } = a;
+  const props = mergePropSets(product, a.props);
+  const framePrompt = productInShot(shot, product) ? productKeyframePrompt : keyframePrompt;
   const look = location.look ?? DEFAULT_LOOK;
   const locationRef = pickView(location, "wide");
-  const inFrame = propsInFrame(shot, props);
+  const inFrame = propsInFrame(shot, props, product);
   const base: Omit<KeyframeCtx, "refs" | "inChat"> = { look, location: location.description, props: inFrame.described, character: character.description };
   const refs = [...locationRef, ...inFrame.refs];
   const captions = [...locationRef.map(() => "bối cảnh"), ...inFrame.captions];
@@ -56,8 +65,8 @@ export function keyframeStep(a: ShotInputs): KeyframeStep {
   const personCaptions = [...face.map(() => "nhân vật (mặt)"), ...front.map(() => "nhân vật (toàn thân)"), ...captions];
   const chat = character.session;
   if (shot.subject !== "none" && chat) {
-    const prompt = keyframePrompt(shot, { ...base, refs: captions, inChat: true });
-    const fallback = { prompt: keyframePrompt(shot, { ...base, refs: personCaptions, inChat: false }), references: personRefs };
+    const prompt = framePrompt(shot, { ...base, refs: captions, inChat: true });
+    const fallback = { prompt: framePrompt(shot, { ...base, refs: personCaptions, inChat: false }), references: personRefs };
     return {
       keyParts: ["keyframe", providerId, "chat", prompt, character.images.map((x) => x.mediaId), refs.map((r) => r.mediaId)],
       prompt,
@@ -67,13 +76,13 @@ export function keyframeStep(a: ShotInputs): KeyframeStep {
   }
   const withPerson = shot.subject !== "none";
   const references = withPerson ? personRefs : refs;
-  const prompt = keyframePrompt(shot, { ...base, refs: withPerson ? personCaptions : captions, inChat: false });
+  const prompt = framePrompt(shot, { ...base, refs: withPerson ? personCaptions : captions, inChat: false });
   return { keyParts: ["keyframe", providerId, "new", prompt, references.map((r) => r.mediaId)], prompt, references };
 }
 
-// Clip từ ảnh khung (hoặc khung cuối cảnh trước).
-export function clipStep(shot: Shot, providerId: string, character: ImageSetValue, keyframeMediaId: string): { keyParts: unknown[]; prompt: string } {
-  const prompt = motionPrompt(shot, { character: character.description });
+// Clip từ ảnh khung (hoặc khung cuối cảnh trước). Cảnh có sản phẩm: prompt video giữ chữ/logo in trên sản phẩm.
+export function clipStep(shot: Shot, providerId: string, character: ImageSetValue, keyframeMediaId: string, product?: PropSetValue): { keyParts: unknown[]; prompt: string } {
+  const prompt = (productInShot(shot, product) ? productMotionPrompt : motionPrompt)(shot, { character: character.description });
   return { keyParts: ["clip", providerId, prompt, keyframeMediaId, SHOT_SECONDS], prompt };
 }
 
@@ -89,7 +98,7 @@ export const chainFrameKey = (clipId: string): unknown[] => ["chain-frame", clip
 // Ảnh xem trước của cảnh chữ→video: rút từ clip (ffmpeg, không gọi dịch vụ).
 export const thumbKey = (clipId: string): unknown[] => ["thumb", clipId];
 
-export type ShotCacheInputs = { providerId: string; character?: ImageSetValue; location?: ImageSetValue; props?: PropSetValue; prevClipId?: string };
+export type ShotCacheInputs = { providerId: string; character?: ImageSetValue; location?: ImageSetValue; props?: PropSetValue; product?: PropSetValue; prevClipId?: string };
 
 // Một cảnh nhìn từ cache bước con, đi đúng đường makeShot() sẽ đi. `step` trả giá trị đã lưu (undefined: chưa có).
 // calls: số lần gọi dịch vụ còn thiếu; thiếu Nhân vật/Không gian (node phía trước sẽ chạy) hoặc chưa biết khung đầu thì coi
@@ -105,10 +114,10 @@ export function shotFromCache(shot: Shot, a: ShotCacheInputs, step: (keyParts: u
   if (shot.link === "chain") {
     keyframeId = a.prevClipId === undefined ? undefined : mediaIdOf(step(chainFrameKey(a.prevClipId)));
   } else {
-    keyframeId = a.character && a.location ? mediaIdOf(step(keyframeStep({ shot, providerId: a.providerId, character: a.character, location: a.location, props: a.props }).keyParts)) : undefined;
+    keyframeId = a.character && a.location ? mediaIdOf(step(keyframeStep({ shot, providerId: a.providerId, character: a.character, location: a.location, props: a.props, product: a.product }).keyParts)) : undefined;
     if (keyframeId === undefined) image = 1;
   }
-  const clipId = keyframeId !== undefined && a.character ? mediaIdOf(step(clipStep(shot, a.providerId, a.character, keyframeId).keyParts)) : undefined;
+  const clipId = keyframeId !== undefined && a.character ? mediaIdOf(step(clipStep(shot, a.providerId, a.character, keyframeId, a.product).keyParts)) : undefined;
   return { calls: { image, video: clipId === undefined ? 1 : 0, text: 0 }, keyframeId, clipId };
 }
 

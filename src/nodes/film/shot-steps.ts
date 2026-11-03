@@ -17,6 +17,8 @@ export type ShotArgs = {
   character: ImageSetValue;
   location: ImageSetValue;
   props?: PropSetValue;
+  // Đồ vật có ảnh thật (cổng Sản phẩm của Cảnh).
+  product?: PropSetValue;
   // Cảnh nối (link "chain"): clip của cảnh trước, lấy khung cuối làm khung đầu.
   prevClipId?: string;
   // Đo độ sáng đầu/cuối clip (để Ghép phim bù sáng). Chỉ tốn ffmpeg, có cache.
@@ -67,7 +69,7 @@ async function callProvider<T>(ctx: NodeRunContext, provider: MediaProvider, fn:
 // Ảnh khung theo keyframeStep() (src/shared/shot-plan.ts): trong chat phụ của nhân vật (khoá chat chung cả máy chủ), hoặc chat mới.
 async function keyframeFor(ctx: NodeRunContext, a: ShotArgs, pctx: ProviderContext): Promise<{ mediaId: string }> {
   const { provider } = a;
-  const plan = keyframeStep({ shot: a.shot, providerId: provider.id, character: a.character, location: a.location, props: a.props });
+  const plan = keyframeStep({ shot: a.shot, providerId: provider.id, character: a.character, location: a.location, props: a.props, product: a.product });
   const { chat } = plan;
   if (chat) {
     // Chat phụ của nhân vật chỉ làm từng việc một, khoá theo đường dẫn chat gốc (chung cả máy chủ).
@@ -138,7 +140,7 @@ export async function makeShot(ctx: NodeRunContext, a: ShotArgs): Promise<ShotRe
     }
     keyframeId = keyframe.mediaId;
     a.onKeyframe?.(keyframeId);
-    const plan = clipStep(shot, provider.id, character, keyframe.mediaId);
+    const plan = clipStep(shot, provider.id, character, keyframe.mediaId, a.product);
     clip = await ctx.step(plan.keyParts, () =>
       callProvider(ctx, provider, async () => {
         const v = await provider.generateVideo({ prompt: plan.prompt, durationSec: SHOT_SECONDS, firstFrameMediaId: keyframe.mediaId, verbatim: true }, pctx);

@@ -11,6 +11,11 @@ export const DEFAULT_LOOK = "Ảnh chụp bằng điện thoại như khung hìn
 const VIDEO_RULES =
   "Chuyển động thật, có lực, đúng vật lý; chỉ làm đúng việc đã tả, không làm thêm bước tiếp theo; không nhìn vào máy quay, không thêm người, không cắt cảnh, không chữ, khung ngang 16:9.";
 const STILL_RULES = "Bối cảnh đơn giản, không chữ, không logo, khung ngang 16:9.";
+// Cảnh có sản phẩm ảnh thật (spec 2026-11-03 mục 3.6): giữ chữ/logo in trên hàng thật, chỉ cấm chữ thêm vào.
+// Dùng qua productKeyframePrompt()/productMotionPrompt() bên dưới, KHÔNG sửa keyframePrompt()/motionPrompt(): mã nguồn hai hàm
+// đó là phiên bản cache của mọi thẻ Cảnh (SHOT_CACHE_VERSION), sửa là mọi cảnh cũ hiện "chưa chạy".
+const PRODUCT_STILL_RULES = "Bối cảnh đơn giản, giữ nguyên chữ và logo in trên sản phẩm như ảnh đính kèm, không thêm chữ hay logo nào khác, khung ngang 16:9.";
+const PRODUCT_VIDEO_RULES = VIDEO_RULES.replace("không chữ", "giữ nguyên chữ và logo in trên sản phẩm, không thêm chữ nào khác");
 
 export type ReferenceView = { view: string; label: string; prompt: string; inChatPrompt?: string };
 
@@ -55,6 +60,8 @@ export function keyframePrompt(shot: Shot, c: KeyframeCtx): string {
     .join(" ");
 }
 
+export const productKeyframePrompt = (shot: Shot, c: KeyframeCtx): string => keyframePrompt(shot, c).replace(STILL_RULES, PRODUCT_STILL_RULES);
+
 function endStates(shot: Shot): string {
   const changed = parsePropLines(shot.props).items.filter((p) => p.to && p.to.toLowerCase() !== p.from.toLowerCase());
   return changed.length ? `Cuối cảnh: ${changed.map((p) => `${p.name} ${p.to}`).join(", ")}.` : "";
@@ -74,6 +81,8 @@ export function motionPrompt(shot: Shot, c: { character?: string } = {}): string
     .filter(Boolean)
     .join(" ");
 }
+
+export const productMotionPrompt = (shot: Shot, c: { character?: string } = {}): string => motionPrompt(shot, c).replace(VIDEO_RULES, PRODUCT_VIDEO_RULES);
 
 export function textVideoPrompt(shot: Shot, c: { look: string; location: string }): string {
   return [
