@@ -213,4 +213,16 @@ describe("node props (Đồ vật) — ảnh thật theo trạng thái", () => {
     const params = definition.params.parse(table({ "gấp phẳng": [a], "có chân": [b], "nâng cao": [c] }));
     expect(definition.cardLine?.(params, undefined)).toBe("Bàn gấp · 3 ảnh thật · 1 ảnh vẽ");
   });
+
+  it("thẻ node cảnh báo món chưa có ảnh thật khi món khác đã có", async () => {
+    const a1 = await photo("111111");
+    const params = definition.params.parse({
+      items: [
+        { name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", states: "gấp phẳng", photos: { "gấp phẳng": [a1] } },
+        { name: "Ghế gấp", description: "ghế xếp cùng bộ", states: "mở" },
+      ],
+      provider: "fake",
+    });
+    expect(definition.cardLine?.(params, undefined)).toBe("2 đồ vật · 1 ảnh thật · 1 ảnh vẽ · 1 món chưa có ảnh thật");
+  });
 });

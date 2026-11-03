@@ -115,7 +115,9 @@ function photoLine(p: PropsParams): string | undefined {
   if (!rows.some((r) => Object.keys(r.photos ?? {}).length > 0)) return undefined;
   let real = 0;
   let draw = 0;
+  let bare = 0;
   for (const r of rows) {
+    if (rowStates(r).every((s) => photosFor(r, s).length === 0)) bare++;
     for (const s of rowStates(r)) {
       const n = photosFor(r, s).length;
       real += n;
@@ -123,7 +125,8 @@ function photoLine(p: PropsParams): string | undefined {
     }
   }
   const who = rows.length === 1 ? shorten(rows[0]!.name, 24) || "1 đồ vật" : `${rows.length} đồ vật`;
-  return `${who} · ${real} ảnh thật · ${draw} ảnh vẽ`;
+  // Node có ảnh thật thường là node Sản phẩm: món chưa có ảnh nào sẽ do dịch vụ tự vẽ hoàn toàn, nên nhắc rõ (spec mục 3.4).
+  return [`${who} · ${real} ảnh thật · ${draw} ảnh vẽ`, bare ? `${bare} món chưa có ảnh thật` : ""].filter(Boolean).join(" · ");
 }
 
 export const definition = defineNode<PropsParams>({

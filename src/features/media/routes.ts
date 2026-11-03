@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { FastifyError, FastifyInstance } from "fastify";
 import type { AppDeps } from "../../core/app-deps";
+import { ToolUnavailableError } from "../../core/ffmpeg";
 import type { UploadResponse } from "../../shared/api";
 
 const CONTENT_TYPE_BY_EXT: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", mp4: "video/mp4" };
@@ -51,10 +52,19 @@ export function registerMediaRoutes(app: FastifyInstance, deps: AppDeps): void {
         size = await deps.ffmpeg.probeImage(tmp);
       } catch (err) {
         await deps.storage.removeTemp(tmp);
+        // Thiếu ffprobe / chạy quá giờ: lỗi của máy, để nổi lên (500 kèm lời dặn cài ffmpeg), không báo nhầm thành ảnh hỏng.
+        if (err instanceof ToolUnavailableError) throw err;
         req.log.warn({ err }, "ảnh tải lên không đọc được");
         return reply.code(400).send({ error: "Không đọc được ảnh, file có thể bị hỏng" });
       }
-      const rec = await deps.storage.importFile(tmp, { kind: "image", source: "upload", ...size });
+      let rec;
+      try {
+        rec = await deps.storage.importFile(tmp, { kind: "image", source: "upload", ...size });
+      } catch (err) {
+        // Lỗi ghi đĩa / db: dọn file tạm (tới 20 MB) rồi để lỗi nổi lên.
+        await deps.storage.removeTemp(tmp);
+        throw err;
+      }
       const body: UploadResponse = { mediaId: rec.id, width: rec.width ?? size.width, height: rec.height ?? size.height };
       return body;
     },

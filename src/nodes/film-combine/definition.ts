@@ -20,13 +20,13 @@ export type FilmCombineParams = z.infer<typeof params>;
 //   chỉ áp giữa hai Cảnh kề nhau trong phim. Trạng thái đồ vật vẫn phải liên tục trên cả phim.
 // - `positions[i]`: vị trí (từ 1) của shots[i] trong phim, để báo lỗi đúng chỗ.
 // known: từ node Đồ vật đầu tiên mà các cảnh cắm vào (cổng props) và node Sản phẩm đầu tiên (cổng product), đọc tham số như
-// node Đồ vật đọc (rowsToSpec()). Đồ phụ lấy danh sách từ Biên kịch (cổng spec có dây) thì chưa biết món nào trước khi chạy:
-// known để trống, kể cả phần sản phẩm (DEBT.md N-015).
+// node Đồ vật đọc (rowsToSpec()). Đồ phụ lấy danh sách từ Biên kịch (cổng spec có dây) thì chưa biết món nào trước khi chạy
+// (DEBT.md N-015): khi đó known chỉ là sản phẩm và partial = true (kiểm tên/trạng thái sản phẩm, bỏ qua món chưa biết).
 // `errors` gắn vào đúng thẻ Cảnh liên quan (nodeId của Cảnh).
 export function scenesFeeding(
   combineId: string,
   ctx: PreflightCtx,
-): { shots: Shot[]; positions: number[]; errors: { nodeId: string; message: string }[]; known?: KnownProp[] } {
+): { shots: Shot[]; positions: number[]; errors: { nodeId: string; message: string }[]; known?: KnownProp[]; partial?: boolean } {
   const clips = ctx.sources(combineId, "clips");
   const shots: Shot[] = [];
   const positions: number[] = [];
@@ -73,8 +73,11 @@ export function scenesFeeding(
   };
   const extras = typed(propsNode);
   const products = typed(productNode);
-  if ((propsNode !== undefined && !extras) || (productNode !== undefined && !products) || (!extras && !products)) return { shots, positions, errors };
-  return { shots, positions, errors, known: [...(products ?? []), ...(extras ?? [])] };
+  const base = { shots, positions, errors };
+  if (productNode !== undefined && !products) return base;
+  if (propsNode !== undefined && !extras) return products ? { ...base, known: products, partial: true } : base;
+  if (!extras && !products) return base;
+  return { ...base, known: [...(products ?? []), ...(extras ?? [])] };
 }
 
 export const definition = defineNode<FilmCombineParams>({
@@ -108,7 +111,7 @@ export const definition = defineNode<FilmCombineParams>({
 // Chạy checkShotList trên các cảnh cắm vào Ghép phim. checkShotList đánh số theo shots; đổi về mã node và vị trí clip trong phim.
 // Điều ở một cảnh gắn vào thẻ cảnh đó, điều chung của cả chuỗi (không mở đầu bằng "Cảnh N:") ở lại Ghép phim.
 function checkFeeding(ctx: PreflightCtx): { errors: { nodeId: string; message: string }[]; checked?: { errors: PreflightIssue[]; warnings: PreflightIssue[] } } {
-  const { shots, positions, errors, known } = scenesFeeding(ctx.node.node.id, ctx);
+  const { shots, positions, errors, known, partial } = scenesFeeding(ctx.node.node.id, ctx);
   if (shots.length === 0) return { errors };
   const place = (text: string): PreflightIssue => {
     const n = /^Cảnh (\d+):/.exec(text)?.[1];
@@ -116,6 +119,6 @@ function checkFeeding(ctx: PreflightCtx): { errors: { nodeId: string; message: s
     const shot = shots[Number(n) - 1]!;
     return { nodeId: shot.id, message: text.replace(/^Cảnh \d+:/, `Cảnh "${shot.id}" (clip ${positions[Number(n) - 1]!}):`) };
   };
-  const result = checkShotList(shots, known);
+  const result = checkShotList(shots, known, { partial });
   return { errors, checked: { errors: result.errors.map(place), warnings: result.warnings.map(place) } };
 }

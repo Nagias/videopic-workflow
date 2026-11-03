@@ -46,6 +46,36 @@ test("Đồ vật: tải ảnh thật vào một trạng thái, đổi tên tr�
   await expect(page.getByTestId("prop-photo-orphan-pr-1")).toHaveCount(0);
 });
 
+test("Đồ vật: thả ảnh vào hai trạng thái cùng lúc và gõ chữ trong lúc tải → giữ đủ cả hai ảnh và chữ vừa gõ", async ({ page }) => {
+  const wf = `anh-that-cung-luc-${uid()}`;
+  await putWorkflow(page, wf, {
+    nodes: [
+      { id: "pr", type: "props", position: at(0, 0), params: { name: "", items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", states: "gấp phẳng, có chân" }], provider: "fake" } },
+    ],
+    edges: [],
+  });
+  // Chậm câu trả lời tải ảnh để hai lượt tải và lúc gõ chữ chồng lên nhau thật.
+  await page.route("**/api/media/upload", async (route) => {
+    await new Promise((r) => setTimeout(r, 800));
+    await route.continue();
+  });
+  await page.goto(`/?wf=${wf}`);
+  await page.getByTestId("card-pr").click();
+  const other = { ...png("chan.png"), buffer: Buffer.concat([Buffer.from(PNG_1X1, "base64"), Buffer.from([0])]) };
+  await page.getByTestId("prop-photo-drop-pr-1-1-input").setInputFiles(png("phang.png"));
+  await page.getByTestId("prop-photo-drop-pr-1-2-input").setInputFiles(other);
+  await page.getByTestId("prop-desc-pr-1").fill("bàn dã ngoại gấp gọn, mặt nhôm xám, chân nâng hạ");
+  await expect(page.getByTestId("prop-photo-pr-1-1-1")).toBeVisible();
+  await expect(page.getByTestId("prop-photo-pr-1-2-1")).toBeVisible();
+  await expect(page.getByTestId("save-status")).toHaveText("Đã lưu");
+  await expect
+    .poll(async () => {
+      const row = ((await paramsOf(page, wf, "pr")).items as { description: string; photos?: Record<string, string[]> }[])[0]!;
+      return [row.description, Object.keys(row.photos ?? {}).sort()];
+    })
+    .toEqual(["bàn dã ngoại gấp gọn, mặt nhôm xám, chân nâng hạ", ["có chân", "gấp phẳng"]]);
+});
+
 test("Không gian: tải 1 ảnh thật, xoá được, tham số lưu đúng", async ({ page }) => {
   const wf = `anh-that-khong-gian-${uid()}`;
   await putWorkflow(page, wf, {
@@ -60,7 +90,7 @@ test("Không gian: tải 1 ảnh thật, xoá được, tham số lưu đúng", 
 
   await page.getByTestId("location-photo-remove-l-1").click();
   await expect(page.getByTestId("location-photo-l-1")).toHaveCount(0);
-  await expect.poll(async () => (await paramsOf(page, wf, "l")).photos).toEqual([]);
+  await expect.poll(async () => "photos" in (await paramsOf(page, wf, "l"))).toBe(false);
 });
 
 test("luồng affiliate (dịch vụ giả): sản phẩm ảnh thật nối vào Biên kịch → mọi thẻ Cảnh tự có dây Sản phẩm, sản phẩm không tốn lượt vẽ, Ghép phim ra phim", async ({ page }) => {

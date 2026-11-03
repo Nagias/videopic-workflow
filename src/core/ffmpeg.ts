@@ -31,6 +31,15 @@ export type Ffmpeg = {
 
 type RunResult = { stdout: string; stderr: string };
 
+// Không chạy được chương trình (thiếu trong PATH) hoặc chạy quá giờ: lỗi của máy, không phải của file đầu vào.
+// Nơi gọi phân biệt được với lỗi "file không đọc được" (vd route tải ảnh không báo nhầm thành ảnh hỏng).
+export class ToolUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ToolUnavailableError";
+  }
+}
+
 function run(bin: string, args: string[], timeoutMs: number): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
@@ -38,13 +47,13 @@ function run(bin: string, args: string[], timeoutMs: number): Promise<RunResult>
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      reject(new Error(`${bin} chạy quá ${Math.round(timeoutMs / 1000)} giây, đã dừng`));
+      reject(new ToolUnavailableError(`${bin} chạy quá ${Math.round(timeoutMs / 1000)} giây, đã dừng`));
     }, timeoutMs);
     child.stdout.on("data", (d: Buffer) => (stdout += d.toString("utf8")));
     child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
     child.on("error", (err) => {
       clearTimeout(timer);
-      reject(new Error(`Không chạy được ${bin} (${err.message}). Cài ffmpeg và thêm vào PATH, hoặc đặt FFMPEG_PATH/FFPROBE_PATH.`));
+      reject(new ToolUnavailableError(`Không chạy được ${bin} (${err.message}). Cài ffmpeg và thêm vào PATH, hoặc đặt FFMPEG_PATH/FFPROBE_PATH.`));
     });
     child.on("close", (code) => {
       clearTimeout(timer);

@@ -1,7 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { media } from "../src/core/db/schema";
+import { ToolUnavailableError } from "../src/core/ffmpeg";
 import { UploadResponseSchema } from "../src/shared/api";
 import { createTestServer, type TestServer } from "./helpers/server";
 
@@ -23,6 +24,7 @@ describe("tải ảnh thật lên (POST /api/media/upload)", () => {
   const upload = (body: Buffer, contentType: string, headers: Record<string, string> = {}) =>
     s.app.inject({ method: "POST", url: "/api/media/upload", headers: { "content-type": contentType, ...headers }, payload: body });
   const mediaCount = () => s.db.select().from(media).all().length;
+  const tmpCount = async () => (await readdir(s.cfg.tmpDir).catch(() => [])).length;
 
   it("tải jpg hợp lệ → 200, có mediaId và kích thước thật; xem lại được", async () => {
     const res = await upload(await image("jpg"), "image/jpeg");
@@ -71,6 +73,25 @@ describe("tải ảnh thật lên (POST /api/media/upload)", () => {
     expect(hls.statusCode).toBe(400);
     expect(hls.json<{ error: string }>().error).toBe("Không đọc được ảnh, file có thể bị hỏng");
     expect(mediaCount()).toBe(before);
+  });
+
+  it("máy thiếu ffprobe → 500 nói rõ cần cài ffmpeg (không báo nhầm thành ảnh hỏng), không để lại file tạm", async () => {
+    const bytes = await image("jpg");
+    const before = await tmpCount();
+    s.deps.ffmpeg = { ...s.deps.ffmpeg, probeImage: () => Promise.reject(new ToolUnavailableError("Không chạy được ffprobe (spawn ENOENT). Cài ffmpeg và thêm vào PATH")) };
+    const res = await upload(bytes, "image/jpeg");
+    expect(res.statusCode).toBe(500);
+    expect(res.json<{ error: string }>().error).toContain("Không chạy được ffprobe");
+    expect(await tmpCount()).toBe(before);
+  });
+
+  it("lưu ảnh lỗi (đĩa/db) → lỗi nổi lên, không để lại file tạm", async () => {
+    const bytes = await image("jpg", "777777");
+    const before = await tmpCount();
+    s.deps.storage = { ...s.deps.storage, importFile: () => Promise.reject(new Error("đĩa đầy")) };
+    const res = await upload(bytes, "image/jpeg");
+    expect(res.statusCode).toBe(500);
+    expect(await tmpCount()).toBe(before);
   });
 
   it("ảnh HEIC → 415 với lời dặn lưu lại thành JPG", async () => {

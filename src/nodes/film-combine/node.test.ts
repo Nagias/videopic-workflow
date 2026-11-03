@@ -212,6 +212,33 @@ describe("node film-combine (Ghép phim)", () => {
     expect(counter.log.image).toBe(0);
   });
 
+  it("preflight: đồ phụ từ Biên kịch (chưa biết) vẫn kiểm trạng thái sản phẩm trước khi chạy, món chưa biết thì bỏ qua", () => {
+    const sp = node("sp", "props", { items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", states: "gấp phẳng, có chân" }], provider: "fake" });
+    const dp = node("dp", "props", { items: [], provider: "fake" });
+    const w = node("w", "writer", { idea: "Cô gái giới thiệu bàn dã ngoại trên hồ", shotCount: 4, provider: "fake" });
+    const lines = ["Bàn gấp: gập đôi", "bình nước: đầy"];
+    const graph = sceneGraph({ fixBrightness: false }, [["s1", scene("s1", { props: lines.join(String.fromCharCode(10)) })]], [
+      edge("sp", "props", "s1", "product"),
+      edge("dp", "props", "s1", "props"),
+      edge("w", "props", "dp", "spec"),
+    ]);
+    graph.nodes.push(sp, dp, w);
+    const planned = new Map(planGraph(graph, testNodes).map((p) => [p.node.id, p]));
+    const ctx = {
+      node: planned.get("g")!,
+      graph,
+      planned,
+      sources: (id: string, port: string) => {
+        const p = planned.get(id)!;
+        return p.impl.definition.inputs.find((x) => x.name === port)?.multiple ? orderSources(p, port, graph) : [...(p.inputs.get(port) ?? [])];
+      },
+    };
+    expect(scenesFeeding("g", ctx)).toMatchObject({ partial: true, known: [{ name: "Bàn gấp", states: ["gấp phẳng", "có chân"] }] });
+    const text = definition.preflight!(ctx).map((i) => (typeof i === "string" ? i : i.message)).join(" | ");
+    expect(text).toContain('không có trạng thái "gập đôi"');
+    expect(text).not.toContain("bình nước");
+  });
+
   it("preflight: một clip cắm hai lần vào Ghép phim → lỗi nêu tên node, calls() = 0", async () => {
     const counter = countingFakeProviders();
     const graph = sceneGraph({ fixBrightness: true }, [["s1", scene("s1")]], [edge("s1", "clip", "g", "clips", 9)]);

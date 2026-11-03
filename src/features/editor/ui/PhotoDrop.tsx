@@ -7,7 +7,23 @@ export type PhotoDropIds = { drop: string; photo: (k: number) => string; remove:
 
 // Ô ảnh thật: kéo thả hoặc bấm chọn file (nhiều ảnh), tải lần lượt qua api.uploadImage(), hiện ảnh nhỏ kèm nút xoá.
 // Ảnh nào tải lỗi thì báo tiếng Việt ngay dưới ô; ảnh đã tải xong trước đó vẫn được giữ.
-export function PhotoDrop({ ids, label, photos, max, onChange }: { ids: PhotoDropIds; label: string; photos: string[]; max?: number; onChange: (photos: string[]) => void }) {
+// Báo thay đổi (onAdd/onRemove), không báo cả danh sách: tải ảnh mất vài giây, trong lúc đó tham số node có thể đã đổi
+// (ô khác tải xong, người dùng gõ chữ) — nơi nhận phải áp thay đổi lên tham số MỚI NHẤT, không ghi đè bằng bản cũ.
+export function PhotoDrop({
+  ids,
+  label,
+  photos,
+  max,
+  onAdd,
+  onRemove,
+}: {
+  ids: PhotoDropIds;
+  label: string;
+  photos: string[];
+  max?: number;
+  onAdd: (mediaIds: string[]) => void;
+  onRemove: (mediaId: string) => void;
+}) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +31,8 @@ export function PhotoDrop({ ids, label, photos, max, onChange }: { ids: PhotoDro
   const room = max === undefined ? Infinity : max - photos.length;
 
   const add = async (picked: File[]) => {
-    if (picked.length === 0) return;
+    // Đang tải: không nhận thêm ở ô này (tránh hai lượt cùng tính chỗ trống theo số ảnh cũ).
+    if (picked.length === 0 || busy) return;
     setError(null);
     const files = picked.slice(0, Math.max(0, room));
     if (files.length < picked.length) setError(`Tối đa ${max} ảnh`);
@@ -33,7 +50,7 @@ export function PhotoDrop({ ids, label, photos, max, onChange }: { ids: PhotoDro
       }
     } finally {
       setBusy(false);
-      if (added.length) onChange([...photos, ...added]);
+      if (added.length) onAdd(added);
     }
   };
 
@@ -52,7 +69,7 @@ export function PhotoDrop({ ids, label, photos, max, onChange }: { ids: PhotoDro
               <a href={mediaUrl(m)} target="_blank" rel="noreferrer">
                 <img src={mediaUrl(m)} alt={`${label}: ảnh ${i + 1}`} loading="lazy" />
               </a>
-              <button type="button" className="icon nodrag" title="Bỏ ảnh này" data-testid={ids.remove(i + 1)} onClick={() => onChange(photos.filter((x) => x !== m))}>
+              <button type="button" className="icon nodrag" title="Bỏ ảnh này" data-testid={ids.remove(i + 1)} onClick={() => onRemove(m)}>
                 ✕
               </button>
             </figure>
@@ -61,7 +78,8 @@ export function PhotoDrop({ ids, label, photos, max, onChange }: { ids: PhotoDro
       )}
       {room > 0 && (
         <div
-          className={`photo-drop nodrag${over ? " over" : ""}`}
+          className={`photo-drop nodrag${over ? " over" : ""}${busy ? " busy" : ""}`}
+          aria-busy={busy}
           data-testid={ids.drop}
           role="button"
           tabIndex={0}
