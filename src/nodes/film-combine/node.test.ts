@@ -193,6 +193,25 @@ describe("node film-combine (Ghép phim)", () => {
     expect(counter.log.image).toBe(0);
   });
 
+  it("preflight: trạng thái sản phẩm (cổng Sản phẩm) không có ảnh → lỗi, calls() = 0; có thêm node đồ phụ gõ tay thì kiểm cả hai", async () => {
+    const counter = countingFakeProviders();
+    const sp = node("sp", "props", { items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", states: "gấp phẳng, có chân" }], provider: "fake" });
+    const pr = node("pr", "props", { items: [{ name: "bình nước", description: "bình giữ nhiệt", states: "đầy" }], provider: "fake" });
+    const onlyProduct = sceneGraph({ fixBrightness: false }, [["s1", scene("s1", { props: "Bàn gấp: gập đôi" })]], [edge("sp", "props", "s1", "product")]);
+    onlyProduct.nodes.push(sp);
+    expect((await runGraph(onlyProduct, counter.providers)).error?.message).toMatch(/không có trạng thái "gập đôi"/);
+    const both = sceneGraph({ fixBrightness: false }, [["s1", scene("s1", { props: ["Bàn gấp: có chân", "bình nước: rỗng"].join("\n") })]], [
+      edge("sp", "props", "s1", "product"),
+      edge("pr", "props", "s1", "props"),
+    ]);
+    both.nodes.push(sp, pr);
+    const r = await runGraph(both, counter.providers);
+    expect(r.error?.message).toMatch(/không có trạng thái "rỗng"/);
+    // Bị chặn ở bước kiểm luật trước khi chạy (Ghép phim gộp sản phẩm + đồ phụ): không node nào chạy.
+    expect(rowOf(r.runId, "ch")?.status).toBe("skipped");
+    expect(counter.log.image).toBe(0);
+  });
+
   it("preflight: một clip cắm hai lần vào Ghép phim → lỗi nêu tên node, calls() = 0", async () => {
     const counter = countingFakeProviders();
     const graph = sceneGraph({ fixBrightness: true }, [["s1", scene("s1")]], [edge("s1", "clip", "g", "clips", 9)]);

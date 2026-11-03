@@ -19,8 +19,9 @@ export type FilmCombineParams = z.infer<typeof params>;
 //   thì coi là cảnh cắt có khung đầu là khung cuối video đó (như Cảnh tự kiểm), nên luật chủ thể/số cảnh nối liền
 //   chỉ áp giữa hai Cảnh kề nhau trong phim. Trạng thái đồ vật vẫn phải liên tục trên cả phim.
 // - `positions[i]`: vị trí (từ 1) của shots[i] trong phim, để báo lỗi đúng chỗ.
-// known: từ node Đồ vật đầu tiên mà các cảnh cắm vào, đọc tham số như node Đồ vật đọc (rowsToSpec()).
-// Đồ vật lấy danh sách từ Biên kịch (cổng spec có dây) thì chưa biết món nào trước khi chạy: known để trống (DEBT.md N-015).
+// known: từ node Đồ vật đầu tiên mà các cảnh cắm vào (cổng props) và node Sản phẩm đầu tiên (cổng product), đọc tham số như
+// node Đồ vật đọc (rowsToSpec()). Đồ phụ lấy danh sách từ Biên kịch (cổng spec có dây) thì chưa biết món nào trước khi chạy:
+// known để trống, kể cả phần sản phẩm (DEBT.md N-015).
 // `errors` gắn vào đúng thẻ Cảnh liên quan (nodeId của Cảnh).
 export function scenesFeeding(
   combineId: string,
@@ -32,6 +33,7 @@ export function scenesFeeding(
   const errors: { nodeId: string; message: string }[] = [];
   const isScene = (id: string | undefined) => id !== undefined && ctx.planned.get(id)?.node.type === "scene";
   let propsNode: string | undefined;
+  let productNode: string | undefined;
   clips.forEach((src, i) => {
     const p = ctx.planned.get(src.source);
     if (!p || p.node.type !== "scene") return;
@@ -61,11 +63,18 @@ export function scenesFeeding(
     });
     positions.push(i + 1);
     propsNode ??= ctx.sources(p.node.id, "props")[0]?.source;
+    productNode ??= ctx.sources(p.node.id, "product")[0]?.source;
   });
-  const pr = propsNode === undefined ? undefined : ctx.planned.get(propsNode);
-  if (pr?.node.type !== "props" || ctx.sources(pr.node.id, "spec").length > 0) return { shots, positions, errors };
-  const known = rowsToSpec(propsParams.parse(pr.params).items).map((i) => ({ name: i.name, states: i.states }));
-  return { shots, positions, errors, known };
+  // Món đọc được từ tham số một node Đồ vật; node đó nhận danh sách từ Biên kịch (hoặc không phải Đồ vật) thì undefined.
+  const typed = (id: string | undefined): KnownProp[] | undefined => {
+    const pr = id === undefined ? undefined : ctx.planned.get(id);
+    if (pr?.node.type !== "props" || ctx.sources(pr.node.id, "spec").length > 0) return undefined;
+    return rowsToSpec(propsParams.parse(pr.params).items).map((i) => ({ name: i.name, states: i.states }));
+  };
+  const extras = typed(propsNode);
+  const products = typed(productNode);
+  if ((propsNode !== undefined && !extras) || (productNode !== undefined && !products) || (!extras && !products)) return { shots, positions, errors };
+  return { shots, positions, errors, known: [...(products ?? []), ...(extras ?? [])] };
 }
 
 export const definition = defineNode<FilmCombineParams>({

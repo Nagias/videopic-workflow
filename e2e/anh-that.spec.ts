@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { putWorkflow } from "./helpers";
+import { putWorkflow, runAllConfirmed } from "./helpers";
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const at = (x: number, y: number) => ({ x, y });
@@ -61,4 +61,54 @@ test("Không gian: tải 1 ảnh thật, xoá được, tham số lưu đúng", 
   await page.getByTestId("location-photo-remove-l-1").click();
   await expect(page.getByTestId("location-photo-l-1")).toHaveCount(0);
   await expect.poll(async () => (await paramsOf(page, wf, "l")).photos).toEqual([]);
+});
+
+test("luồng affiliate (dịch vụ giả): sản phẩm ảnh thật nối vào Biên kịch → mọi thẻ Cảnh tự có dây Sản phẩm, sản phẩm không tốn lượt vẽ, Ghép phim ra phim", async ({ page }) => {
+  test.setTimeout(300_000);
+  const upload = async (name: string) => {
+    const res = await page.request.post("/api/media/upload", { headers: { "content-type": "image/png" }, data: Buffer.from(PNG_1X1, "base64") });
+    expect(res.ok(), name).toBe(true);
+    return ((await res.json()) as { mediaId: string }).mediaId;
+  };
+  const photo = await upload("ban-gap");
+  const wf = `anh-that-luong-${uid()}`;
+  await putWorkflow(page, wf, {
+    nodes: [
+      { id: "ch", type: "character", position: at(0, 0), params: { name: "Mai", description: "cô gái tóc ngắn, áo phao xanh ngọc, quần short vàng", provider: "fake" } },
+      { id: "lo", type: "location", position: at(0, 300), params: { description: "mặt hồ rộng giữa núi, nước xanh phẳng lặng", photos: [photo], provider: "fake" } },
+      {
+        id: "sp",
+        type: "props",
+        position: at(0, 600),
+        params: { name: "", items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn mặt nhôm xám", states: "gấp phẳng", photos: { "gấp phẳng": [photo] } }], provider: "fake" },
+      },
+      { id: "w", type: "writer", position: at(400, 0), params: { idea: "Cô gái ngồi trên ván chèo giữa hồ giới thiệu bàn dã ngoại gấp gọn", shotCount: 4, provider: "fake" } },
+      { id: "dp", type: "props", position: at(400, 600), params: { name: "", items: [], provider: "fake" } },
+    ],
+    edges: [
+      { id: "e1", source: "ch", sourceHandle: "character", target: "w", targetHandle: "character" },
+      { id: "e2", source: "lo", sourceHandle: "location", target: "w", targetHandle: "location" },
+      { id: "e3", source: "sp", sourceHandle: "props", target: "w", targetHandle: "product" },
+      { id: "e4", source: "w", sourceHandle: "props", target: "dp", targetHandle: "spec" },
+    ],
+  });
+  await page.goto(`/?wf=${wf}`);
+  await runAllConfirmed(page);
+  await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 240_000 });
+  // Biên kịch đã viết: bấm Tạo thẻ cảnh (nhóm mới lấy nguồn theo dây của Biên kịch), rồi chạy các cảnh.
+  await page.getByTestId("card-w").click();
+  await page.getByTestId("writer-expand-w").click();
+  await expect(page.getByTestId("node-scene-g1-1")).toBeVisible();
+  await runAllConfirmed(page);
+  await expect(page.getByTestId("run-status")).toHaveText("Chạy xong", { timeout: 240_000 });
+
+  type Graph = { graph: { nodes: { id: string; type: string }[]; edges: { source: string; sourceHandle: string; target: string; targetHandle: string }[] } };
+  const { graph } = (await (await page.request.get(`/api/workflows/${wf}`)).json()) as Graph;
+  const scenes = graph.nodes.filter((n) => n.type === "scene").map((n) => n.id);
+  expect(scenes.length).toBeGreaterThan(0);
+  for (const id of scenes) expect(graph.edges.some((e) => e.source === "sp" && e.sourceHandle === "props" && e.target === id && e.targetHandle === "product"), id).toBe(true);
+
+  await expect(page.getByTestId("card-sp")).toContainText("1 ảnh thật · 0 ảnh vẽ");
+  const combine = graph.nodes.find((n) => n.type === "film-combine")!.id;
+  await expect(page.getByTestId(`node-status-${combine}`)).toHaveText("Xong");
 });
