@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { countingFakeProviders, testNodeCtx } from "../../../tests/helpers/nodes";
 import { createTestEnv, type TestEnv } from "../../../tests/helpers/test-env";
+import type { PortValue } from "../../shared/ports";
+import { writerPrompt } from "../../shared/prompts";
 import { extractJsonBlock, parseWriterReply } from "../../shared/writer-format";
 import { definition } from "./definition";
 import { run } from "./run";
@@ -87,5 +89,71 @@ describe("node writer (Biên kịch)", () => {
   it("ý tưởng quá ngắn, số cảnh ngoài 4–24 bị chặn", () => {
     expect(definition.params.safeParse({ idea: "rừng", shotCount: 8, provider: "fake" }).success).toBe(false);
     expect(definition.params.safeParse({ idea, shotCount: 30, provider: "fake" }).success).toBe(false);
+  });
+});
+
+describe("node writer (Biên kịch) — sản phẩm ảnh thật", () => {
+  let env: TestEnv;
+  beforeEach(() => {
+    env = createTestEnv();
+  });
+  afterEach(async () => {
+    await env.cleanup();
+  });
+
+  const product: PortValue = {
+    kind: "props",
+    items: [
+      {
+        name: "Bàn gấp",
+        description: "bàn dã ngoại gấp gọn mặt nhôm xám",
+        images: [
+          { mediaId: "m1", state: "gấp phẳng" },
+          { mediaId: "m2", state: "gấp phẳng" },
+          { mediaId: "m3", state: "có chân" },
+        ],
+      },
+    ],
+  };
+  const withProduct = (props: string, extra: unknown[] = []) => ({
+    props: extra,
+    shots: [good.shots[0], { ...good.shots[1], start: "cô gái áo đen ngồi trên ván chèo, bàn gấp đặt trước mặt", motion: "cô lắp chân bàn", props }],
+  });
+  const params = () => definition.params.parse({ idea: "Cô gái giới thiệu bàn dã ngoại trên hồ", shotCount: 6, provider: "fake" });
+
+  it("không nối sản phẩm → prompt y hệt writerPrompt cũ", async () => {
+    const counter = countingFakeProviders({ textReply: () => fenced(good) });
+    await run(testNodeCtx(env, counter.providers), {}, params());
+    expect(counter.log.textPrompts[0]).toBe(writerPrompt({ idea: "Cô gái giới thiệu bàn dã ngoại trên hồ", shotCount: 6 }));
+  });
+
+  it("có sản phẩm → prompt liệt kê tên, mô tả, trạng thái (bỏ trùng); kịch bản dùng đúng trạng thái → xong, cổng ra props chỉ có đồ phụ", async () => {
+    const extra = [{ name: "bình nước", description: "bình giữ nhiệt inox", states: ["đầy"] }];
+    const counter = countingFakeProviders({ textReply: () => fenced(withProduct("Bàn gấp: gấp phẳng -> có chân", extra)) });
+    const out = await run(testNodeCtx(env, counter.providers), { product }, params());
+    const prompt = counter.log.textPrompts[0]!;
+    expect(prompt).toContain("Sản phẩm chính (đã có ảnh thật");
+    expect(prompt).toContain("Bàn gấp — bàn dã ngoại gấp gọn mặt nhôm xám — trạng thái: gấp phẳng, có chân");
+    expect(counter.log.text).toBe(1);
+    expect(out.props?.kind === "propspec" && out.props.items.map((i) => i.name)).toEqual(["bình nước"]);
+  });
+
+  it("dùng trạng thái sản phẩm không có ảnh → nhờ sửa trong cùng chat, lần 2 đúng → xong", async () => {
+    const counter = countingFakeProviders({ textReply: (_p, n) => fenced(withProduct(n === 1 ? "Bàn gấp: gập đôi" : "Bàn gấp: có chân")) });
+    await run(testNodeCtx(env, counter.providers), { product }, params());
+    expect(counter.log.text).toBe(2);
+    expect(counter.log.textPrompts[1]).toContain("gập đôi");
+    expect(counter.log.textSessions[1]).toBe("continue");
+  });
+
+  it("khai báo lại sản phẩm trong props → lỗi rõ", () => {
+    const reply = fenced(withProduct("Bàn gấp: có chân", [{ name: "bàn gấp", description: "bàn khác do biên kịch nghĩ", states: ["có chân"] }]));
+    const r = parseWriterReply(reply, [{ name: "Bàn gấp", states: ["gấp phẳng", "có chân"] }]);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.errors).toContain('Đồ vật "bàn gấp" là sản phẩm đã có ảnh thật, không được khai báo lại trong "props"');
+  });
+
+  it("kịch bản không nhắc sản phẩm vẫn hợp lệ (không có luật số cảnh có sản phẩm)", () => {
+    expect(parseWriterReply(fenced(good), [{ name: "Bàn gấp", states: ["gấp phẳng"] }]).ok).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { textOnly } from "../../../shared/director";
-import type { NodeOutputs, PropSetValue, ImageSetValue } from "../../../shared/ports";
-import { writerPrompt } from "../../../shared/prompts";
+import { propStates, type ImageSetValue, type NodeOutputs, type PropSetValue, type PropSpecItem } from "../../../shared/ports";
+import { productWriterPrompt } from "../../../shared/prompts";
 import { clipStep, keyframeStep, textClipStep } from "../../../shared/shot-plan";
 import { definition as sceneDefinition, sceneShot, type SceneParams } from "../../../nodes/scene/definition";
 import { definition as writerDefinition } from "../../../nodes/writer/definition";
@@ -56,6 +56,19 @@ function propsOf(src: Source | undefined, outputOf: (id: string) => NodeOutputs 
   };
 }
 
+// Sản phẩm nối vào Biên kịch, dạng máy chủ đưa vào prompt (writer/run.ts): đã chạy thì trạng thái theo ảnh, chưa chạy thì theo chữ gõ.
+function productSpecOf(src: Source | undefined, outputOf: (id: string) => NodeOutputs | null | undefined): PropSpecItem[] {
+  if (!src) return [];
+  const real = outputOf(src.node.id)?.[src.port];
+  if (real?.kind === "props") return real.items.map((i) => ({ name: i.name, description: i.description, states: propStates(i) }));
+  const rows = src.node.data.params.items;
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row: unknown) => {
+    const r = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    return { name: str(r.name).trim(), description: str(r.description).trim(), states: str(r.states).split(",").map((x) => x.trim()).filter(Boolean) };
+  });
+}
+
 function scenePreview(node: PreviewNode, nodes: readonly PreviewNode[], edges: readonly PreviewWire[], outputOf: (id: string) => NodeOutputs | null | undefined): PromptPreview {
   const p = { ...sceneDefinition.defaults, ...node.data.params } as SceneParams;
   const follows = sourceOf(node.id, "follow", nodes, edges) !== undefined;
@@ -81,12 +94,13 @@ function writerPreview(node: PreviewNode, nodes: readonly PreviewNode[], edges: 
   const sourceLocation = sourceOf(node.id, "location", nodes, edges);
   // Như máy chủ đọc tham số qua zod: ý tưởng được cắt khoảng trắng hai đầu, thiếu số cảnh thì lấy mặc định của node.
   const count = typeof p.shotCount === "number" ? p.shotCount : writerDefinition.defaults.shotCount;
-  const text = writerPrompt({
+  const products = productSpecOf(sourceOf(node.id, "product", nodes, edges), outputOf);
+  const text = productWriterPrompt({
     idea: str(p.idea).trim(),
     shotCount: count,
     ...(sourceCharacter ? { character: imageSetOf(sourceCharacter, "character", MISSING_CHARACTER, outputOf).description } : {}),
     ...(sourceLocation ? { location: imageSetOf(sourceLocation, "location", MISSING_LOCATION, outputOf).description } : {}),
-  });
+  }, products);
   return { sections: [{ title: "Prompt gửi Biên kịch", text }] };
 }
 

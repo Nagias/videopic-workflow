@@ -181,6 +181,18 @@ export function writerPrompt(w: { idea: string; shotCount: number; character?: s
     .join("\n");
 }
 
+// Biên kịch có sản phẩm ảnh thật (spec 2026-11-03 mục 3.4): chèn đoạn sản phẩm trước dòng số cảnh. Bọc ngoài writerPrompt()
+// thay vì sửa nó: mã nguồn writerPrompt là phiên bản cache của mọi node Biên kịch, sửa là mọi Biên kịch cũ hiện "chưa chạy".
+export function productWriterPrompt(w: Parameters<typeof writerPrompt>[0], products: PropSpecItem[]): string {
+  const base = writerPrompt(w);
+  if (products.length === 0) return base;
+  const list = products.map((i) => `${i.name} — ${i.description} — trạng thái: ${i.states.join(", ")}`).join("; ");
+  const block = `Sản phẩm chính (đã có ảnh thật, giữ nguyên tên; chỉ được dùng đúng các trạng thái liệt kê; không khai báo lại trong "props"): ${list}`;
+  const count = `Số cảnh: ${w.shotCount} (mỗi cảnh 5 giây).`;
+  return base.replace(count, `${block}
+${count}`);
+}
+
 export function repairPrompt(errors: string[]): string {
   return [`${WRITER_TAG} vừa rồi chưa dùng được vì các lỗi sau. Hãy sửa và trả lại TOÀN BỘ kịch bản trong một khối \`\`\`json, giữ nguyên các cảnh đã đúng:`, ...errors.map((e) => `- ${e}`)].join("\n");
 }

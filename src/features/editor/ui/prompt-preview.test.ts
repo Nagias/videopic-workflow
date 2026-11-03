@@ -118,6 +118,14 @@ describe("promptPreview — Biên kịch và node khác", () => {
     expect(r.sections[0]!.text).toContain("Ý tưởng: Cô gái dựng lều bên suối rồi nhóm lửa nấu nước\n");
   });
 
+  it("Biên kịch nối Sản phẩm chưa chạy: prompt có đoạn sản phẩm với trạng thái theo chữ gõ", () => {
+    const w = node("w", "writer", { idea: "Cô gái giới thiệu bàn dã ngoại trên hồ", shotCount: 6, provider: "fake" });
+    const sp = node("sp", "props", { items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", states: "gấp phẳng, có chân" }], provider: "fake" });
+    const r = promptPreview("w", [w, sp], [wire("sp", "props", "w", "product")], noOutput);
+    if ("note" in r) throw new Error("phải có prompt");
+    expect(r.sections[0]!.text).toContain("Bàn gấp — bàn dã ngoại gấp gọn — trạng thái: gấp phẳng, có chân");
+  });
+
   it("node khác (và node không có): Prompt được tạo khi chạy", () => {
     expect(promptPreview("c", [character], [], noOutput)).toEqual({ note: PROMPT_AT_RUN });
     expect(promptPreview("khong-co", [], [], noOutput)).toEqual({ note: PROMPT_AT_RUN });

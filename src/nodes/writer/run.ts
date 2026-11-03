@@ -1,6 +1,7 @@
 import { optionalInput, type NodeRun } from "../../core/node-runtime";
 import type { ChatSessionRef } from "../../providers/types";
-import { repairPrompt, writerPrompt } from "../../shared/prompts";
+import { propStates } from "../../shared/ports";
+import { productWriterPrompt, repairPrompt } from "../../shared/prompts";
 import { parseWriterReply, WriterOutputSchema } from "../../shared/writer-format";
 import { WRITER_MAX_TRIES, type WriterParams } from "./definition";
 
@@ -8,7 +9,9 @@ export const run: NodeRun<WriterParams> = async (ctx, inputs, params) => {
   const provider = ctx.providers.get(params.provider);
   const character = optionalInput(inputs, "character", "imageset")?.description;
   const location = optionalInput(inputs, "location", "imageset")?.description;
-  const prompt = writerPrompt({ idea: params.idea, shotCount: params.shotCount, character, location });
+  const products = (optionalInput(inputs, "product", "props")?.items ?? []).map((i) => ({ name: i.name, description: i.description, states: propStates(i) }));
+  // Không có sản phẩm: productWriterPrompt() trả đúng writerPrompt() cũ (khoá bước con không đổi).
+  const prompt = productWriterPrompt({ idea: params.idea, shotCount: params.shotCount, character, location }, products);
   const pctx = { signal: ctx.signal, report: (m: string) => ctx.report(`Biên kịch: ${m}`), storage: ctx.storage, ffmpeg: ctx.ffmpeg };
 
   const result = await ctx.step(["writer", provider.id, prompt], async () => {
@@ -20,7 +23,7 @@ export const run: NodeRun<WriterParams> = async (ctx, inputs, params) => {
       const fallbackPrompt = attempt === 1 ? undefined : `${prompt}\n\nLần trước bị lỗi, hãy tránh:\n${errors.map((e) => `- ${e}`).join("\n")}`;
       const reply = await provider.generateText({ prompt: ask, ...(session ? { session } : {}), ...(fallbackPrompt ? { fallbackPrompt } : {}) }, pctx);
       session = reply.session;
-      const parsed = parseWriterReply(reply.text);
+      const parsed = parseWriterReply(reply.text, products);
       if (parsed.ok) return { json: JSON.stringify(parsed.value) };
       errors = parsed.errors;
       ctx.report(`Biên kịch: lần ${attempt} chưa đạt (${errors.length} lỗi)${attempt < WRITER_MAX_TRIES ? ", nhờ sửa…" : ""}`);

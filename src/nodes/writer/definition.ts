@@ -19,6 +19,8 @@ export const definition = defineNode<WriterParams>({
   inputs: [
     { name: "character", kind: "imageset", label: "Nhân vật", optional: true },
     { name: "location", kind: "imageset", label: "Không gian", optional: true },
+    // Đồ vật có ảnh thật: Biên kịch chỉ được dùng đúng tên và trạng thái của nó (spec 2026-11-03 mục 3.4).
+    { name: "product", kind: "props", label: "Sản phẩm", optional: true },
   ],
   outputs: [
     { name: "shots", kind: "shotlist", label: "Cảnh" },
