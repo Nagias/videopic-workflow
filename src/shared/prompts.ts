@@ -127,6 +127,19 @@ export function propStatePrompt(item: PropSpecItem, state: string, look: string,
   return `Ảnh tiếp theo, khung ngang 16:9: chính ${item.name} ${where}, cùng góc chụp và nền, nay ở trạng thái: ${state}. Không có người, không có tay người. ${look}. Không chữ.`;
 }
 
+// Sản phẩm có ảnh thật (spec 2026-11-03): vẽ trạng thái còn thiếu từ ảnh thật, giữ logo in trên sản phẩm
+// (không dùng "Không chữ." vì Muse sẽ xoá cả chữ in trên hàng thật).
+const KEEP_PRODUCT = "giữ nguyên hình dạng, màu, chất liệu, chữ và logo in trên sản phẩm";
+
+export function productFromPhotoPrompt(item: PropSpecItem, state: string, look: string): string {
+  return `Tạo 1 ảnh khung ngang 16:9: ảnh chụp thật chính ${item.name} trong ảnh đính kèm (${item.description}), ${KEEP_PRODUCT}; nay ở trạng thái: ${state}. Chụp trọn món đồ, nằm trên mặt đất thật có bóng đổ tự nhiên, nền đơn giản, không có người, không có tay người. ${look}. Không thêm chữ nào khác.`;
+}
+
+export function productStatePrompt(item: PropSpecItem, state: string, look: string, attached = false): string {
+  const where = attached ? "trong ảnh đính kèm" : "trong ảnh bạn vừa tạo";
+  return `Ảnh tiếp theo, khung ngang 16:9: chính ${item.name} ${where}, cùng góc chụp và nền, ${KEEP_PRODUCT}; nay ở trạng thái: ${state}. Không có người, không có tay người. ${look}. Không thêm chữ nào khác.`;
+}
+
 // Biên kịch: luật chia cảnh học từ ViMax (khung đầu là ảnh đứng yên, chuyển động chỉ là việc xảy ra sau đó,
 // gọi nhân vật bằng đặc điểm nhìn thấy, cảnh đầu rộng nhất) + luật đồ vật/trạng thái của dự án.
 export const WRITER_TAG = "KỊCH BẢN JSON";

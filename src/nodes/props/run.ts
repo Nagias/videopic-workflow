@@ -1,9 +1,29 @@
 import { optionalInput, type NodeRun } from "../../core/node-runtime";
 import { semaphore } from "../../core/semaphore";
-import type { ChatSessionRef } from "../../providers/types";
-import type { PropItem, PropSetValue } from "../../shared/ports";
-import { DEFAULT_LOOK, propStatePrompt, propStillPrompt } from "../../shared/prompts";
-import { checkSpec, propStepKey, specOf, type PropsParams } from "./definition";
+import type { ChatSessionRef, ImageReference } from "../../providers/types";
+import type { PropItem, PropSetValue, PropSpecItem } from "../../shared/ports";
+import { DEFAULT_LOOK, productFromPhotoPrompt, productStatePrompt, propStatePrompt, propStillPrompt } from "../../shared/prompts";
+import { checkSpec, planItem, rowOf, specOf, type PropsParams } from "./definition";
+
+// Prompt và ảnh đính kèm của một lần vẽ. Món không có ảnh thật: ảnh tĩnh vật trạng thái đầu, các trạng thái sau nối tiếp trong
+// chat (hỏng chat thì chat mới đính kèm ảnh đầu). Món có ảnh thật: lần vẽ đầu chat mới đính kèm ảnh thật, các lần sau nối tiếp.
+function drawRequest(item: PropSpecItem, state: string, base: string[], first: boolean, firstImage: string | undefined) {
+  const look = DEFAULT_LOOK;
+  if (base.length) {
+    const refs: ImageReference[] = base.map((mediaId) => ({ mediaId, role: "prop" }));
+    return first
+      ? { prompt: productFromPhotoPrompt(item, state, look), references: refs, fallback: undefined }
+      : { prompt: productStatePrompt(item, state, look), references: refs, fallback: { prompt: productStatePrompt(item, state, look, true), references: refs } };
+  }
+  const anchor: ImageReference[] = firstImage ? [{ mediaId: firstImage, role: "prop" }] : [];
+  return first
+    ? { prompt: propStillPrompt(item, look), references: anchor, fallback: undefined }
+    : {
+        prompt: propStatePrompt(item, state, look),
+        references: anchor,
+        fallback: firstImage ? { prompt: propStatePrompt(item, state, look, true), references: anchor } : undefined,
+      };
+}
 
 export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
   const fromWriter = optionalInput(inputs, "spec", "propspec");
@@ -19,26 +39,35 @@ export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
       await sem.acquire();
       try {
         let session: ChatSessionRef | undefined;
-        for (const [idx, state] of item.states.entries()) {
-          const base = items[k]!.images[0];
-          const inChat = idx > 0 && session !== undefined;
-          const prompt = idx === 0 ? propStillPrompt(item, DEFAULT_LOOK) : propStatePrompt(item, state, DEFAULT_LOOK);
-          ctx.report(`Ảnh mẫu đồ vật: ${item.name} (${state})…`);
-          const img = await ctx.step(propStepKey(provider.id, item, idx), async () => {
+        let firstImage: string | undefined;
+        let drawn = 0;
+        for (const s of planItem(provider.id, item, rowOf(params, item, fromWriter !== undefined))) {
+          if ("photos" in s) {
+            items[k]!.images.push(...s.photos.map((mediaId) => ({ mediaId, state: s.state })));
+            publish();
+            continue;
+          }
+          const first = drawn === 0;
+          const inChat = !first && session !== undefined;
+          const req = drawRequest(item, s.state, s.draw.base, first, firstImage);
+          ctx.report(`Ảnh mẫu đồ vật: ${item.name} (${s.state})…`);
+          const img = await ctx.step(s.draw.key, async () => {
             const r = await provider.generateImage(
               {
-                prompt,
-                references: inChat || !base ? [] : [{ mediaId: base.mediaId, role: "prop" }],
+                prompt: req.prompt,
+                references: inChat ? [] : req.references,
                 session: inChat ? session : "new",
-                fallback: base ? { prompt: propStatePrompt(item, state, DEFAULT_LOOK, true), references: [{ mediaId: base.mediaId, role: "prop" }] } : undefined,
+                fallback: req.fallback,
                 verbatim: true,
               },
               { signal: ctx.signal, report: (m) => ctx.report(`${item.name}: ${m}`), storage: ctx.storage, ffmpeg: ctx.ffmpeg },
             );
             return { mediaId: r.mediaId, accountId: r.session?.accountId ?? "", threadUrl: r.session?.threadUrl ?? "" };
           });
+          drawn++;
+          firstImage ??= img.mediaId;
           if (img.threadUrl) session = { accountId: img.accountId, threadUrl: img.threadUrl };
-          items[k]!.images.push({ mediaId: img.mediaId, state });
+          items[k]!.images.push({ mediaId: img.mediaId, state: s.state });
           publish();
         }
       } finally {

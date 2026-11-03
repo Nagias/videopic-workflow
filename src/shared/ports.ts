@@ -47,6 +47,9 @@ export const PropItemSchema = z.object({
 });
 export type PropItem = z.infer<typeof PropItemSchema>;
 
+// Trạng thái của một món theo thứ tự xuất hiện, bỏ trùng (một trạng thái có thể có nhiều ảnh thật).
+export const propStates = (item: PropItem): string[] => [...new Set(item.images.map((x) => x.state))];
+
 export const StoryboardShotSchema = z.object({
   shotId: z.string(),
   status: z.enum(["pending", "running", "done", "failed", "skipped"]),

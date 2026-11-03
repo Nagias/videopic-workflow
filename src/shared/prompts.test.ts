@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Shot } from "./director";
+import { sha256Hex } from "./hash";
 import {
   CHARACTER_SHEET,
   DEFAULT_LOOK,
@@ -94,5 +95,18 @@ describe("prompt Muse chống nhựa", () => {
     expect(still).toContain("rìu cán gỗ");
     expect(still).toContain("không có tay người");
     expect(propStatePrompt({ name: "khúc gỗ", description: "khúc gỗ", states: ["nguyên khúc", "bổ đôi"] }, "bổ đôi", DEFAULT_LOOK)).toContain("nay ở trạng thái: bổ đôi");
+  });
+});
+
+// Prompt của cảnh/đồ vật KHÔNG có sản phẩm, ảnh thật phải giữ nguyên từng ký tự: khoá bước con chứa prompt,
+// đổi một chữ là mọi cảnh cũ tạo lại, tốn lượt Muse (spec 2026-11-03 mục 3.6).
+describe("prompt cũ không đổi khi thêm ảnh thật", () => {
+  it("dấu vân tay toàn bộ prompt không sản phẩm", () => {
+    const legacy = [
+      ...all(),
+      propStatePrompt({ name: "khúc gỗ", description: "khúc gỗ", states: ["nguyên khúc", "bổ đôi"] }, "bổ đôi", DEFAULT_LOOK, true),
+      motionPrompt(shot({ subject: "hands" }), { character: "áo khoác đen" }),
+    ];
+    expect(sha256Hex(JSON.stringify(legacy))).toBe("ae801de478e0333e9c662af93a373e0a2967260519b79e575b53d505d855145a");
   });
 });
