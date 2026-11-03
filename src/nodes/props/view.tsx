@@ -1,7 +1,22 @@
 import { mediaUrl } from "../../shared/api";
 import type { NodeViewProps } from "../../features/editor/ui/node-kit";
+import { PhotoDrop } from "../../features/editor/ui/PhotoDrop";
 import { AssetPicker, ProviderSelect } from "../../features/editor/ui/widgets";
-import type { PropRow, PropsParams } from "./definition";
+import { orphanPhotos, photosFor, rowStates, type PropRow, type PropsParams } from "./definition";
+
+const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+// Ảnh thật của một trạng thái thay bằng danh sách mới (khoá cũ viết khác hoa thường cũng thay); danh sách rỗng thì bỏ khoá.
+function withStatePhotos(row: PropRow, state: string, list: string[]): PropRow["photos"] {
+  const rest = Object.fromEntries(Object.entries(row.photos ?? {}).filter(([k]) => !sameText(k, state)));
+  return list.length ? { ...rest, [state]: list } : rest;
+}
+
+// Bỏ mọi ảnh mồ côi (khoá không còn khớp trạng thái nào).
+function withoutOrphans(row: PropRow): PropRow["photos"] {
+  const states = rowStates(row);
+  return Object.fromEntries(Object.entries(row.photos ?? {}).filter(([k]) => states.some((s) => sameText(s, k))));
+}
 
 export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsParams>) {
   const items = params.items ?? [];
@@ -18,7 +33,7 @@ export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsP
   return (
     <div className="stack nowheel">
       <AssetPicker id={id} kind="props" onPick={addFromLibrary} />
-      <p className="hint">Nối cổng "Từ Biên kịch" thì danh sách dưới đây bị bỏ qua.</p>
+      <p className="hint">Nối cổng "Từ Biên kịch" thì danh sách dưới đây bị bỏ qua. Trạng thái có ảnh thật thì dùng ảnh đó, không tốn lượt; thiếu ảnh thì dịch vụ vẽ dựa trên ảnh thật.</p>
       {items.map((it, i) => (
         <div className="shot-row" key={i}>
           <div className="shot-head">
@@ -43,6 +58,31 @@ export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsP
             value={it.states}
             onChange={(e) => update(i, { states: e.target.value })}
           />
+          {rowStates(it).map((state, s) => (
+            <div className="photo-state" key={`${s}-${state}`}>
+              <span className="photo-state-name">{state}</span>
+              <PhotoDrop
+                ids={{
+                  drop: `prop-photo-drop-${id}-${i + 1}-${s + 1}`,
+                  photo: (k) => `prop-photo-${id}-${i + 1}-${s + 1}-${k}`,
+                  remove: (k) => `prop-photo-remove-${id}-${i + 1}-${s + 1}-${k}`,
+                }}
+                label={state}
+                photos={photosFor(it, state)}
+                onChange={(list) => update(i, { photos: withStatePhotos(it, state, list) })}
+              />
+            </div>
+          ))}
+          {orphanPhotos(it).length > 0 && (
+            <div className="photo-orphans" data-testid={`prop-photo-orphan-${id}-${i + 1}`}>
+              <span className="node-warn">
+                {orphanPhotos(it).length} ảnh chưa gắn trạng thái (tên trạng thái đã đổi). Vẫn dùng làm mẫu khi vẽ trạng thái thiếu ảnh.
+              </span>
+              <button type="button" className="nodrag" data-testid={`prop-photo-orphan-remove-${id}-${i + 1}`} onClick={() => update(i, { photos: withoutOrphans(it) })}>
+                Bỏ ảnh chưa gắn
+              </button>
+            </div>
+          )}
         </div>
       ))}
       <button type="button" className="nodrag" data-testid={`add-prop-${id}`} onClick={add}>
