@@ -1,6 +1,10 @@
 # Đưa ảnh thật vào workflow: sản phẩm affiliate và bối cảnh — thiết kế
 
-Ngày: 03/11/2026. Trao đổi với chủ dự án trong chat 02–03/11/2026. Trạng thái: **chờ chủ dự án duyệt**. Đã qua một lượt đọc thử độc lập (03/11), sửa theo góp ý.
+Ngày: 03/11/2026. Trao đổi với chủ dự án trong chat 02–03/11/2026. Trạng thái: **chủ dự án đã duyệt** (03/11/2026, kèm một sửa đổi ghi dưới đây). Đã qua một lượt đọc thử độc lập (03/11), sửa theo góp ý.
+
+**[Nguyên văn chủ dự án]** (03/11/2026, khi duyệt)
+
+> thời gian sản phẩm xuất hiện phụ thuộc vào prompt và node của người làm, không cần phải giới hạn quá nghiêm khắc việc sản phẩm xuất hiện ở đâu, như nào, thời gian bao lâu... Cái đó là luồng flow làm việc rồi. Tập trung vào việc cố định được sản phẩm, chủ thể, không gian là tốt.
 
 ## 1. Vì sao làm
 
@@ -23,7 +27,7 @@ Hiện trạng code: ba node ảnh mẫu (Hồ sơ nhân vật, Hồ sơ không 
 Mục tiêu
 1. Node **Đồ vật** cho tải ảnh thật vào **từng trạng thái** của từng món (kéo thả hoặc bấm chọn file, nhiều ảnh mỗi trạng thái). Trạng thái có ảnh thật → dùng luôn, không gọi Muse. Trạng thái chưa có ảnh → Muse vẽ **dựa trên ảnh thật** của chính món đó.
 2. Node **Hồ sơ không gian** cho tải ảnh thật bối cảnh. Có ảnh thật → dùng luôn, không gọi Muse.
-3. **Biên kịch nhận sản phẩm làm đầu vào**: viết kịch bản xoay quanh đúng sản phẩm, gọi đúng tên và đúng các trạng thái đã có; app tự kiểm, sai thì nhờ Muse sửa trong cùng chat như hiện nay.
+3. **Biên kịch nhận sản phẩm làm đầu vào**: khi dùng sản phẩm thì gọi đúng tên và đúng các trạng thái đã có; app tự kiểm, sai thì nhờ Muse sửa trong cùng chat như hiện nay.
 4. Từng thẻ Cảnh (nhóm Phân cảnh) nhận được cả sản phẩm có ảnh thật lẫn đồ phụ Biên kịch nghĩ thêm.
 5. Ảnh thật vào **kho tài sản** như ảnh Muse vẽ, chọn lại ở workflow khác không phải tải lại, không tốn lượt.
 
@@ -38,7 +42,6 @@ Không làm lần này
 Thất bại dù chạy được
 - Sản phẩm trong video khác sản phẩm thật (sai hình dạng, sai màu, mất logo in trên sản phẩm, thêm chi tiết không có).
 - Biên kịch dùng trạng thái sản phẩm không có ảnh (vd "bàn gập đôi" khi chỉ có "gấp phẳng") mà app không chặn.
-- Sản phẩm chỉ xuất hiện thoáng qua hoặc không xuất hiện.
 - Tốn lượt Muse vẽ lại thứ đã có ảnh thật.
 - Workflow cũ (không có ảnh thật) mở ra bị hỏng hoặc chạy lại tốn lượt.
 
@@ -80,7 +83,7 @@ Thất bại dù chạy được
 - Kiểm câu trả lời (`parseWriterReply`) thêm luật, sai thì nhờ sửa như các luật hiện có:
   - Tên và trạng thái đồ vật trong từng cảnh phải có trong **sản phẩm + đồ phụ** (dùng lại `checkShotList` với danh sách gộp).
   - Đồ phụ không được trùng tên sản phẩm (Biên kịch không được định nghĩa lại sản phẩm).
-  - Sản phẩm xuất hiện ở **ít nhất một nửa số cảnh (làm tròn lên) và bắt buộc có trong cảnh cuối** (chủ dự án chọn 03/11/2026). "Xuất hiện" = trường đồ vật của cảnh có tên một sản phẩm. Có nhiều sản phẩm thì đếm cảnh có ít nhất một sản phẩm. Lời nhắc luật này cũng ghi vào prompt Biên kịch để Muse viết đúng ngay lần đầu, đỡ lượt sửa.
+- **Không** có luật về việc sản phẩm xuất hiện ở cảnh nào, bao nhiêu cảnh, bao lâu. Việc đó do ý tưởng/prompt và cách nối node của người làm quyết định. App chỉ lo **cố định** sản phẩm, chủ thể, không gian (đúng tên, đúng trạng thái, đúng ảnh).
 - Cổng ra `props` (danh sách đồ vật) của Biên kịch chỉ chứa **đồ phụ**, để node Đồ vật nối từ Biên kịch không vẽ lại sản phẩm bằng Muse.
 - Khoá cache Biên kịch đổi theo sản phẩm (đã đúng sẵn vì prompt chứa sản phẩm).
 
@@ -113,7 +116,7 @@ Bối cảnh có ảnh thật: cảnh không người, không đồ vật vẫn 
 
 ## 4. Kiểm chứng
 
-- Test đơn vị (dịch vụ `fake`): tải ảnh hợp lệ / sai định dạng / quá cỡ / trùng; Đồ vật đủ ảnh thật → 0 lượt, thiếu một trạng thái → 1 lượt có đính kèm ảnh thật, đổi ảnh → khoá cache đổi; Không gian có ảnh → 0 lượt; Biên kịch dùng trạng thái lạ / định nghĩa lại sản phẩm / bỏ quên sản phẩm → bị bắt; Biên kịch có cổng Sản phẩm → mọi thẻ Cảnh sinh ra được nối sản phẩm; Cảnh gộp sản phẩm + đồ phụ, trùng tên → lỗi, ảnh sản phẩm được đính kèm trước; workflow cũ mở ra không đổi khoá cache.
+- Test đơn vị (dịch vụ `fake`): tải ảnh hợp lệ / sai định dạng / quá cỡ / trùng; Đồ vật đủ ảnh thật → 0 lượt, thiếu một trạng thái → 1 lượt có đính kèm ảnh thật, đổi ảnh → khoá cache đổi; Không gian có ảnh → 0 lượt; Biên kịch dùng trạng thái lạ / định nghĩa lại sản phẩm → bị bắt; Biên kịch có cổng Sản phẩm → mọi thẻ Cảnh sinh ra được nối sản phẩm; Cảnh gộp sản phẩm + đồ phụ, trùng tên → lỗi, ảnh sản phẩm được đính kèm trước; workflow cũ mở ra không đổi khoá cache.
 - e2e (Playwright, dịch vụ `fake`): tải ảnh vào một trạng thái trên giao diện, chạy workflow mẫu 3.7, thấy ảnh thật trên thẻ node và trong cảnh.
 - Muse thật (tốn lượt, ghi `TASKS.md`): một sản phẩm thật với 2 ảnh trạng thái + 1 trạng thái vẽ thêm, Biên kịch 4–6 cảnh, dựng phim. Xem bằng mắt: sản phẩm giống ảnh thật, logo còn. Ước khoảng 10–15 lượt.
 
