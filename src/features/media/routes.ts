@@ -10,6 +10,14 @@ const FALLBACK_TYPE: Record<string, string> = { video: "video/mp4", image: "imag
 const UPLOAD_EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 export const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
+// Dấu hiệu đầu file đúng loại đã khai. Kiểm trước khi đưa cho ffprobe: ffprobe tự đoán định dạng theo nội dung, nên một
+// file giả (vd danh sách HLS trỏ tới file khác hoặc địa chỉ mạng) có thể khiến nó mở thứ ngoài file tải lên.
+const MAGIC: Record<string, (b: Buffer) => boolean> = {
+  "image/jpeg": (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  "image/png": (b) => b.length > 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  "image/webp": (b) => b.length > 12 && b.toString("latin1", 0, 4) === "RIFF" && b.toString("latin1", 8, 12) === "WEBP",
+};
+
 export function registerMediaRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<{ Params: { id: string } }>("/api/media/:id", async (req, reply) => {
     const rec = deps.storage.getMedia(req.params.id);
@@ -35,6 +43,7 @@ export function registerMediaRoutes(app: FastifyInstance, deps: AppDeps): void {
       const ext = UPLOAD_EXT[type];
       if (!ext || !Buffer.isBuffer(req.body)) return reply.code(415).send({ error: "Chỉ nhận ảnh JPG, PNG hoặc WebP" });
       if (req.body.length === 0) return reply.code(400).send({ error: "File ảnh trống" });
+      if (!MAGIC[type]?.(req.body)) return reply.code(400).send({ error: "Không đọc được ảnh, file có thể bị hỏng" });
 
       const tmp = await deps.storage.writeTemp(req.body, ext);
       let size: { width: number; height: number };

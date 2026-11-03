@@ -62,6 +62,17 @@ describe("tải ảnh thật lên (POST /api/media/upload)", () => {
     expect(mediaCount()).toBe(before);
   });
 
+  it("đầu file không đúng loại đã khai (jpg khai là png, danh sách HLS khai là jpg) → 400, không đưa cho ffmpeg, không thêm media", async () => {
+    const before = mediaCount();
+    const asPng = await upload(await image("jpg"), "image/png");
+    expect(asPng.statusCode).toBe(400);
+    const playlist = ["#EXTM3U", "#EXT-X-TARGETDURATION:1", "#EXTINF:1,", "file:///C:/Windows/win.ini", "#EXT-X-ENDLIST", ""].join("\n");
+    const hls = await upload(Buffer.from(playlist), "image/jpeg");
+    expect(hls.statusCode).toBe(400);
+    expect(hls.json<{ error: string }>().error).toBe("Không đọc được ảnh, file có thể bị hỏng");
+    expect(mediaCount()).toBe(before);
+  });
+
   it("ảnh HEIC → 415 với lời dặn lưu lại thành JPG", async () => {
     const res = await upload(Buffer.from("heic"), "image/heic");
     expect(res.statusCode).toBe(415);
