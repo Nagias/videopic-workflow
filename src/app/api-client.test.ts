@@ -54,7 +54,7 @@ describe("đọc dữ liệu lúc máy chủ đang khởi động (502)", () => 
 
   it("502 vài lần rồi trả lời được → tự thử lại, ra kết quả, không báo lỗi", async () => {
     vi.useFakeTimers();
-    const fetchMock = vi.fn().mockResolvedValueOnce(bad(502)).mockResolvedValueOnce(bad(503)).mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(ok());
+    const fetchMock = vi.fn().mockResolvedValueOnce(bad(502)).mockResolvedValueOnce(bad(503)).mockResolvedValueOnce(bad(504)).mockResolvedValue(ok());
     vi.stubGlobal("fetch", fetchMock);
     const pending = api.listWorkflows();
     await vi.runAllTimersAsync();
@@ -81,6 +81,13 @@ describe("đọc dữ liệu lúc máy chủ đang khởi động (502)", () => 
     const fetchMock = vi.fn(() => Promise.resolve(bad(502)));
     vi.stubGlobal("fetch", fetchMock);
     await expect(api.cancelRun("r1")).rejects.toThrow("lỗi 502");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("không nối được hẳn (trang giao diện đã tắt) → báo ngay, không chờ", async () => {
+    const fetchMock = vi.fn(() => Promise.reject(new TypeError("Failed to fetch")));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(api.listWorkflows()).rejects.toThrow("Failed to fetch");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

@@ -44,8 +44,9 @@ export class WorkflowConflictError extends Error {
   }
 }
 
-// Máy chủ đang bật/khởi động lại (vừa bấm Khoi-dong-VideoPic.cmd, hoặc `tsx watch` chạy lại khi code đổi): Vite trả 502/503/504
-// hoặc trình duyệt không nối được. Lệnh ĐỌC thử lại trong khoảng 40 giây rồi mới báo; lệnh ghi không gửi lại (tránh làm hai lần).
+// Máy chủ đang bật/khởi động lại (vừa bấm Khoi-dong-VideoPic.cmd, hoặc `tsx watch` chạy lại khi code đổi): Vite vẫn sống và trả
+// 502/503/504. Lệnh ĐỌC thử lại trong khoảng 40 giây rồi mới báo; lệnh ghi không gửi lại (tránh làm hai lần).
+// Không nối được hẳn (fetch ném lỗi) nghĩa là cả trang giao diện đã tắt: chờ vô ích, báo ngay như cũ.
 const NOT_UP = new Set([502, 503, 504]);
 // Tổng ~40 giây: đo 03/11/2026 máy bận thì máy chủ cần ~21 giây mới lên sau khi bật.
 const READ_RETRY_DELAYS_MS = [500, 1000, 1500, 2000, 2000, 2000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000];
@@ -56,15 +57,7 @@ async function call<S extends z.ZodType>(schema: S, url: string, init?: RequestI
   const isRead = (init?.method ?? "GET").toUpperCase() === "GET";
   for (let attempt = 0; ; attempt++) {
     const wait = isRead && !init?.signal?.aborted ? READ_RETRY_DELAYS_MS[attempt] : undefined;
-    let res: Response;
-    try {
-      res = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
-    } catch (err) {
-      // TypeError = không nối được tới máy chủ; lỗi khác (huỷ, quá hạn) để nơi gọi xử lý như cũ.
-      if (!(err instanceof TypeError) || wait === undefined) throw err;
-      await new Promise((r) => setTimeout(r, wait));
-      continue;
-    }
+    const res = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
     if (NOT_UP.has(res.status) && wait !== undefined) {
       await new Promise((r) => setTimeout(r, wait));
       continue;
