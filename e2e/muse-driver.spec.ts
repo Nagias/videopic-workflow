@@ -110,6 +110,7 @@ test.describe("Muse provider trên trang Muse giả (không tốn lượt thật
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       if (url.startsWith("/thread/t-")) res.end(shell("", "<div class='message'><p>Ảnh chân dung trước đó</p></div>", imageOk));
       else if (url.startsWith("/image")) res.end(shell(sideChatMenu(true), "", imageOk));
+      else if (url.startsWith("/disconnected")) res.end("<!doctype html><html><body><h1>Muse is disconnected</h1><p>We disconnected Muse to protect your information. Submit a feedback ticket to reconnect.</p><button>Submit a ticket</button></body></html>");
       else if (url.startsWith("/refuse")) res.end(shell(sideChatMenu(true), "", imageRefuse));
       else if (url.startsWith("/flaky")) res.end(shell(sideChatMenu(true), "", ++flakyVisits === 1 ? imageFail : imageOk));
       else if (url.startsWith("/text")) res.end(shell(sideChatMenu(true), "", textReply));
@@ -133,6 +134,18 @@ test.describe("Muse provider trên trang Muse giả (không tốn lượt thật
     return createMuseProvider(cfg, createAccountPool(cfg.profilesDir, 0));
   };
   const ctx = (messages: string[]) => ({ signal: new AbortController().signal, report: (m: string) => messages.push(m), storage: env.storage, ffmpeg: env.ffmpeg });
+
+  test("tài khoản bị Meta ngắt (Muse is disconnected): báo đúng nguyên nhân, không gửi gì, tạm gạt tài khoản ra", async () => {
+    test.setTimeout(120_000);
+    const cfg = { ...env.cfg, museLive: true, museUrl: `${baseUrl}/disconnected`, museChannel: process.env.CI ? ("chromium" as const) : ("chrome" as const) };
+    const pool = createAccountPool(cfg.profilesDir, 0);
+    const messages: string[] = [];
+    await expect(createMuseProvider(cfg, pool).generateImage({ prompt: "x", references: [], session: "new" }, ctx(messages))).rejects.toThrow(
+      /Meta đã ngắt Muse trên tài khoản muse_vid_01.*Submit a ticket/,
+    );
+    expect(messages.some((m) => m.startsWith("Muse đang tạo"))).toBe(false);
+    expect(pool.snapshot().find((s) => s.id === "muse_vid_01")?.state).toBe("needs_login");
+  });
 
   test("video: mở chat phụ qua menu, gửi prompt, nhận đúng clip mới 5 giây", async () => {
     const messages: string[] = [];
