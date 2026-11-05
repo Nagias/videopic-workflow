@@ -17,6 +17,8 @@ import {
   type RunScope,
   type SaveWorkflowBody,
   type WorkflowResponse,
+  UPLOAD_PATH,
+  UploadResponseSchema,
 } from "../shared/api";
 
 // Máy chủ từ chối: lời báo tiếng Việt của máy chủ (hoặc mã lỗi), kèm mã trạng thái và thân trả về.
@@ -42,14 +44,31 @@ export class WorkflowConflictError extends Error {
   }
 }
 
+// Máy chủ đang bật/khởi động lại (vừa bấm Khoi-dong-VideoPic.cmd, hoặc `tsx watch` chạy lại khi code đổi): Vite vẫn sống và trả
+// 502/503/504. Lệnh ĐỌC thử lại trong khoảng 40 giây rồi mới báo; lệnh ghi không gửi lại (tránh làm hai lần).
+// Không nối được hẳn (fetch ném lỗi) nghĩa là cả trang giao diện đã tắt: chờ vô ích, báo ngay như cũ.
+const NOT_UP = new Set([502, 503, 504]);
+// Tổng ~40 giây: đo 03/11/2026 máy bận thì máy chủ cần ~21 giây mới lên sau khi bật.
+const READ_RETRY_DELAYS_MS = [500, 1000, 1500, 2000, 2000, 2000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000];
+const notUpMessage = (status: number) =>
+  `Máy chủ của app chưa trả lời (lỗi ${status}). Nếu cửa sổ VideoPic Workflow đã đóng thì bấm đúp Khoi-dong-VideoPic.cmd để bật lại`;
+
 async function call<S extends z.ZodType>(schema: S, url: string, init?: RequestInit): Promise<z.infer<S>> {
-  const res = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
-  const body: unknown = await res.json().catch(() => null);
-  if (!res.ok) {
-    const err = ApiErrorSchema.safeParse(body);
-    throw new ApiError(err.success ? err.data.error : `Máy chủ trả lỗi ${res.status}`, res.status, body);
+  const isRead = (init?.method ?? "GET").toUpperCase() === "GET";
+  for (let attempt = 0; ; attempt++) {
+    const wait = isRead && !init?.signal?.aborted ? READ_RETRY_DELAYS_MS[attempt] : undefined;
+    const res = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
+    if (NOT_UP.has(res.status) && wait !== undefined) {
+      await new Promise((r) => setTimeout(r, wait));
+      continue;
+    }
+    const body: unknown = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = ApiErrorSchema.safeParse(body);
+      throw new ApiError(err.success ? err.data.error : NOT_UP.has(res.status) ? notUpMessage(res.status) : `Máy chủ trả lỗi ${res.status}`, res.status, body);
+    }
+    return schema.parse(body);
   }
-  return schema.parse(body);
 }
 
 export const ESTIMATE_TIMEOUT_MS = 20_000;
@@ -128,5 +147,10 @@ export const api = {
   getRun: (runId: string) => call(RunResponseSchema, `/api/runs/${encodeURIComponent(runId)}`),
   getLatestRun: (workflowId: string) => call(LatestRunResponseSchema, `/api/workflows/${encodeURIComponent(workflowId)}/runs/latest`),
   getMuseAccounts: () => call(MuseAccountsResponseSchema, "/api/muse/accounts"),
+  // Ảnh thật từ máy: gửi nguyên byte, máy chủ kiểm loại và cỡ. File không phải ảnh thì báo ngay, không gửi.
+  uploadImage: (file: File) => {
+    if (!file.type.startsWith("image/")) return Promise.reject(new Error("Chỉ nhận ảnh JPG, PNG hoặc WebP"));
+    return call(UploadResponseSchema, UPLOAD_PATH, { method: "POST", body: file, headers: { "Content-Type": file.type } });
+  },
   listAssets: (kind: AssetKind) => call(AssetListResponseSchema, `/api/assets?kind=${encodeURIComponent(kind)}`),
 };

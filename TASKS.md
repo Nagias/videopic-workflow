@@ -113,3 +113,16 @@ Tổng lượt Muse thật Đợt 1A: 1.
 - [ ] `estimateRun` đổi lỗi không phải `GraphError` thành 500
 - [ ] Regroup xoá đúng node của `scope.nodeId` thì báo lỗi chung chung
 - [ ] `Editor.tsx` nên tách hook `useRunSync`
+
+
+## Ảnh thật cho sản phẩm và bối cảnh (kế hoạch: `docs/superpowers/plans/2026-11-03-anh-that.md`)
+
+- [x] Task 1: nhận ảnh tải lên (+ kiểm dấu hiệu đầu file theo soát bảo mật)
+- [x] Task 2: Đồ vật dùng ảnh thật theo trạng thái
+- [x] Task 3: Không gian dùng ảnh thật
+- [x] Task 4: ô kéo thả ảnh trên giao diện
+- [x] Task 5: Cảnh nhận cổng Sản phẩm, giữ logo
+- [x] Task 6: Biên kịch nhận sản phẩm
+- [x] Task 7: tự nối Sản phẩm vào nhóm cảnh, Ghép phim kiểm trước
+- [ ] Task 8: tài liệu, verify:full, bấm thử app, PR
+- [ ] Task 9: thử Muse thật (cần 2–3 ảnh sạch của một sản phẩm từ chủ dự án)

@@ -46,6 +46,7 @@ const cacheInputs = (p: SceneParams, known: EstimateKnown | undefined): ShotCach
     character: pickInput(inputs, "character", "imageset"),
     location: pickInput(inputs, "location", "imageset"),
     props: pickInput(inputs, "props", "props"),
+    product: pickInput(inputs, "product", "props"),
     prevClipId: pickInput(inputs, "follow", "video")?.mediaId,
   };
 };
@@ -58,6 +59,8 @@ export const definition = defineNode<SceneParams>({
     { name: "character", kind: "imageset", label: "Nhân vật" },
     { name: "location", kind: "imageset", label: "Không gian" },
     { name: "props", kind: "props", label: "Đồ vật", optional: true },
+    // Đồ vật có ảnh thật (spec 2026-11-03 mục 3.5): cổng riêng để workflow cũ và ảnh chụp nhóm giữ nguyên.
+    { name: "product", kind: "props", label: "Sản phẩm", optional: true },
     { name: "follow", kind: "video", label: "Nối tiếp", optional: true },
   ],
   outputs: [

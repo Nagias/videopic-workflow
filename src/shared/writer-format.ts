@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { checkShotList, ShotSchema, type Shot } from "./director";
+import { checkShotList, ShotSchema, type KnownProp, type Shot } from "./director";
 import { propSpecProblems, PropSpecItemSchema, type PropSpecItem } from "./ports";
 
 // Đọc câu trả lời chữ của Biên kịch: lấy khối JSON, kiểm cấu trúc và luật đạo diễn (cùng luật với Danh sách cảnh).
@@ -37,7 +37,9 @@ function fillDefaults(value: unknown): unknown {
 
 export type WriterParse = { ok: true; value: WriterOutput } | { ok: false; errors: string[] };
 
-export function parseWriterReply(text: string): WriterParse {
+// products: sản phẩm có ảnh thật nối vào Biên kịch. Cảnh được dùng sản phẩm (đúng tên, đúng trạng thái), nhưng "props" của
+// kịch bản không được khai báo lại sản phẩm (cổng ra props chỉ là đồ phụ, node Đồ vật nối từ đây sẽ không vẽ lại sản phẩm).
+export function parseWriterReply(text: string, products: KnownProp[] = []): WriterParse {
   let json: unknown;
   try {
     json = fillDefaults(extractJsonBlock(text));
@@ -46,7 +48,9 @@ export function parseWriterReply(text: string): WriterParse {
   }
   const parsed = WriterOutputSchema.safeParse(json);
   if (!parsed.success) return { ok: false, errors: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) };
-  const known = parsed.data.props.map((p) => ({ name: p.name, states: p.states }));
-  const errors = [...propSpecProblems(parsed.data.props), ...checkShotList(parsed.data.shots, known).errors];
+  const isProduct = (name: string) => products.some((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const redefined = parsed.data.props.filter((p) => isProduct(p.name)).map((p) => `Đồ vật "${p.name}" là sản phẩm đã có ảnh thật, không được khai báo lại trong "props"`);
+  const known = [...products, ...parsed.data.props.filter((p) => !isProduct(p.name)).map((p) => ({ name: p.name, states: p.states }))];
+  const errors = [...redefined, ...propSpecProblems(parsed.data.props), ...checkShotList(parsed.data.shots, known).errors];
   return errors.length ? { ok: false, errors } : { ok: true, value: parsed.data };
 }

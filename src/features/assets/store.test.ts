@@ -20,3 +20,26 @@ describe("kho tài sản", () => {
     expect(listAssets(env.db, "character").map((a) => a.id).sort()).toEqual(["k-khac", "k-moi"]);
   });
 });
+
+describe("kho tài sản — ảnh thật của Đồ vật", () => {
+  let env: TestEnv;
+  beforeEach(() => {
+    env = createTestEnv();
+  });
+  afterEach(async () => {
+    await env.cleanup();
+  });
+
+  it("lưu kho Đồ vật giữ photos của từng món", () => {
+    const params = { items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", states: "gấp phẳng, trong túi", photos: { "gấp phẳng": ["m1", "m2"] } }], provider: "fake" };
+    const outputs = {
+      props: {
+        kind: "props" as const,
+        items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", images: [{ mediaId: "m1", state: "gấp phẳng" }, { mediaId: "m2", state: "gấp phẳng" }, { mediaId: "m3", state: "trong túi" }] }],
+      },
+    };
+    recordAsset(env.db, { cacheKey: "k1", kind: "props", params, outputs });
+    const [asset] = listAssets(env.db, "props");
+    expect(asset?.params.items).toEqual([{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", states: "gấp phẳng, trong túi", photos: { "gấp phẳng": ["m1", "m2"] } }]);
+  });
+});

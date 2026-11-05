@@ -47,6 +47,25 @@ export const PropItemSchema = z.object({
 });
 export type PropItem = z.infer<typeof PropItemSchema>;
 
+// Trạng thái của một món theo thứ tự xuất hiện, bỏ trùng (một trạng thái có thể có nhiều ảnh thật).
+export const propStates = (item: PropItem): string[] => [...new Set(item.images.map((x) => x.state))];
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+// Món có ở cả node Sản phẩm và node Đồ vật (đồ phụ): lời báo lỗi, không trùng thì undefined.
+export function propSetClash(product: PropSetValue | undefined, props: PropSetValue | undefined): string | undefined {
+  const clash = props?.items.find((i) => product?.items.some((p) => sameName(p.name, i.name)));
+  return clash ? `Đồ vật "${clash.name}" có ở cả node Sản phẩm và node Đồ vật` : undefined;
+}
+
+// Sản phẩm (ảnh thật) + đồ phụ thành một danh sách, sản phẩm đứng trước. Trùng tên thì giữ bản sản phẩm
+// (nơi chạy phải báo lỗi bằng propSetClash() trước; ở đây không ném để ước tính không vỡ).
+export function mergePropSets(product: PropSetValue | undefined, props: PropSetValue | undefined): PropSetValue | undefined {
+  if (!product) return props;
+  const extra = (props?.items ?? []).filter((i) => !product.items.some((p) => sameName(p.name, i.name)));
+  return { kind: "props", items: [...product.items, ...extra] };
+}
+
 export const StoryboardShotSchema = z.object({
   shotId: z.string(),
   status: z.enum(["pending", "running", "done", "failed", "skipped"]),

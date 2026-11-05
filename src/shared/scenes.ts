@@ -11,14 +11,16 @@ export const SCENE_GRID = { cols: 6, width: 230, height: 250 } as const;
 
 export const SCENES_EDITED_MESSAGE = "Biên kịch ra bộ cảnh mới nhưng thẻ cảnh đã được sửa tay — chọn Thay hoặc Giữ";
 
-const REF_PORTS = ["character", "location", "props"] as const;
+const REF_PORTS = ["character", "location", "props", "product"] as const;
 type RefPort = (typeof REF_PORTS)[number];
+// Cổng ra của node nguồn cho từng cổng tham chiếu của Cảnh. Sản phẩm là node Đồ vật (cổng ra "props") cắm vào cổng "product".
+const SOURCE_HANDLE: Record<RefPort, string> = { character: "character", location: "location", props: "props", product: "props" };
 
 export type ExpandScenesArgs = {
   writerId?: string;
   groupId?: string;
   shots: Shot[];
-  // Mã node nguồn; cổng ra của node Nhân vật/Không gian/Đồ vật trùng tên cổng vào của Cảnh.
+  // Mã node nguồn; cổng ra lấy theo SOURCE_HANDLE.
   refs: Partial<Record<RefPort, string>>;
   provider: ProviderId;
   resultKey?: string;
@@ -110,7 +112,7 @@ export function expandScenes(graph: WorkflowGraph, a: ExpandScenesArgs): { graph
   ids.forEach((id, i) => {
     for (const port of REF_PORTS) {
       const ref = a.refs[port];
-      if (ref) wire(ref, port, id, port);
+      if (ref) wire(ref, SOURCE_HANDLE[port], id, port);
     }
     if (a.shots[i]!.link === "chain" && i > 0) wire(ids[i - 1]!, "clip", id, "follow");
     wire(id, "clip", combineId, "clips");

@@ -131,6 +131,12 @@ export type AssetSummary = z.infer<typeof AssetSummarySchema>;
 export const AssetListResponseSchema = z.object({ assets: z.array(AssetSummarySchema) });
 export type AssetListResponse = z.infer<typeof AssetListResponseSchema>;
 
+// Viết đúng chữ này ở app.post() trong src/features/media/routes.ts (test kiến trúc đọc chữ ở đó).
+export const UPLOAD_PATH = "/api/media/upload";
+// POST UPLOAD_PATH: ảnh thật người dùng tải lên (giữ nguyên định dạng và khung gốc).
+export const UploadResponseSchema = z.object({ mediaId: z.string().min(1), width: z.number(), height: z.number() });
+export type UploadResponse = z.infer<typeof UploadResponseSchema>;
+
 export const ApiErrorSchema = z.object({ error: z.string() });
 // Thân 409 của PUT /api/workflows/:id: bản đang lưu trên máy chủ.
 export const SaveConflictSchema = z.object({ error: z.string(), workflow: WorkflowResponseSchema });

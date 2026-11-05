@@ -47,6 +47,14 @@ describe("promptPreview — Cảnh", () => {
     expect(text).toContain("cô gái tóc đen, áo khoác xám");
   });
 
+  it("cảnh có sản phẩm (cổng Sản phẩm): cả hai prompt dặn giữ chữ và logo in trên sản phẩm, như máy chủ dựng", () => {
+    const p = scene({ props: "Bàn gấp: gấp phẳng" });
+    const product = node("sp", "props", { items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", states: "gấp phẳng" }], provider: "fake" });
+    const r = promptPreview("s", [...nodes(p), product], [...edges, wire("sp", "props", "s", "product")], noOutput);
+    if ("note" in r) throw new Error("phải có prompt");
+    for (const sec of r.sections) expect(sec.text).toContain("giữ nguyên chữ và logo in trên sản phẩm");
+  });
+
   it("cảnh nối (có dây Nối tiếp): không có prompt ảnh, chỉ prompt video", () => {
     const prev = node("prev", "scene", scene());
     const r = promptPreview("s", [...nodes(scene({ start: "" })), prev], [...edges, wire("prev", "clip", "s", "follow")], noOutput);
@@ -108,6 +116,14 @@ describe("promptPreview — Biên kịch và node khác", () => {
     expect(r.sections[0]!.text).toBe(writerPrompt({ idea: parsed.idea, shotCount: parsed.shotCount }));
     expect(r.sections[0]!.text).toContain(`Số cảnh: ${writerDefinition.defaults.shotCount}`);
     expect(r.sections[0]!.text).toContain("Ý tưởng: Cô gái dựng lều bên suối rồi nhóm lửa nấu nước\n");
+  });
+
+  it("Biên kịch nối Sản phẩm chưa chạy: prompt có đoạn sản phẩm với trạng thái theo chữ gõ", () => {
+    const w = node("w", "writer", { idea: "Cô gái giới thiệu bàn dã ngoại trên hồ", shotCount: 6, provider: "fake" });
+    const sp = node("sp", "props", { items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn", states: "gấp phẳng, có chân" }], provider: "fake" });
+    const r = promptPreview("w", [w, sp], [wire("sp", "props", "w", "product")], noOutput);
+    if ("note" in r) throw new Error("phải có prompt");
+    expect(r.sections[0]!.text).toContain("Bàn gấp — bàn dã ngoại gấp gọn — trạng thái: gấp phẳng, có chân");
   });
 
   it("node khác (và node không có): Prompt được tạo khi chạy", () => {

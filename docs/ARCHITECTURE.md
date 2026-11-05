@@ -103,12 +103,23 @@ Công thức rút từ ComfyUI, Magnific, Higgsfield, Kling, Google Flow và s�
 - **Biên kịch** (`src/nodes/writer/`): chat Muse viết JSON danh sách cảnh + đồ vật theo luật ViMax; `parseWriterReply()` kiểm bằng đúng `checkShotList()`; sai thì gửi lỗi sửa trong cùng chat (tối đa 3 lần). Muse đọc câu trả lời chữ: chờ chữ đứng yên 3 lần quét, cắt sau mã đánh dấu cuối prompt.
 - Ghép phim nén **một lần** (x264 medium, CRF 17), bù sáng áp ngay trong lần nén đó.
 
+### 6.3 Ảnh thật cho sản phẩm và bối cảnh (03/11/2026, thiết kế `docs/superpowers/specs/2026-11-03-anh-that-design.md`)
+
+- Tải ảnh: `POST /api/media/upload` (jpg, png, webp, tối đa 20 MB, kiểm dấu hiệu đầu file trước khi đưa cho ffprobe, giữ nguyên định dạng và khung gốc) → `storage.importFile` (`source: "upload"`). Lớp chặn `localRequestProblem()` chỉ nhận `image/*` ở đúng đường này.
+- Node **Đồ vật**: mỗi dòng có `photos` (tên trạng thái → mã ảnh). `planItem()` là kế hoạch duy nhất cho chạy, ước tính, dự đoán: trạng thái có ảnh dùng ảnh (0 lượt); thiếu ảnh thì Muse vẽ, đính kèm tối đa 2 ảnh thật của trạng thái đầu tiên có ảnh, prompt giữ chữ/logo in trên sản phẩm. Món không ảnh: khoá và prompt y hệt trước.
+- Node **Không gian**: `photos` (tối đa 2: toàn cảnh, cận) → bộ ảnh không gọi dịch vụ. Cảnh không người không đồ vật vẫn đi chữ→video (không bám ảnh bối cảnh thật).
+- Cổng **Sản phẩm** (`product`, kiểu `props`) ở Biên kịch và Cảnh. Biên kịch chỉ được dùng đúng tên/trạng thái sản phẩm, không khai báo lại; không có luật số cảnh có sản phẩm (chủ dự án 03/11/2026). Tạo thẻ cảnh tự nối Sản phẩm vào mọi Cảnh. Cảnh gộp sản phẩm + đồ phụ, ảnh sản phẩm đính kèm trước.
+- Prompt sản phẩm là hàm **bọc ngoài** (`productKeyframePrompt`, `productMotionPrompt`, `productWriterPrompt`), không sửa `keyframePrompt`/`motionPrompt`/`writerPrompt`: mã nguồn các hàm đó là phiên bản cache của mọi Cảnh/Biên kịch, sửa là mọi kết quả cũ hiện "chưa chạy". Test dấu vân tay `src/shared/prompts.test.ts` chặn đổi prompt cũ.
+
 ## 7. Lộ trình
 
 1. Bộ khung đi được: Prompt → Tạo video (Muse) → xem clip. (xong)
 2. Video ngắn đến ~2 phút: hồ sơ gốc, ảnh khung, chuỗi clip, chỉnh màu, ghép. (xong 28/10)
 3. Biên kịch viết danh sách cảnh bằng chính khung chat Muse; ảnh mẫu đồ vật; kho tài sản. (xong 28/10)
-4. Video dài 10–60 phút.
+4. Ảnh thật cho sản phẩm affiliate và bối cảnh. (xong 03/11)
+5. Khung dọc 9:16 (chủ dự án chọn làm ngay sau mục 4).
+6. App tự xem video mẫu và chép khung kịch bản.
+7. Video dài 10–60 phút.
 
 ## 8. Nguồn mượn
 

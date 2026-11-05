@@ -11,6 +11,11 @@ export const DEFAULT_LOOK = "Ảnh chụp bằng điện thoại như khung hìn
 const VIDEO_RULES =
   "Chuyển động thật, có lực, đúng vật lý; chỉ làm đúng việc đã tả, không làm thêm bước tiếp theo; không nhìn vào máy quay, không thêm người, không cắt cảnh, không chữ, khung ngang 16:9.";
 const STILL_RULES = "Bối cảnh đơn giản, không chữ, không logo, khung ngang 16:9.";
+// Cảnh có sản phẩm ảnh thật (spec 2026-11-03 mục 3.6): giữ chữ/logo in trên hàng thật, chỉ cấm chữ thêm vào.
+// Dùng qua productKeyframePrompt()/productMotionPrompt() bên dưới, KHÔNG sửa keyframePrompt()/motionPrompt(): mã nguồn hai hàm
+// đó là phiên bản cache của mọi thẻ Cảnh (SHOT_CACHE_VERSION), sửa là mọi cảnh cũ hiện "chưa chạy".
+const PRODUCT_STILL_RULES = "Bối cảnh đơn giản, giữ nguyên chữ và logo in trên sản phẩm như ảnh đính kèm, không thêm chữ hay logo nào khác, khung ngang 16:9.";
+const PRODUCT_VIDEO_RULES = VIDEO_RULES.replace("không chữ", "giữ nguyên chữ và logo in trên sản phẩm, không thêm chữ nào khác");
 
 export type ReferenceView = { view: string; label: string; prompt: string; inChatPrompt?: string };
 
@@ -55,6 +60,8 @@ export function keyframePrompt(shot: Shot, c: KeyframeCtx): string {
     .join(" ");
 }
 
+export const productKeyframePrompt = (shot: Shot, c: KeyframeCtx): string => keyframePrompt(shot, c).replace(STILL_RULES, PRODUCT_STILL_RULES);
+
 function endStates(shot: Shot): string {
   const changed = parsePropLines(shot.props).items.filter((p) => p.to && p.to.toLowerCase() !== p.from.toLowerCase());
   return changed.length ? `Cuối cảnh: ${changed.map((p) => `${p.name} ${p.to}`).join(", ")}.` : "";
@@ -74,6 +81,8 @@ export function motionPrompt(shot: Shot, c: { character?: string } = {}): string
     .filter(Boolean)
     .join(" ");
 }
+
+export const productMotionPrompt = (shot: Shot, c: { character?: string } = {}): string => motionPrompt(shot, c).replace(VIDEO_RULES, PRODUCT_VIDEO_RULES);
 
 export function textVideoPrompt(shot: Shot, c: { look: string; location: string }): string {
   return [
@@ -127,6 +136,19 @@ export function propStatePrompt(item: PropSpecItem, state: string, look: string,
   return `Ảnh tiếp theo, khung ngang 16:9: chính ${item.name} ${where}, cùng góc chụp và nền, nay ở trạng thái: ${state}. Không có người, không có tay người. ${look}. Không chữ.`;
 }
 
+// Sản phẩm có ảnh thật (spec 2026-11-03): vẽ trạng thái còn thiếu từ ảnh thật, giữ logo in trên sản phẩm
+// (không dùng "Không chữ." vì Muse sẽ xoá cả chữ in trên hàng thật).
+const KEEP_PRODUCT = "giữ nguyên hình dạng, màu, chất liệu, chữ và logo in trên sản phẩm";
+
+export function productFromPhotoPrompt(item: PropSpecItem, state: string, look: string): string {
+  return `Tạo 1 ảnh khung ngang 16:9: ảnh chụp thật chính ${item.name} trong ảnh đính kèm (${item.description}), ${KEEP_PRODUCT}; nay ở trạng thái: ${state}. Chụp trọn món đồ, nằm trên mặt đất thật có bóng đổ tự nhiên, nền đơn giản, không có người, không có tay người. ${look}. Không thêm chữ nào khác.`;
+}
+
+export function productStatePrompt(item: PropSpecItem, state: string, look: string, attached = false): string {
+  const where = attached ? "trong ảnh đính kèm" : "trong ảnh bạn vừa tạo";
+  return `Ảnh tiếp theo, khung ngang 16:9: chính ${item.name} ${where}, cùng góc chụp và nền, ${KEEP_PRODUCT}; nay ở trạng thái: ${state}. Không có người, không có tay người. ${look}. Không thêm chữ nào khác.`;
+}
+
 // Biên kịch: luật chia cảnh học từ ViMax (khung đầu là ảnh đứng yên, chuyển động chỉ là việc xảy ra sau đó,
 // gọi nhân vật bằng đặc điểm nhìn thấy, cảnh đầu rộng nhất) + luật đồ vật/trạng thái của dự án.
 export const WRITER_TAG = "KỊCH BẢN JSON";
@@ -157,6 +179,18 @@ export function writerPrompt(w: { idea: string; shotCount: number; character?: s
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+// Biên kịch có sản phẩm ảnh thật (spec 2026-11-03 mục 3.4): chèn đoạn sản phẩm trước dòng số cảnh. Bọc ngoài writerPrompt()
+// thay vì sửa nó: mã nguồn writerPrompt là phiên bản cache của mọi node Biên kịch, sửa là mọi Biên kịch cũ hiện "chưa chạy".
+export function productWriterPrompt(w: Parameters<typeof writerPrompt>[0], products: PropSpecItem[]): string {
+  const base = writerPrompt(w);
+  if (products.length === 0) return base;
+  const list = products.map((i) => `${i.name} — ${i.description} — trạng thái: ${i.states.join(", ")}`).join("; ");
+  const block = `Sản phẩm chính (đã có ảnh thật, giữ nguyên tên; chỉ được dùng đúng các trạng thái liệt kê; không khai báo lại trong "props"): ${list}`;
+  const count = `Số cảnh: ${w.shotCount} (mỗi cảnh 5 giây).`;
+  return base.replace(count, `${block}
+${count}`);
 }
 
 export function repairPrompt(errors: string[]): string {

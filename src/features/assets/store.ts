@@ -4,7 +4,7 @@ import { assets } from "../../core/db/schema";
 import { collectMediaIds } from "../../core/media-ids";
 import type { AssetSummary } from "../../shared/api";
 import type { AssetKind } from "../../shared/node-definition";
-import type { NodeOutputs } from "../../shared/ports";
+import { propStates, type NodeOutputs } from "../../shared/ports";
 
 // Nơi ghi duy nhất của bảng assets.
 
@@ -24,7 +24,16 @@ function nameOf(kind: AssetKind, params: Record<string, unknown>, outputs: NodeO
 function storedParams(kind: AssetKind, params: Record<string, unknown>, outputs: NodeOutputs): Record<string, unknown> {
   const set = outputs.props;
   if (kind !== "props" || set?.kind !== "props") return params;
-  return { ...params, items: set.items.map((i) => ({ name: i.name, description: i.description, states: i.images.map((x) => x.state).join(", ") })) };
+  // Ảnh thật (photos) chỉ có trong tham số gõ tay: gắn lại theo tên món để chọn từ kho ra đúng ảnh thật.
+  const rows = Array.isArray(params.items) ? (params.items as { name?: unknown; photos?: unknown }[]) : [];
+  const photosOf = (name: string) => rows.find((r) => typeof r.name === "string" && r.name.trim().toLowerCase() === name.trim().toLowerCase())?.photos;
+  return {
+    ...params,
+    items: set.items.map((i) => {
+      const photos = photosOf(i.name);
+      return { name: i.name, description: i.description, states: propStates(i).join(", "), ...(photos ? { photos } : {}) };
+    }),
+  };
 }
 
 export function recordAsset(db: Db, a: { cacheKey: string; kind: AssetKind; params: unknown; outputs: NodeOutputs }): void {

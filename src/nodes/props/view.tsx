@@ -1,7 +1,26 @@
+import { useLayoutEffect, useRef } from "react";
 import { mediaUrl } from "../../shared/api";
 import type { NodeViewProps } from "../../features/editor/ui/node-kit";
+import { PhotoDrop } from "../../features/editor/ui/PhotoDrop";
 import { AssetPicker, ProviderSelect } from "../../features/editor/ui/widgets";
-import type { PropRow, PropsParams } from "./definition";
+import { orphanPhotos, photosFor, rowStates, type PropRow, type PropsParams } from "./definition";
+
+const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+// Ảnh thật của một trạng thái thay bằng danh sách mới (khoá cũ viết khác hoa thường cũng thay); danh sách rỗng thì bỏ khoá.
+// Không còn ảnh nào thì bỏ hẳn trường photos (tham số y hệt món chưa từng có ảnh).
+function withStatePhotos(row: PropRow, state: string, list: string[]): PropRow["photos"] {
+  const rest = Object.fromEntries(Object.entries(row.photos ?? {}).filter(([k]) => !sameText(k, state)));
+  return nonEmpty(list.length ? { ...rest, [state]: list } : rest);
+}
+
+const nonEmpty = (photos: NonNullable<PropRow["photos"]>): PropRow["photos"] => (Object.keys(photos).length ? photos : undefined);
+
+// Bỏ mọi ảnh mồ côi (khoá không còn khớp trạng thái nào).
+function withoutOrphans(row: PropRow): PropRow["photos"] {
+  const states = rowStates(row);
+  return nonEmpty(Object.fromEntries(Object.entries(row.photos ?? {}).filter(([k]) => states.some((s) => sameText(s, k)))));
+}
 
 export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsParams>) {
   const items = params.items ?? [];
@@ -9,6 +28,22 @@ export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsP
   const update = (i: number, patch: Partial<PropRow>) => setParams({ items: items.map((it, j) => (j === i ? { ...it, ...patch } : it)) });
   const remove = (i: number) => setParams({ items: items.filter((_, j) => j !== i) });
   const add = () => setParams({ items: [...items, { name: "", description: "", states: "" }] });
+  // Ô ảnh báo thay đổi sau khi tải xong (vài giây): áp lên tham số MỚI NHẤT, không lên bản lúc thả ảnh — nếu không, ảnh của ô
+  // khác vừa tải xong hoặc chữ vừa gõ trong lúc chờ sẽ bị ghi đè mất.
+  const latest = useRef(params);
+  useLayoutEffect(() => {
+    latest.current = params;
+  });
+  const changePhotos = (i: number, name: string, state: string, change: (list: string[]) => string[]) => {
+    const rows = latest.current.items ?? [];
+    // Tìm món theo vị trí; vị trí đã đổi (thêm/xoá dòng trong lúc tải) thì theo tên; món đã bị xoá thì thôi.
+    const k = rows[i] && sameText(rows[i].name, name) ? i : rows.findIndex((r) => sameText(r.name, name));
+    const row = rows[k];
+    if (!row) return;
+    const next = rows.map((r, j) => (j === k ? { ...r, photos: withStatePhotos(row, state, change(photosFor(row, state))) } : r));
+    latest.current = { ...latest.current, items: next };
+    setParams({ items: next });
+  };
   const addFromLibrary = (picked: Record<string, unknown>) => {
     const more = Array.isArray(picked.items) ? (picked.items as PropRow[]) : [];
     const fresh = more.filter((m) => !items.some((it) => it.name.trim().toLowerCase() === m.name.trim().toLowerCase()));
@@ -18,7 +53,7 @@ export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsP
   return (
     <div className="stack nowheel">
       <AssetPicker id={id} kind="props" onPick={addFromLibrary} />
-      <p className="hint">Nối cổng "Từ Biên kịch" thì danh sách dưới đây bị bỏ qua.</p>
+      <p className="hint">Nối cổng "Từ Biên kịch" thì danh sách dưới đây bị bỏ qua. Trạng thái có ảnh thật thì dùng ảnh đó, không tốn lượt; thiếu ảnh thì dịch vụ vẽ dựa trên ảnh thật.</p>
       {items.map((it, i) => (
         <div className="shot-row" key={i}>
           <div className="shot-head">
@@ -43,6 +78,32 @@ export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsP
             value={it.states}
             onChange={(e) => update(i, { states: e.target.value })}
           />
+          {rowStates(it).map((state, s) => (
+            <div className="photo-state" key={`${s}-${state}`}>
+              <span className="photo-state-name">{state}</span>
+              <PhotoDrop
+                ids={{
+                  drop: `prop-photo-drop-${id}-${i + 1}-${s + 1}`,
+                  photo: (k) => `prop-photo-${id}-${i + 1}-${s + 1}-${k}`,
+                  remove: (k) => `prop-photo-remove-${id}-${i + 1}-${s + 1}-${k}`,
+                }}
+                label={state}
+                photos={photosFor(it, state)}
+                onAdd={(added) => changePhotos(i, it.name, state, (list) => [...list, ...added.filter((m) => !list.includes(m))])}
+                onRemove={(m) => changePhotos(i, it.name, state, (list) => list.filter((x) => x !== m))}
+              />
+            </div>
+          ))}
+          {orphanPhotos(it).length > 0 && (
+            <div className="photo-orphans" data-testid={`prop-photo-orphan-${id}-${i + 1}`}>
+              <span className="node-warn">
+                {orphanPhotos(it).length} ảnh chưa gắn trạng thái (tên trạng thái đã đổi). Vẫn dùng làm mẫu khi vẽ trạng thái thiếu ảnh.
+              </span>
+              <button type="button" className="nodrag" data-testid={`prop-photo-orphan-remove-${id}-${i + 1}`} onClick={() => update(i, { photos: withoutOrphans(it) })}>
+                Bỏ ảnh chưa gắn
+              </button>
+            </div>
+          )}
         </div>
       ))}
       <button type="button" className="nodrag" data-testid={`add-prop-${id}`} onClick={add}>

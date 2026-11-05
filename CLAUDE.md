@@ -31,7 +31,7 @@ Cách đọc nhãn:
 | Workflow kéo-nối node, viết prompt trên node | Canvas React Flow, node Prompt và Tạo video (luồng 1 `FEATURE_MAP.md`) | Mới 2 loại node |
 | Đổi model | Node Tạo video chọn dịch vụ `fake` / `muse` (`src/providers/`) | Chưa có dịch vụ thứ ba |
 | Kết nối tài khoản Muse bằng Playwright + Chrome | `src/providers/muse/`, hồ sơ `.data/chrome_profiles/muse_vid_0N` | Chưa đính kèm ảnh |
-| Giữ mặt người, sản phẩm, không gian | — | Tính năng 2 (`docs/ARCHITECTURE.md` mục 6) |
+| Giữ mặt người, sản phẩm, không gian | Nhân vật vẽ bằng Muse trong một chat phụ; sản phẩm và bối cảnh nhận ảnh thật tải lên (`docs/ARCHITECTURE.md` mục 6.3) | Chưa tải ảnh người thật; khung dọc 9:16 chưa có |
 | Cảnh cuối video này là cảnh đầu video kia, ghép nối | — | Tính năng 2 |
 | Video ~2 phút, sau đó 10–60 phút | — | Tính năng 2 và 4 |
 | Kiến thức đạo diễn | — | Tính năng 3 |
@@ -173,3 +173,4 @@ Giải nghĩa các mục A/B/C (agent ghi lại đề xuất đã được duy�
 | Muse không trả ảnh/video, chat Muse ghi "tạm lỗi", "lỗi hệ thống" | node báo `MUSE_FAILED` | lỗi phía Muse: đợi rồi bấm Chạy lại (các cảnh đã xong được giữ). Xem ô nhiệm vụ bên phải trang Muse trong ảnh lỗi `.data/debug/` |
 | Muse từ chối ảnh có người | node báo `REFUSED` | không đính kèm ảnh người chân thực (chính sách Muse, `docs/ARCHITECTURE.md` mục 6.1) |
 | Muốn xem Chrome điều khiển Muse | — | chạy với `MUSE_HEADLESS=0` |
+| Mở app thấy "Máy chủ của app chưa trả lời (lỗi 502)" | giao diện đã tự thử lại ~40 giây mà máy chủ (cổng 8787) vẫn không lên | cửa sổ VideoPic Workflow đã đóng hoặc máy chủ lỗi khi bật: xem dòng báo trong cửa sổ đó, hoặc bấm đúp `Khoi-dong-VideoPic.cmd`. Máy chủ tự khởi động lại vài giây mỗi khi code trong thư mục đổi (`tsx watch`), giao diện tự chờ qua |

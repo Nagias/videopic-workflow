@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ShotSchema, type Shot } from "./director";
-import { expandScenes, groupEdited, keepWriterGroup, SCENE_GRID, snapshotGroup } from "./scenes";
+import { expandScenes, groupEdited, keepWriterGroup, rebuildWriterGroup, SCENE_GRID, snapshotGroup } from "./scenes";
 import { sha256Hex } from "./hash";
 import { SON_LA_SHOTS } from "./templates";
 import type { WorkflowGraph } from "./workflow";
@@ -196,5 +196,41 @@ describe("nhóm Phân cảnh (expandScenes)", () => {
     // Sửa chữ thật vẫn tính là sửa tay, dù đã có take.
     const edited: WorkflowGraph = { ...withTake(2), nodes: withTake(2).nodes.map((n) => (n.id === sceneId ? { ...n, params: { ...n.params, motion: "đổi hẳn chuyển động" } } : n)) };
     expect(groupEdited(edited, groupId)).toBe(true);
+  });
+});
+
+describe("nhóm Phân cảnh — Sản phẩm ảnh thật", () => {
+  const graphWithProduct = (): WorkflowGraph => ({
+    nodes: [
+      ...refsGraph().nodes,
+      { id: "sp", type: "props", position: { x: 40, y: 1500 }, params: { items: [{ name: "Bàn gấp", description: "bàn dã ngoại", states: "gấp phẳng" }], provider: "fake" } },
+      { id: "w", type: "writer", position: { x: 300, y: 40 }, params: { idea: "Cô gái giới thiệu bàn dã ngoại trên hồ", shotCount: 4, provider: "fake" } },
+    ],
+    edges: [
+      { id: "e1", source: "character-1", sourceHandle: "character", target: "w", targetHandle: "character" },
+      { id: "e2", source: "location-1", sourceHandle: "location", target: "w", targetHandle: "location" },
+      { id: "e3", source: "sp", sourceHandle: "props", target: "w", targetHandle: "product" },
+    ],
+  });
+
+  it("Biên kịch có dây Sản phẩm → mọi thẻ Cảnh có dây props → product từ đúng node đó", () => {
+    const shots = sonLaShots().slice(0, 4);
+    const { graph, groupId } = rebuildWriterGroup(graphWithProduct(), { writerId: "w", shots, resultKey: "k1" });
+    const ids = Array.from({ length: 4 }, (_, i) => `scene-${groupId}-${i + 1}`);
+    for (const id of ids) {
+      expect(graph.edges.filter((e) => e.target === id && e.targetHandle === "product").map((e) => [e.source, e.sourceHandle])).toEqual([["sp", "props"]]);
+    }
+  });
+
+  it("tạo lại nhóm giữ nguồn Sản phẩm đang cắm vào thẻ Cảnh", () => {
+    const shots = sonLaShots().slice(0, 4);
+    const first = rebuildWriterGroup(graphWithProduct(), { writerId: "w", shots, resultKey: "k1" });
+    const again = rebuildWriterGroup(first.graph, { writerId: "w", groupId: first.groupId, shots: sonLaShots().slice(0, 3), resultKey: "k2" });
+    expect(again.graph.edges.filter((e) => e.targetHandle === "product" && e.target !== "w").map((e) => e.source)).toEqual(["sp", "sp", "sp"]);
+  });
+
+  it("không có Sản phẩm → không có dây product, số dây tham chiếu như cũ", () => {
+    const { graph } = expandScenes(refsGraph(), { shots: sonLaShots(), refs: REFS, provider: "muse", origin: { x: 500, y: 40 } });
+    expect(graph.edges.filter((e) => e.targetHandle === "product")).toEqual([]);
   });
 });

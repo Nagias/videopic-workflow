@@ -7,10 +7,11 @@ import { registerMediaRoutes } from "./features/media/routes";
 import { registerMuseAccountRoutes } from "./features/muse-accounts/routes";
 import { registerRunRoutes } from "./features/runs/routes";
 import { registerWorkflowRoutes } from "./features/workflows/routes";
+import { UPLOAD_PATH } from "./shared/api";
 
 const LOCAL_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
 
-export function localRequestProblem(method: string, headers: Record<string, string | string[] | undefined>): string | null {
+export function localRequestProblem(method: string, headers: Record<string, string | string[] | undefined>, url: string): string | null {
   const host = typeof headers.host === "string" ? headers.host : "";
   if (!LOCAL_HOST_RE.test(host)) return "Chỉ nhận yêu cầu tới localhost";
   if (method === "GET" || method === "HEAD") return null;
@@ -20,8 +21,11 @@ export function localRequestProblem(method: string, headers: Record<string, stri
     if (originHost === null) return "Origin không hợp lệ";
     if (!LOCAL_HOST_RE.test(originHost)) return "Từ chối yêu cầu từ trang web khác";
   }
-  const ctype = typeof headers["content-type"] === "string" ? headers["content-type"] : "";
-  if (!ctype.toLowerCase().startsWith("application/json")) return "Yêu cầu ghi phải gửi dạng JSON";
+  const ctype = (typeof headers["content-type"] === "string" ? headers["content-type"] : "").toLowerCase();
+  // Đường tải ảnh nhận thân là byte ảnh. Kiểu image/* không thuộc nhóm trình duyệt được gửi chéo trang mà không hỏi
+  // trước (CORS preflight), nên trang web lạ vẫn không gửi được; Host/Origin đã kiểm ở trên như mọi lệnh ghi.
+  if (url.split("?")[0] === UPLOAD_PATH && ctype.startsWith("image/")) return null;
+  if (!ctype.startsWith("application/json")) return "Yêu cầu ghi phải gửi dạng JSON";
   return null;
 }
 
@@ -31,7 +35,7 @@ export async function buildServer(deps: AppDeps, opts: { logger?: boolean } = {}
   await app.register(fastifyStatic, { root: deps.cfg.mediaDir, serve: false });
 
   app.addHook("onRequest", async (req, reply) => {
-    const problem = localRequestProblem(req.method, req.headers);
+    const problem = localRequestProblem(req.method, req.headers, req.url);
     if (problem) return reply.code(403).send({ error: problem });
   });
 

@@ -221,3 +221,83 @@ describe("node scene (Cảnh)", () => {
     expect(definition.stepScope).toBe("film");
   });
 });
+
+describe("node scene (Cảnh) — sản phẩm ảnh thật", () => {
+  let env: TestEnv;
+  beforeEach(() => {
+    env = createTestEnv();
+  });
+  afterEach(async () => {
+    await env.cleanup();
+  });
+
+  const KEEP_LOGO = "giữ nguyên chữ và logo in trên sản phẩm";
+  const photo = async (colorHex: string): Promise<string> => {
+    const out = await env.storage.tmpPath("jpg");
+    await env.ffmpeg.makeTestImage({ out, colorHex, width: 400, height: 300 });
+    return (await env.storage.importFile(out, { kind: "image", source: "upload", width: 400, height: 300 })).id;
+  };
+  const setup = async () => {
+    const counter = countingFakeProviders();
+    const ctx = testNodeCtx(env, counter.providers);
+    const c = await runCharacter(ctx, {}, { description: CHARACTER, provider: "fake" });
+    const l = await runLocation(ctx, {}, { description: LOCATION, provider: "fake" });
+    const [flat, legs, bottle] = [await photo("111111"), await photo("222222"), await photo("333333")];
+    const product: PortValue = {
+      kind: "props",
+      items: [{ name: "Bàn gấp", description: "bàn dã ngoại gấp gọn mặt nhôm xám", images: [{ mediaId: flat, state: "gấp phẳng" }, { mediaId: legs, state: "có chân" }] }],
+    };
+    const props: PortValue = { kind: "props", items: [{ name: "bình nước", description: "bình giữ nhiệt inox", images: [{ mediaId: bottle, state: "đầy" }, { mediaId: bottle, state: "vơi" }] }] };
+    const before = { image: counter.log.image, video: counter.log.video };
+    return { counter, ctx, inputs: { character: c.character!, location: l.location! } as Record<string, PortValue>, product, props, flat, bottle, before };
+  };
+
+  it("cảnh có sản phẩm → ảnh khung đính kèm ảnh sản phẩm trước đồ phụ (dù đồ phụ đổi trạng thái), prompt ảnh và video giữ logo", async () => {
+    const s = await setup();
+    const p = definition.params.parse(scene("a", { props: "bình nước: đầy -> vơi\nBàn gấp: gấp phẳng" }));
+    await run(s.ctx, { ...s.inputs, product: s.product, props: s.props }, p);
+    const refs = s.counter.log.imageRefs.at(-1)!.map((r) => r.mediaId);
+    expect(refs.indexOf(s.flat)).toBeGreaterThanOrEqual(0);
+    expect(refs.indexOf(s.flat)).toBeLessThan(refs.indexOf(s.bottle));
+    expect(s.counter.log.imagePrompts.at(-1)).toContain(KEEP_LOGO);
+    expect(s.counter.log.imagePrompts.at(-1)).not.toContain("không chữ, không logo");
+    expect(s.counter.log.videoPrompts.at(-1)).toContain(KEEP_LOGO);
+  });
+
+  it("cảnh không nhắc sản phẩm dù có cổng Sản phẩm → prompt và khoá y hệt khi không nối (không gọi thêm)", async () => {
+    const s = await setup();
+    const p = definition.params.parse(scene("b", { props: "bình nước: đầy" }));
+    await run(s.ctx, { ...s.inputs, product: s.product, props: s.props }, p);
+    const calls = { image: s.counter.log.image, video: s.counter.log.video };
+    expect(calls.image - s.before.image).toBe(1);
+    expect(s.counter.log.imagePrompts.at(-1)).not.toContain(KEEP_LOGO);
+    await run(s.ctx, { ...s.inputs, props: s.props }, p);
+    expect({ image: s.counter.log.image, video: s.counter.log.video }).toEqual(calls);
+  });
+
+  it("cùng tên món ở node Sản phẩm và node Đồ vật → lỗi nêu tên, không gọi dịch vụ", async () => {
+    const s = await setup();
+    const clash: PortValue = { kind: "props", items: [{ name: "bàn gấp", description: "bàn khác", images: [{ mediaId: s.bottle, state: "gấp phẳng" }] }] };
+    await expect(run(s.ctx, { ...s.inputs, product: s.product, props: clash }, definition.params.parse(scene("c", { props: "Bàn gấp: gấp phẳng" })))).rejects.toThrow(
+      'Đồ vật "bàn gấp" có ở cả node Sản phẩm và node Đồ vật',
+    );
+    expect({ image: s.counter.log.image, video: s.counter.log.video }).toEqual(s.before);
+  });
+
+  it("trạng thái sản phẩm không có ảnh → lỗi trước khi gọi dịch vụ", async () => {
+    const s = await setup();
+    await expect(run(s.ctx, { ...s.inputs, product: s.product }, definition.params.parse(scene("d", { props: "Bàn gấp: gập đôi" })))).rejects.toThrow(/gập đôi/);
+    expect({ image: s.counter.log.image, video: s.counter.log.video }).toEqual(s.before);
+  });
+
+  it("ước tính và dự đoán dùng sản phẩm như lúc chạy", async () => {
+    const s = await setup();
+    const p = definition.params.parse(scene("e", { props: "Bàn gấp: gấp phẳng -> có chân" }));
+    const steps = new Map<string, unknown>();
+    const ran = await run({ ...s.ctx, step: async (k, fn) => { const v = await s.ctx.step(k, fn); steps.set(JSON.stringify(k), v); return v; } }, { ...s.inputs, product: s.product }, p);
+    const known = { inputs: { ...s.inputs, product: s.product }, step: (k: unknown) => steps.get(JSON.stringify(k)), media: (id: string) => env.storage.getMedia(id) };
+    const connected = new Set(["character", "location", "product"]);
+    expect(definition.estimate?.(p, connected, known)).toEqual({ image: 0, video: 0, text: 0 });
+    expect(definition.predict?.(p, connected, known)?.clip).toEqual({ ...ran.clip, clip: undefined });
+  });
+});

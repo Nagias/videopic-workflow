@@ -126,7 +126,9 @@ export const MAX_PROP_REFS = 2;
 // Dùng chung cho đường tạo cảnh (src/shared/shot-plan.ts) và ước tính lượt của node Cảnh.
 export const textOnly = (shot: Pick<Shot, "link" | "subject" | "props">) => shot.link === "cut" && shot.subject === "none" && parsePropLines(shot.props).items.length === 0;
 
-function checkProps(shots: Shot[], known: KnownProp[] | undefined, errors: string[], warnings: string[]): void {
+// partial: known chỉ là một phần danh sách món (vd sản phẩm đã biết, đồ phụ từ Biên kịch chưa biết) — món không có trong known
+// thì bỏ qua bước kiểm tên/trạng thái, chỉ kiểm món có trong known.
+function checkProps(shots: Shot[], known: KnownProp[] | undefined, errors: string[], warnings: string[], partial = false): void {
   const lastState = new Map<string, { name: string; state: string }>();
   shots.forEach((s, i) => {
     const n = i + 1;
@@ -138,12 +140,13 @@ function checkProps(shots: Shot[], known: KnownProp[] | undefined, errors: strin
     for (const p of parsed.items) {
       if (known) {
         const k = known.find((x) => same(x.name, p.name));
-        if (!k) {
+        if (k) {
+          for (const st of p.to ? [p.from, p.to] : [p.from]) {
+            if (!k.states.some((x) => same(x, st))) errors.push(`Cảnh ${n}: "${p.name}" không có trạng thái "${st}" (có: ${k.states.join(", ")})`);
+          }
+        } else if (!partial) {
           errors.push(`Cảnh ${n}: chưa có đồ vật "${p.name}" trong node Đồ vật`);
           continue;
-        }
-        for (const st of p.to ? [p.from, p.to] : [p.from]) {
-          if (!k.states.some((x) => same(x, st))) errors.push(`Cảnh ${n}: "${p.name}" không có trạng thái "${st}" (có: ${k.states.join(", ")})`);
         }
       }
       const key = p.name.trim().toLowerCase();
@@ -159,7 +162,7 @@ function checkProps(shots: Shot[], known: KnownProp[] | undefined, errors: strin
   });
 }
 
-export function checkShotList(shots: Shot[], known?: KnownProp[]): ShotListCheck {
+export function checkShotList(shots: Shot[], known?: KnownProp[], opts: { partial?: boolean } = {}): ShotListCheck {
   const errors: string[] = [];
   const warnings: string[] = [];
   if (shots.length === 0) errors.push("Danh sách cảnh đang trống");
@@ -188,6 +191,6 @@ export function checkShotList(shots: Shot[], known?: KnownProp[]): ShotListCheck
       }
     }
   });
-  checkProps(shots, known, errors, warnings);
+  checkProps(shots, known, errors, warnings, opts.partial);
   return { errors, warnings };
 }
