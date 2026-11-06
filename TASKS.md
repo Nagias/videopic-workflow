@@ -126,3 +126,19 @@ Tổng lượt Muse thật Đợt 1A: 1.
 - [x] Task 7: tự nối Sản phẩm vào nhóm cảnh, Ghép phim kiểm trước
 - [ ] Task 8: tài liệu, verify:full, bấm thử app, PR
 - [ ] Task 9: thử Muse thật (cần 2–3 ảnh sạch của một sản phẩm từ chủ dự án)
+
+### Nhật ký gọi Muse thật — video affiliate nồi cơm Nagakawa (05–06/11/2026, workflow `affiliate-noi-com-nagakawa`)
+
+Ảnh thật: 1 ảnh nồi đóng nắp (chủ dự án gửi). Nhân vật, bếp, đồ phụ do Muse vẽ. 6 cảnh × 5 giây, khung 16:9.
+
+| Lượt chạy | Kết quả | Lượt Muse |
+|---|---|---|
+| Lần 1 | 3 tài khoản hết phiên đăng nhập (trang "Log in") | 0 |
+| Lần 2 | Nhân vật xong trên muse_vid_04; muse_vid_01 bị Meta ngắt ("Muse is disconnected"), muse_vid_02 chưa đăng nhập | 4 ảnh |
+| Lần 3–5 | Bếp 2 ảnh, nồi "mở nắp có cơm" 1 ảnh (vẽ từ ảnh thật, giữ đúng chữ Nagakawa, đèn NẤU/GIỮ ẤM, màu vỏ), Biên kịch xong trên muse_vid_03, đồ phụ 1/2; các lần rơi vào 01/02 lỗi không tốn lượt | 3 ảnh + ≥1 chữ + 1 ảnh |
+| Lần 6 (sau sửa `MUSE_ACCOUNTS=muse_vid_03,muse_vid_04`) | Đồ phụ còn lại | 1 ảnh |
+| Lần 7 (6 cảnh) | 4/6 cảnh xong; cảnh 3, 6 lỗi: muse_vid_03 bị Muse chặn tạo video theo khu vực ("không phải lỗi tạm thời") | 6 ảnh + 6 video (2 bị từ chối) |
+| Lần 8 (`MUSE_ACCOUNTS=muse_vid_04`) | Cảnh 3, 6 xong, Ghép phim xong: h264 1280×720 24 fps có tiếng (aac), 30,0 giây | 2 video |
+
+Tổng: 15 ảnh, ≥1 lượt chữ, 8 video (6 dùng được). Kiểm chứng: ffprobe phim; xem khung giữa 6 cảnh. Ảnh khung đầu giữ đúng sản phẩm; khâu ảnh → video của Muse làm lệch sản phẩm ở cảnh 3 (thân nồi thành màu bạc khi đóng nắp) và in chữ Nagakawa lên mặt trong nắp ở cảnh 2.
+Tài khoản: 01 bị Meta ngắt; 02 chưa đăng nhập; 03 vẽ ảnh được nhưng bị chặn tạo video; 04 dùng được cả ảnh và video.
