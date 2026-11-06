@@ -14,7 +14,7 @@ const cfg = loadConfig(undefined, process.argv.includes("--serve-web") ? { serve
 const db = openDb(cfg.dbPath);
 const storage = createStorage(cfg, db);
 const ffmpeg = createFfmpeg(cfg);
-const musePool = createAccountPool(cfg.profilesDir);
+const musePool = createAccountPool(cfg.profilesDir, undefined, undefined, cfg.museAccounts);
 const providers = createProviders(cfg, musePool);
 const base = { db, storage, ffmpeg, providers, nodes: serverNodes, chatLocks: createChatLocks() };
 const queue = createQueue(base, { log: (m) => console.log(`[hàng đợi] ${m}`) });

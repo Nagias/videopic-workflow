@@ -94,6 +94,29 @@ describe("createAccountPool", () => {
   });
 });
 
+describe("chỉ dùng các tài khoản được chọn (MUSE_ACCOUNTS)", () => {
+  const root = path.join(loadConfig({}).rootDir, ".data-test", `pool-only-${randomUUID()}`);
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const profile = (id: string) => mkdirSync(path.join(root, id, "Default", "IndexedDB", "https_muse.ai_0.indexeddb.leveldb"), { recursive: true });
+
+  it("bỏ qua hồ sơ không có trong danh sách, kể cả khi đã đăng nhập", () => {
+    for (const id of ["muse_vid_01", "muse_vid_02", "muse_vid_03", "muse_vid_04"]) profile(id);
+    const pool = createAccountPool(root, 0, Date.now, ["muse_vid_03", "muse_vid_04"]);
+    const got = [pool.acquire().id, pool.acquire().id];
+    expect(got).toEqual(["muse_vid_03", "muse_vid_04"]);
+    expect(() => pool.acquire()).toThrow(/đang bận/);
+    expect(pool.snapshot().map((s) => s.id)).toEqual(["muse_vid_03", "muse_vid_04"]);
+    expect(pool.loggedInCount()).toBe(2);
+  });
+
+  it("danh sách không khớp hồ sơ nào → báo rõ, nhắc MUSE_ACCOUNTS", () => {
+    profile("muse_vid_01");
+    expect(() => createAccountPool(root, 0, Date.now, ["muse_vid_09"]).acquire()).toThrow(/MUSE_ACCOUNTS/);
+  });
+});
+
 describe("prompt ảnh và nhận biết từ chối", () => {
   it("chú thích vai trò từng ảnh đính kèm theo thứ tự", () => {
     const p = formatImagePrompt("she splits a log", ["character", "character", "location"]);

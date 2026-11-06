@@ -97,6 +97,10 @@ export const LOGIN_WALL_JS = `() => {
   return [...document.querySelectorAll('a, button')].some(e => /^(log ?in|sign ?in|đăng nhập|continue with)/i.test((e.innerText || '').trim()));
 }`;
 
+// Meta ngắt Muse trên tài khoản (đo 05/11/2026, muse_vid_01): trang "Muse is disconnected — We disconnected Muse to protect your
+// information. Submit a feedback ticket to reconnect." Không có ô chat, không phải trang đăng nhập.
+export const DISCONNECTED_JS = `() => /muse is disconnected|we disconnected muse/i.test(document.body ? document.body.innerText : "")`;
+
 export const BLOB_TO_DATAURL_JS = `async (blobUrl) => {
   const res = await fetch(blobUrl);
   const blob = await res.blob();

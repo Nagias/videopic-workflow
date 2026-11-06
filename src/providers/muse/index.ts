@@ -16,6 +16,7 @@ import {
   FIND_NEW_IMAGE_JS,
   FIND_NEW_VIDEO_JS,
   LOG_TEXT_JS,
+  DISCONNECTED_JS,
   LOGIN_WALL_JS,
   MUSE_FAILURE_RE,
   MARK_EXISTING_MEDIA_JS,
@@ -189,6 +190,7 @@ async function captureDebug(cfg: AppConfig, page: Page, accId: string): Promise<
 async function findChatInput(page: Page, ctx: ProviderContext): Promise<ElementHandle> {
   const input = await firstVisible(page, CHAT_INPUT_SELECTORS, 20_000, ctx.signal);
   if (input) return input;
+  if (await page.evaluate<boolean>(callJs(DISCONNECTED_JS))) throw new ProviderError("ACCOUNT_DISCONNECTED", "Meta đã ngắt Muse trên tài khoản này");
   if (await page.evaluate<boolean>(callJs(LOGIN_WALL_JS))) throw new ProviderError("SESSION_EXPIRED", "cần đăng nhập lại");
   throw new ProviderError("INPUT_NOT_FOUND", "Không tìm thấy ô nhập chat của Muse (giao diện có thể đã đổi — sửa src/providers/muse/dom.ts)");
 }
@@ -326,6 +328,12 @@ async function driveMuse(cfg: AppConfig, acc: MuseAccount, job: MuseJob, ctx: Pr
     if (err instanceof ProviderError && err.code === "SESSION_EXPIRED") {
       throw new ProviderError("SESSION_EXPIRED", `Tài khoản ${acc.id} cần đăng nhập lại (npm run muse:login -- ${acc.id})`);
     }
+    if (err instanceof ProviderError && err.code === "ACCOUNT_DISCONNECTED") {
+      throw new ProviderError(
+        "ACCOUNT_DISCONNECTED",
+        `Meta đã ngắt Muse trên tài khoản ${acc.id} ("Muse is disconnected"): mở "npm run muse:login -- ${acc.id}", bấm "Submit a ticket" để xin kết nối lại; trong lúc chờ, bỏ tài khoản này khỏi MUSE_ACCOUNTS`,
+      );
+    }
     throw err;
   }
 
@@ -433,7 +441,9 @@ export function createMuseProvider(cfg: AppConfig, pool: AccountPool = createAcc
       pool.release(acc.id, "ok");
       return result;
     } catch (err) {
-      pool.release(acc.id, err instanceof ProviderError && err.code === "SESSION_EXPIRED" ? "needs_login" : "cooldown");
+      // Hết phiên hoặc bị Meta ngắt: gạt tài khoản ra (needs_login) để việc sau sang tài khoản khác, không thử lại ngay.
+      const unusable = err instanceof ProviderError && (err.code === "SESSION_EXPIRED" || err.code === "ACCOUNT_DISCONNECTED");
+      pool.release(acc.id, unusable ? "needs_login" : "cooldown");
       if (err instanceof ProviderError) throw err;
       const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
       throw new ProviderError("BROWSER_ERROR", `Lỗi khi điều khiển Muse bằng hồ sơ ${acc.id}: ${msg}`, { cause: err });

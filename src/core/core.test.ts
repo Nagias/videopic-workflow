@@ -11,6 +11,12 @@ describe("loadConfig", () => {
     expect(cfg.museLive).toBe(false);
   });
 
+  it("MUSE_ACCOUNTS: chỉ dùng các hồ sơ được liệt kê; để trống là dùng hết; tên sai thì báo lỗi", () => {
+    expect(loadConfig({}).museAccounts).toBeUndefined();
+    expect(loadConfig({ MUSE_ACCOUNTS: " muse_vid_03, muse_vid_04 " }).museAccounts).toEqual(["muse_vid_03", "muse_vid_04"]);
+    expect(() => loadConfig({ MUSE_ACCOUNTS: "muse_vid_03,tai-khoan-3" })).toThrow(/Cấu hình môi trường sai.*MUSE_ACCOUNTS/s);
+  });
+
   it("báo lỗi tiếng Việt khi biến môi trường sai", () => {
     expect(() => loadConfig({ PORT: "abc" })).toThrow(/Cấu hình môi trường sai/);
   });

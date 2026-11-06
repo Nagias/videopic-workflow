@@ -31,7 +31,9 @@ export type AccountPool = {
 
 export const NEEDS_LOGIN_RECHECK_MS = 10 * 60_000;
 
-export function createAccountPool(profilesDir: string, cooldownMs = 60_000, now: () => number = Date.now): AccountPool {
+// only: chỉ dùng các hồ sơ này (cfg.museAccounts, biến MUSE_ACCOUNTS); không có thì dùng mọi hồ sơ trong profilesDir.
+export function createAccountPool(profilesDir: string, cooldownMs = 60_000, now: () => number = Date.now, only?: readonly string[]): AccountPool {
+  const profiles = () => listProfiles(profilesDir).filter((a) => !only || only.includes(a.id));
   const busy = new Set<string>();
   const needsLoginUntil = new Map<string, number>();
   const cooldownUntil = new Map<string, number>();
@@ -45,7 +47,10 @@ export function createAccountPool(profilesDir: string, cooldownMs = 60_000, now:
   };
 
   const tryAcquire = (): MuseAccount | null => {
-      const all = listProfiles(profilesDir);
+      const all = profiles();
+      if (only && all.length === 0) {
+        throw new Error(`MUSE_ACCOUNTS chọn ${only.join(", ")} nhưng không có hồ sơ nào trùng tên trong ${profilesDir}. Sửa MUSE_ACCOUNTS rồi bật lại app.`);
+      }
       if (all.length === 0 || all.every((a) => stateOf(a) === "needs_login")) {
         throw new Error(
           `Chưa có tài khoản Muse nào đã đăng nhập trong ${profilesDir}. Chạy "npm run muse:login -- muse_vid_01", đăng nhập rồi đóng cửa sổ.`,
@@ -80,7 +85,7 @@ export function createAccountPool(profilesDir: string, cooldownMs = 60_000, now:
     },
     async acquireSpecific(id, signal, onWait) {
       for (;;) {
-        const acc = listProfiles(profilesDir).find((a) => a.id === id);
+        const acc = profiles().find((a) => a.id === id);
         if (!acc) throw new Error(`Không còn hồ sơ Muse ${id}`);
         const state = stateOf(acc);
         if (state === "needs_login") throw new Error(`Tài khoản ${id} cần đăng nhập lại (npm run muse:login -- ${id})`);
@@ -93,7 +98,7 @@ export function createAccountPool(profilesDir: string, cooldownMs = 60_000, now:
         await new Promise((r) => setTimeout(r, 2000));
       }
     },
-    loggedInCount: () => listProfiles(profilesDir).filter((a) => isProfileLoggedIn(a.profileDir)).length,
+    loggedInCount: () => profiles().filter((a) => isProfileLoggedIn(a.profileDir)).length,
     release(id, outcome) {
       busy.delete(id);
       if (outcome === "needs_login") needsLoginUntil.set(id, now() + NEEDS_LOGIN_RECHECK_MS);
@@ -104,7 +109,7 @@ export function createAccountPool(profilesDir: string, cooldownMs = 60_000, now:
       }
     },
     snapshot() {
-      return listProfiles(profilesDir).map((a) => ({ id: a.id, state: stateOf(a), loggedIn: isProfileLoggedIn(a.profileDir) }));
+      return profiles().map((a) => ({ id: a.id, state: stateOf(a), loggedIn: isProfileLoggedIn(a.profileDir) }));
     },
   };
 }

@@ -8,6 +8,20 @@
       "port": 8787
     },
     {
+      "name": "videopic-dev-muse-03-04",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "env": { "MUSE_ACCOUNTS": "muse_vid_03,muse_vid_04" },
+      "port": 8787
+    },
+    {
+      "name": "videopic-dev-muse-04",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "env": { "MUSE_ACCOUNTS": "muse_vid_04" },
+      "port": 8787
+    },
+    {
       "name": "videopic-thu",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],

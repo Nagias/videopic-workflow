@@ -12,6 +12,12 @@ const EnvSchema = z.object({
   MUSE_HEADLESS: z.enum(["0", "1"]).default("1"),
   MUSE_URL: z.url().default("https://muse.ai"),
   MUSE_CHANNEL: z.enum(["chrome", "msedge", "chromium"]).default("chrome"),
+  // Chỉ dùng các hồ sơ Muse này (cách nhau dấu phẩy, vd "muse_vid_03,muse_vid_04"); để trống là dùng mọi hồ sơ đã đăng nhập.
+  MUSE_ACCOUNTS: z
+    .string()
+    .optional()
+    .transform((v) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean))
+    .refine((ids) => ids.every((id) => /^muse_vid_\d{2}$/.test(id)), "mỗi tên phải dạng muse_vid_NN, cách nhau dấu phẩy"),
   FFMPEG_PATH: z.string().min(1).default("ffmpeg"),
   FFPROBE_PATH: z.string().min(1).default("ffprobe"),
   SERVE_WEB: z.enum(["0", "1"]).default("0"),
@@ -31,6 +37,8 @@ export type AppConfig = {
   museHeadless: boolean;
   museUrl: string;
   museChannel: "chrome" | "msedge" | "chromium";
+  // Undefined: dùng mọi hồ sơ. Có danh sách: chỉ dùng các hồ sơ đó (MUSE_ACCOUNTS).
+  museAccounts?: string[];
   ffmpegPath: string;
   ffprobePath: string;
   serveWeb: boolean;
@@ -57,6 +65,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     museHeadless: e.MUSE_HEADLESS === "1",
     museUrl: e.MUSE_URL,
     museChannel: e.MUSE_CHANNEL,
+    ...(e.MUSE_ACCOUNTS.length ? { museAccounts: e.MUSE_ACCOUNTS } : {}),
     ffmpegPath: e.FFMPEG_PATH,
     ffprobePath: e.FFPROBE_PATH,
     serveWeb: e.SERVE_WEB === "1",
