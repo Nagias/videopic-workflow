@@ -25,6 +25,9 @@ export const NODE_ICON: Record<string, string> = {
   "film-combine": "⧉",
   film: "▤",
   shotlist: "☰",
+  cast: "☻",
+  ideas: "✱",
+  outline: "☷",
 };
 export const iconOf = (type: string) => NODE_ICON[type] ?? "◇";
 

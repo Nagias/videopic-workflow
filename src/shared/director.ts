@@ -62,6 +62,9 @@ export const ShotSchema = z.preprocess(
     start: z.string(),
     motion: z.string(),
     props: z.string(),
+    // Phim hoạt hình (thiết kế 2026-11-06): tên nhân vật có mặt trong khung, khoảnh khắc cuối cảnh. Vắng ở cảnh người thật.
+    cast: z.array(z.string()).optional(),
+    end: z.string().optional(),
   }),
 );
 export type Shot = z.infer<typeof ShotSchema>;
@@ -84,6 +87,8 @@ export function normalizeShots(raw: unknown): Shot[] {
       start: str("start"),
       motion: str("motion"),
       props: str("props"),
+      ...(Array.isArray(r.cast) ? { cast: (r.cast as unknown[]).filter((x): x is string => typeof x === "string") } : {}),
+      ...(typeof r.end === "string" ? { end: r.end } : {}),
     };
   });
 }

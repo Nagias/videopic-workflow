@@ -4,6 +4,8 @@ import { defineNode, type EstimateKnown } from "../../shared/node-definition";
 import { mediaIdOf, pickInput, propSpecProblems, PropSpecItemSchema, type PropItem, type PropSpecItem, type PropSpecValue } from "../../shared/ports";
 import { codeVersion, DEFAULT_LOOK, propStatePrompt, propStillPrompt } from "../../shared/prompts";
 import { PROVIDER_IDS } from "../../shared/providers";
+import { cartoonLook } from "../../shared/cartoon-prompts";
+import { FilmStyleSchema, isCartoon, type FilmStyle } from "../../shared/styles";
 
 // Một dòng gõ tay trong node: trạng thái viết cách nhau bằng dấu phẩy, trạng thái đầu là trạng thái gốc.
 // photos: ảnh thật người dùng tải lên, theo tên trạng thái → mã ảnh (spec 2026-11-03 mục 3.2).
@@ -18,6 +20,8 @@ export type PropRow = z.infer<typeof PropRowSchema>;
 export const params = z.object({
   name: z.string().optional(),
   items: z.array(PropRowSchema),
+  // Phong cách khi gõ tay (thiết kế 2026-11-06); nối từ Biên kịch thì theo phong cách của Biên kịch. Vắng = người thật.
+  style: FilmStyleSchema.optional(),
   provider: z.enum(PROVIDER_IDS, { error: "Chưa chọn dịch vụ" }),
 });
 export type PropsParams = z.infer<typeof params>;
@@ -71,6 +75,9 @@ export function checkSpec(items: PropSpecItem[], opts: { allowEmpty: boolean }):
   return parsed;
 }
 
+// Phong cách đồ vật: theo Biên kịch nếu nối, không thì tham số của node.
+export const propsStyle = (p: Pick<PropsParams, "style">, fromWriter: PropSpecValue | undefined): FilmStyle | undefined => (fromWriter ? fromWriter.style : p.style);
+
 // Danh sách món node sẽ làm: từ Biên kịch (cổng spec) nếu có, không thì từ các dòng gõ tay. Kiểm bằng checkSpec() trước khi chạy.
 export const specOf = (p: PropsParams, fromWriter: PropSpecValue | undefined): PropSpecItem[] => (fromWriter ? fromWriter.items : rowsToSpec(p.items));
 
@@ -80,13 +87,14 @@ export const rowOf = (p: PropsParams, item: PropSpecItem, fromWriter: boolean): 
 
 // Khoá bước con ảnh trạng thái thứ idx của một món: theo mô tả món (không theo node), món giống hệt ở workflow khác dùng lại ảnh.
 // base: ảnh thật đính kèm khi vẽ; rỗng thì khoá y hệt bản trước khi có ảnh thật (cache cũ vẫn trúng).
-export const propStepKey = (providerId: string, item: PropSpecItem, idx: number, base: string[] = []): unknown[] => [
+// style hoạt hình: tông hoạt hình thay DEFAULT_LOOK (người thật giữ khoá y hệt bản trước).
+export const propStepKey = (providerId: string, item: PropSpecItem, idx: number, base: string[] = [], style?: FilmStyle): unknown[] => [
   "prop",
   providerId,
   item.name,
   item.description,
   item.states.slice(0, idx + 1),
-  DEFAULT_LOOK,
+  isCartoon(style) ? cartoonLook(style) : DEFAULT_LOOK,
   ...(base.length ? ["photos", ...base] : []),
 ];
 
@@ -94,19 +102,19 @@ export const propStepKey = (providerId: string, item: PropSpecItem, idx: number,
 // Một nơi duy nhất: run, estimate, predict cùng đi theo đây.
 export type StatePlan = { state: string; photos: string[] } | { state: string; draw: { idx: number; key: unknown[]; base: string[] } };
 
-export function planItem(providerId: string, item: PropSpecItem, row: PropRow | undefined): StatePlan[] {
+export function planItem(providerId: string, item: PropSpecItem, row: PropRow | undefined, style?: FilmStyle): StatePlan[] {
   const base = basePhotos(row, item.states);
   return item.states.map((state, idx) => {
     const photos = photosFor(row, state);
-    return photos.length ? { state, photos } : { state, draw: { idx, key: propStepKey(providerId, item, idx, base), base } };
+    return photos.length ? { state, photos } : { state, draw: { idx, key: propStepKey(providerId, item, idx, base, style), base } };
   });
 }
 
 // Danh sách món khi ước tính: nối Biên kịch mà chưa biết kết quả thì undefined (src/core/estimate.ts ghi "chưa biết").
-function knownSpec(p: PropsParams, connected: ReadonlySet<string>, known: EstimateKnown | undefined): { spec: PropSpecItem[]; fromWriter: boolean } | undefined {
-  if (!connected.has("spec")) return { spec: specOf(p, undefined), fromWriter: false };
+function knownSpec(p: PropsParams, connected: ReadonlySet<string>, known: EstimateKnown | undefined): { spec: PropSpecItem[]; fromWriter: boolean; style: FilmStyle | undefined } | undefined {
+  if (!connected.has("spec")) return { spec: specOf(p, undefined), fromWriter: false, style: p.style };
   const fromWriter = known ? pickInput(known.inputs, "spec", "propspec") : undefined;
-  return fromWriter ? { spec: specOf(p, fromWriter), fromWriter: true } : undefined;
+  return fromWriter ? { spec: specOf(p, fromWriter), fromWriter: true, style: propsStyle(p, fromWriter) } : undefined;
 }
 
 // Dòng thẻ khi có ảnh thật: số ảnh thật đã gắn trạng thái và số trạng thái sẽ vẽ.
@@ -154,7 +162,7 @@ export const definition = defineNode<PropsParams>({
     const k = knownSpec(p, connected, known);
     if (!k) return undefined;
     const image = k.spec.reduce(
-      (n, item) => n + planItem(p.provider, item, rowOf(p, item, k.fromWriter)).filter((s) => "draw" in s && known?.step(s.draw.key) === undefined).length,
+      (n, item) => n + planItem(p.provider, item, rowOf(p, item, k.fromWriter), k.style).filter((s) => "draw" in s && known?.step(s.draw.key) === undefined).length,
       0,
     );
     return { image, video: 0, text: 0 };
@@ -165,7 +173,7 @@ export const definition = defineNode<PropsParams>({
     const items: PropItem[] = [];
     for (const item of k.spec) {
       const images: PropItem["images"] = [];
-      for (const s of planItem(p.provider, item, rowOf(p, item, k.fromWriter))) {
+      for (const s of planItem(p.provider, item, rowOf(p, item, k.fromWriter), k.style)) {
         if ("photos" in s) {
           images.push(...s.photos.map((mediaId) => ({ mediaId, state: s.state })));
           continue;
@@ -176,6 +184,6 @@ export const definition = defineNode<PropsParams>({
       }
       items.push({ name: item.name, description: item.description, images });
     }
-    return { props: { kind: "props", items } };
+    return { props: { kind: "props", items, ...(isCartoon(k.style) ? { style: k.style } : {}) } };
   },
 });

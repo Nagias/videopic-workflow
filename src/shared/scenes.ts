@@ -103,7 +103,19 @@ export function expandScenes(graph: WorkflowGraph, a: ExpandScenesArgs): { graph
     id: ids[i]!,
     type: "scene",
     position: { x: a.origin.x + (i % cols) * width, y: a.origin.y + Math.floor(i / cols) * height },
-    params: { size: s.size, angle: s.angle, move: s.move, subject: s.subject, start: s.start, motion: s.motion, props: s.props, provider: a.provider },
+    params: {
+      size: s.size,
+      angle: s.angle,
+      move: s.move,
+      subject: s.subject,
+      start: s.start,
+      motion: s.motion,
+      props: s.props,
+      // Cảnh hoạt hình: chỉ có trường khi kịch bản có (cảnh người thật giữ tham số y hệt bản cũ).
+      ...(s.cast ? { cast: s.cast } : {}),
+      ...(s.end !== undefined ? { end: s.end } : {}),
+      provider: a.provider,
+    },
   }));
 
   const edges: WorkflowEdge[] = [];

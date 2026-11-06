@@ -3,12 +3,25 @@ import { semaphore } from "../../core/semaphore";
 import type { ChatSessionRef, ImageReference } from "../../providers/types";
 import type { PropItem, PropSetValue, PropSpecItem } from "../../shared/ports";
 import { DEFAULT_LOOK, productFromPhotoPrompt, productStatePrompt, propStatePrompt, propStillPrompt } from "../../shared/prompts";
-import { checkSpec, planItem, rowOf, specOf, type PropsParams } from "./definition";
+import { cartoonPropStatePrompt, cartoonPropStillPrompt } from "../../shared/cartoon-prompts";
+import { isCartoon, type FilmStyle } from "../../shared/styles";
+import { checkSpec, planItem, propsStyle, rowOf, specOf, type PropsParams } from "./definition";
 
 // Prompt và ảnh đính kèm của một lần vẽ. Món không có ảnh thật: ảnh tĩnh vật trạng thái đầu, các trạng thái sau nối tiếp trong
 // chat (hỏng chat thì chat mới đính kèm ảnh đầu). Món có ảnh thật: lần vẽ đầu chat mới đính kèm ảnh thật, các lần sau nối tiếp.
-function drawRequest(item: PropSpecItem, state: string, base: string[], first: boolean, firstImage: string | undefined) {
+function drawRequest(item: PropSpecItem, state: string, base: string[], first: boolean, firstImage: string | undefined, style: FilmStyle | undefined) {
   const look = DEFAULT_LOOK;
+  // Phim hoạt hình (thiết kế 2026-11-06): đồ vật vẽ theo phong cách hoạt hình, không "ảnh chụp thật".
+  if (isCartoon(style) && base.length === 0) {
+    const anchor: ImageReference[] = firstImage ? [{ mediaId: firstImage, role: "prop" }] : [];
+    return first
+      ? { prompt: cartoonPropStillPrompt(item, style), references: anchor, fallback: undefined }
+      : {
+          prompt: cartoonPropStatePrompt(item, state, style),
+          references: anchor,
+          fallback: firstImage ? { prompt: cartoonPropStatePrompt(item, state, style, true), references: anchor } : undefined,
+        };
+  }
   if (base.length) {
     const refs: ImageReference[] = base.map((mediaId) => ({ mediaId, role: "prop" }));
     return first
@@ -28,6 +41,7 @@ function drawRequest(item: PropSpecItem, state: string, base: string[], first: b
 export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
   const fromWriter = optionalInput(inputs, "spec", "propspec");
   const spec = checkSpec(specOf(params, fromWriter), { allowEmpty: fromWriter !== undefined });
+  const style = propsStyle(params, fromWriter);
   const provider = ctx.providers.get(params.provider);
   const sem = semaphore(Math.max(1, provider.maxParallel()));
   const items: PropItem[] = spec.map((s) => ({ name: s.name, description: s.description, images: [] }));
@@ -41,7 +55,7 @@ export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
         let session: ChatSessionRef | undefined;
         let firstImage: string | undefined;
         let drawn = 0;
-        for (const s of planItem(provider.id, item, rowOf(params, item, fromWriter !== undefined))) {
+        for (const s of planItem(provider.id, item, rowOf(params, item, fromWriter !== undefined), style)) {
           if ("photos" in s) {
             items[k]!.images.push(...s.photos.map((mediaId) => ({ mediaId, state: s.state })));
             publish();
@@ -49,7 +63,7 @@ export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
           }
           const first = drawn === 0;
           const inChat = !first && session !== undefined;
-          const req = drawRequest(item, s.state, s.draw.base, first, firstImage);
+          const req = drawRequest(item, s.state, s.draw.base, first, firstImage, style);
           ctx.report(`Ảnh mẫu đồ vật: ${item.name} (${s.state})…`);
           const img = await ctx.step(s.draw.key, async () => {
             const r = await provider.generateImage(
@@ -79,6 +93,6 @@ export const run: NodeRun<PropsParams> = async (ctx, inputs, params) => {
     .map((r, k) => (r.status === "rejected" ? `${spec[k]!.name}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}` : null))
     .filter(Boolean);
   if (failed.length) throw new Error(`${failed.length}/${spec.length} đồ vật chưa xong (các món đã xong được giữ, bấm Chạy để làm tiếp). ${failed.join(" | ")}`);
-  const out: PropSetValue = { kind: "props", items };
+  const out: PropSetValue = { kind: "props", items, ...(isCartoon(style) ? { style } : {}) };
   return { props: out };
 };

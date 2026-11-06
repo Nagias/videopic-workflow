@@ -33,8 +33,8 @@ Cách đọc nhãn:
 | Kết nối tài khoản Muse bằng Playwright + Chrome | `src/providers/muse/`, hồ sơ `.data/chrome_profiles/muse_vid_0N` | Chưa đính kèm ảnh |
 | Giữ mặt người, sản phẩm, không gian | Nhân vật vẽ bằng Muse trong một chat phụ; sản phẩm và bối cảnh nhận ảnh thật tải lên (`docs/ARCHITECTURE.md` mục 6.3) | Chưa tải ảnh người thật; khung dọc 9:16 chưa có |
 | Cảnh cuối video này là cảnh đầu video kia, ghép nối | — | Tính năng 2 |
-| Video ~2 phút, sau đó 10–60 phút | — | Tính năng 2 và 4 |
-| Kiến thức đạo diễn | — | Tính năng 3 |
+| Video ~2 phút, sau đó 10–60 phút | Chuỗi cảnh + Ghép phim (người thật ~1 phút); phim hoạt hình đến 36 cảnh ≈ 3 phút (`docs/ARCHITECTURE.md` mục 6.4) | 10–60 phút chưa có |
+| Kiến thức đạo diễn | Phim hoạt hình: Dàn nhân vật (kích thước thật), Ý tưởng tập, Dàn ý 3 phần, Biên kịch theo đợt có ai trong khung và cuối cảnh (`src/shared/cartoon-prompts.ts`) | Người thật chưa có Ý tưởng/Dàn ý; app chưa tự xem video để kiểm liền mạch |
 
 ## 2. Nguyên tắc
 

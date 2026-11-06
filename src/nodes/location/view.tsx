@@ -3,6 +3,7 @@ import type { NodeViewProps } from "../../features/editor/ui/node-kit";
 import { PhotoDrop } from "../../features/editor/ui/PhotoDrop";
 import { AssetPicker, ImageSetGallery, ProviderSelect } from "../../features/editor/ui/widgets";
 import { DEFAULT_LOOK } from "../../shared/prompts";
+import { FILM_STYLE_IDS, FILM_STYLE_LABEL, type FilmStyle } from "../../shared/styles";
 import type { LocationParams } from "./definition";
 
 export function LocationView({ id, params, setParams, replaceParams, state }: NodeViewProps<LocationParams>) {
@@ -48,7 +49,23 @@ export function LocationView({ id, params, setParams, replaceParams, state }: No
         />
       </label>
       <label className="field">
-        <span>Tông ảnh dùng chung cho mọi cảnh</span>
+        <span>Phong cách phim (phải giống Dàn nhân vật / Hồ sơ nhân vật)</span>
+        <select
+          className="nodrag"
+          data-testid={`location-style-${id}`}
+          value={params.style ?? "thuc"}
+          // Người thật: bỏ hẳn trường để tham số y hệt node cũ (kết quả cũ vẫn khớp).
+          onChange={(e) => setParams({ style: e.target.value === "thuc" ? undefined : (e.target.value as FilmStyle) })}
+        >
+          {FILM_STYLE_IDS.map((s) => (
+            <option key={s} value={s}>
+              {FILM_STYLE_LABEL[s]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        <span>{params.style && params.style !== "thuc" ? "Tông riêng của bối cảnh (giờ trong ngày, ánh sáng); câu phong cách hoạt hình app tự thêm" : "Tông ảnh dùng chung cho mọi cảnh"}</span>
         <textarea
           className="nodrag nowheel"
           rows={2}

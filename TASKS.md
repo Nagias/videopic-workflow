@@ -152,3 +152,18 @@ Thử phim hoạt hình cartoon 3D bằng các node có sẵn: một node Nhân 
 | Lần 1 (`MUSE_ACCOUNTS=muse_vid_04`, ~15 phút) | Mọi node xong, không lỗi. Phim h264 1280×720 24 fps có tiếng (aac), 29,9 giây (cảnh nối cắt 0,08 giây đầu) | 10 ảnh + 6 video (theo ước tính của app) |
 
 Kiểm chứng: ffprobe phim; xem khung giữa và khung cuối 6 cảnh. Bộ ảnh nhân vật ra đúng kiểu hoạt hình dù `CHARACTER_SHEET` vẫn dùng `DEFAULT_LOOK` "ảnh chụp điện thoại". Lệch: cảnh 2 và 3 có nhân vật mà khung đầu ghi "không có trong khung"; gián Vàng thành thân vàng ở cảnh 3; mèo ở cảnh 4–5 gầy và non hơn ảnh mẫu.
+
+## Phim hoạt hình có đạo diễn (thiết kế: `docs/superpowers/specs/2026-11-06-phim-hoat-hinh-dao-dien-design.md`, nhánh `phim-hoat-hinh-dao-dien`)
+
+- [x] 1. Phong cách phim `src/shared/styles.ts` + prompt hoạt hình `src/shared/cartoon-prompts.ts` (+ test)
+- [x] 2. Cổng/giá trị: `style`, `members` trong bộ ảnh; `style` trong đồ vật; kiểu cổng `outline`; `Shot.cast`, `Shot.end`
+- [x] 3. Node Dàn nhân vật `cast`
+- [x] 4. Không gian + Đồ vật nhận phong cách
+- [x] 5. Cảnh hoạt hình (ảnh khung, video, cảnh không người vẽ từ bối cảnh, ai trong khung, cuối cảnh)
+- [x] 6. Node Ý tưởng tập `ideas`, node Dàn ý `outline`
+- [x] 7. Biên kịch chế độ hoạt hình: dàn ý, viết theo đợt ≤ 12 cảnh, tối đa 36
+- [x] 8. Dịch vụ giả trả lời ý tưởng/dàn ý/đợt cảnh
+- [x] 9. Mẫu "Phim hoạt hình 3 phút" + e2e
+- [x] 10. Tài liệu: FEATURE_MAP, ARCHITECTURE, DEBT
+- [ ] 11. Kiểm chứng: `npm run verify:full`, bấm thử giao diện
+- [ ] 12. Kiểm chứng: Muse thật ra phim ~3 phút, xem khung từng cảnh

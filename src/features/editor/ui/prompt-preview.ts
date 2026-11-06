@@ -1,7 +1,13 @@
-import { textOnly } from "../../../shared/director";
 import { propStates, type ImageSetValue, type NodeOutputs, type PropSetValue, type PropSpecItem } from "../../../shared/ports";
 import { productWriterPrompt } from "../../../shared/prompts";
-import { clipStep, keyframeStep, textClipStep } from "../../../shared/shot-plan";
+import { BATCH_SIZE, castDescription, episodeWriterPrompt } from "../../../shared/cartoon-prompts";
+import { CastMemberSchema } from "../../../shared/cast";
+import { isCartoon, styleOf } from "../../../shared/styles";
+import { lookOf } from "../../../nodes/location/definition";
+import { z } from "zod";
+
+const CastMembersSchema = z.array(CastMemberSchema);
+import { clipStep, keyframeStep, textClipStep, textOnlyShot } from "../../../shared/shot-plan";
 import { definition as sceneDefinition, sceneShot, type SceneParams } from "../../../nodes/scene/definition";
 import { definition as writerDefinition } from "../../../nodes/writer/definition";
 
@@ -37,8 +43,16 @@ function imageSetOf(src: Source | undefined, role: ImageSetValue["role"], missin
   const real = outputOf(src.node.id)?.[src.port];
   if (real?.kind === "imageset") return real;
   const p = src.node.data.params;
-  const look = str(p.look).trim();
-  return { kind: "imageset", role, description: str(p.description).trim() || NO_DESCRIPTION, images: [], ...(look ? { look } : {}) };
+  // Dàn nhân vật chưa chạy: dựng từ tham số như node sẽ ra (phong cách, dàn, luật), để xem trước đúng prompt hoạt hình.
+  if (src.node.type === "cast") {
+    const members = CastMembersSchema.safeParse(p.members);
+    const style = styleOf(str(p.style));
+    const list = members.success ? members.data : [];
+    return { kind: "imageset", role, description: castDescription(list) || NO_DESCRIPTION, images: [], members: list, rules: str(p.rules), ...(isCartoon(style) ? { style } : {}) };
+  }
+  const look = src.node.type === "location" ? lookOf({ look: str(p.look), style: styleOf(str(p.style)) }) : str(p.look).trim();
+  const style = styleOf(str(p.style));
+  return { kind: "imageset", role, description: str(p.description).trim() || NO_DESCRIPTION, images: [], ...(look ? { look } : {}), ...(isCartoon(style) ? { style } : {}) };
 }
 
 function propsOf(src: Source | undefined, outputOf: (id: string) => NodeOutputs | null | undefined): PropSetValue | undefined {
@@ -75,7 +89,7 @@ function scenePreview(node: PreviewNode, nodes: readonly PreviewNode[], edges: r
   const shot = sceneShot(p, follows);
   const character = imageSetOf(sourceOf(node.id, "character", nodes, edges), "character", MISSING_CHARACTER, outputOf);
   const location = imageSetOf(sourceOf(node.id, "location", nodes, edges), "location", MISSING_LOCATION, outputOf);
-  if (textOnly(shot)) {
+  if (textOnlyShot(shot, character)) {
     return { sections: [{ title: "Prompt video (chữ → video, không có ảnh khung)", text: textClipStep(shot, p.provider, location).prompt }] };
   }
   const props = propsOf(sourceOf(node.id, "props", nodes, edges), outputOf);
@@ -94,6 +108,17 @@ function writerPreview(node: PreviewNode, nodes: readonly PreviewNode[], edges: 
   const sourceLocation = sourceOf(node.id, "location", nodes, edges);
   // Như máy chủ đọc tham số qua zod: ý tưởng được cắt khoảng trắng hai đầu, thiếu số cảnh thì lấy mặc định của node.
   const count = typeof p.shotCount === "number" ? p.shotCount : writerDefinition.defaults.shotCount;
+  // Phim hoạt hình: lời đầu của đợt 1 (các đợt sau hỏi tiếp trong cùng chat, xem writer/run.ts).
+  const cast = sourceCharacter ? imageSetOf(sourceCharacter, "character", MISSING_CHARACTER, outputOf) : undefined;
+  if (cast && isCartoon(cast.style)) {
+    const outlineSrc = sourceOf(node.id, "outline", nodes, edges);
+    const outline = outlineSrc ? outputOf(outlineSrc.node.id)?.[outlineSrc.port] : undefined;
+    const story = outline?.kind === "outline" ? outline.text : outlineSrc ? "(dàn ý — có sau khi node Dàn ý chạy)" : str(p.idea).trim();
+    const shotCount = outline?.kind === "outline" ? outline.shotCount : outlineSrc ? Number(outlineSrc.node.data.params.shotCount) || count : count;
+    const location = sourceLocation ? imageSetOf(sourceLocation, "location", MISSING_LOCATION, outputOf).description : undefined;
+    const text = episodeWriterPrompt({ members: cast.members ?? [], rules: cast.rules ?? "", ...(location ? { location } : {}), story, shotCount }, 1, Math.min(BATCH_SIZE, shotCount));
+    return { sections: [{ title: "Prompt gửi Biên kịch (đợt 1)", text }], notes: [`Viết từng đợt ${BATCH_SIZE} cảnh trong cùng chat; các đợt sau nhắc cuối cảnh trước.`] };
+  }
   const products = productSpecOf(sourceOf(node.id, "product", nodes, edges), outputOf);
   const text = productWriterPrompt({
     idea: str(p.idea).trim(),

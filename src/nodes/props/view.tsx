@@ -3,6 +3,7 @@ import { mediaUrl } from "../../shared/api";
 import type { NodeViewProps } from "../../features/editor/ui/node-kit";
 import { PhotoDrop } from "../../features/editor/ui/PhotoDrop";
 import { AssetPicker, ProviderSelect } from "../../features/editor/ui/widgets";
+import { FILM_STYLE_IDS, FILM_STYLE_LABEL, type FilmStyle } from "../../shared/styles";
 import { orphanPhotos, photosFor, rowStates, type PropRow, type PropsParams } from "./definition";
 
 const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -22,7 +23,8 @@ function withoutOrphans(row: PropRow): PropRow["photos"] {
   return nonEmpty(Object.fromEntries(Object.entries(row.photos ?? {}).filter(([k]) => states.some((s) => sameText(s, k)))));
 }
 
-export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsParams>) {
+export function PropsView({ id, params, setParams, state, incoming }: NodeViewProps<PropsParams>) {
+  const fromWriter = incoming.some((w) => w.port === "spec");
   const items = params.items ?? [];
   const out = state?.output?.props;
   const update = (i: number, patch: Partial<PropRow>) => setParams({ items: items.map((it, j) => (j === i ? { ...it, ...patch } : it)) });
@@ -109,6 +111,25 @@ export function PropsView({ id, params, setParams, state }: NodeViewProps<PropsP
       <button type="button" className="nodrag" data-testid={`add-prop-${id}`} onClick={add}>
         + Thêm đồ vật
       </button>
+      {fromWriter ? (
+        <p className="hint">Phong cách vẽ theo Biên kịch đang nối vào.</p>
+      ) : (
+        <label className="field">
+          <span>Phong cách phim</span>
+          <select
+            className="nodrag"
+            data-testid={`props-style-${id}`}
+            value={params.style ?? "thuc"}
+            onChange={(e) => setParams({ style: e.target.value === "thuc" ? undefined : (e.target.value as FilmStyle) })}
+          >
+            {FILM_STYLE_IDS.map((s) => (
+              <option key={s} value={s}>
+                {FILM_STYLE_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <ProviderSelect id={id} value={params.provider} onChange={(provider) => setParams({ provider })} />
       {out?.kind === "props" && out.items.some((x) => x.images.length > 0) ? (
         <div className="gallery" data-testid={`props-gallery-${id}`}>

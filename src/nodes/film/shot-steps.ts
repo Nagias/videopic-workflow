@@ -1,8 +1,8 @@
 import type { NodeRunContext } from "../../core/node-runtime";
 import type { MediaProvider, ProviderContext } from "../../providers/types";
-import { SHOT_SECONDS, textOnly, type Shot } from "../../shared/director";
+import { SHOT_SECONDS, type Shot } from "../../shared/director";
 import type { ImageSetValue, PropSetValue } from "../../shared/ports";
-import { chainFrameKey, clipStep, keyframeStep, textClipStep, thumbKey } from "../../shared/shot-plan";
+import { chainFrameKey, clipStep, keyframeStep, textClipStep, textOnlyShot, thumbKey } from "../../shared/shot-plan";
 import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC } from "./definition";
 
 // Tạo một cảnh: dùng chung cho Dựng phim (film) và Cảnh (scene). Hai node cùng stepScope "film"; khoá và prompt
@@ -120,7 +120,7 @@ export async function makeShot(ctx: NodeRunContext, a: ShotArgs): Promise<ShotRe
 
   let keyframeId: string;
   let clip: { mediaId: string };
-  if (textOnly(shot)) {
+  if (textOnlyShot(shot, character)) {
     // Ảnh xem trước rút từ clip.
     const plan = textClipStep(shot, provider.id, location);
     clip = await ctx.step(plan.keyParts, () =>

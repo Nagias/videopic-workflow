@@ -32,6 +32,14 @@ const VIEW_LABEL: Record<string, string> = {
   close: "Cận",
 };
 
+// Ảnh của Dàn nhân vật: "front" là cả dàn, "member-<n>" là nhân vật thứ n.
+function viewLabel(set: ImageSetValue, view: string): string {
+  if (set.members && view === "front") return "Cả dàn đúng tỉ lệ";
+  const n = /^member-(\d+)$/.exec(view)?.[1];
+  const member = n ? set.members?.[Number(n) - 1] : undefined;
+  return member?.name ?? VIEW_LABEL[view] ?? view;
+}
+
 export function ImageSetGallery({ id, set }: { id: string; set: ImageSetValue | undefined }) {
   if (!set || set.images.length === 0) return <div className="preview empty small">Chưa có ảnh hồ sơ</div>;
   return (
@@ -39,9 +47,9 @@ export function ImageSetGallery({ id, set }: { id: string; set: ImageSetValue | 
       {set.images.map((img) => (
         <figure key={img.mediaId}>
           <a href={mediaUrl(img.mediaId)} target="_blank" rel="noreferrer">
-            <img src={mediaUrl(img.mediaId)} alt={VIEW_LABEL[img.view] ?? img.view} loading="lazy" />
+            <img src={mediaUrl(img.mediaId)} alt={viewLabel(set, img.view)} loading="lazy" />
           </a>
-          <figcaption>{VIEW_LABEL[img.view] ?? img.view}</figcaption>
+          <figcaption>{viewLabel(set, img.view)}</figcaption>
         </figure>
       ))}
     </div>

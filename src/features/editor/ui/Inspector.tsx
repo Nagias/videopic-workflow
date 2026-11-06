@@ -79,6 +79,8 @@ function ValueView({ value }: { value: PortValue }) {
       );
     case "storyboard":
       return <p className="hint">Storyboard {value.shots.length} cảnh</p>;
+    case "outline":
+      return <pre className="resulttext">{value.text}</pre>;
   }
 }
 

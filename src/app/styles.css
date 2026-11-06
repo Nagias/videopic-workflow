@@ -17,6 +17,7 @@
   --storyboard-port: #9be36b;
   --props-port: #ff7ab6;
   --propspec-port: #ffd84d;
+  --outline-port: #b8f0a0;
   color-scheme: dark;
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
@@ -689,6 +690,9 @@ button.primary {
 }
 .kind-propspec {
   --kind: var(--propspec-port);
+}
+.kind-outline {
+  --kind: var(--outline-port);
 }
 
 .handle {
