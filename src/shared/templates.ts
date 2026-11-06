@@ -127,7 +127,7 @@ export const CARTOON_MEMBERS = [
   },
   {
     name: "gián Xanh",
-    look: "gián màu nâu bóng đứng bằng hai chân sau, gầy và cao hơn gián Đỏ một chút, mắt to tròn trắng, hai râu dài cong, quàng khăn len xanh dương",
+    look: "gián màu nâu bóng đứng bằng hai chân sau, dáng gầy dài, mắt to tròn trắng, hai râu dài cong, quàng khăn len xanh dương",
     size: "cao 9 cm, chỉ tới đầu gối Mướp",
     trait: "khoẻ nhưng ngốc nghếch, mê ăn",
   },
@@ -143,7 +143,7 @@ const CARTOON_RULES =
   "Mướp và ba chú gián sống chung một ngôi nhà, luôn tranh nhau đồ ăn, chỗ ngủ và đồ chơi. Gián nhỏ nhưng nhanh và nhiều mẹo; Mướp to khoẻ nhưng vụng và tham. Trong một tập Mướp thua phần lớn các đợt, cú chốt có khi Mướp thắng, có khi cả bọn cùng chịu thiệt rồi làm hoà. Không ai bị thương thật, không máu, không thuốc diệt côn trùng, không vũ khí. Không lời thoại.";
 
 const KITCHEN =
-  "căn bếp nhỏ của một ngôi nhà trong phim hoạt hình: sàn gạch caro trắng đỏ, tủ bếp gỗ màu kem có ngăn kéo, bếp ga và tủ lạnh trắng bên trái, bàn ăn gỗ tròn ở giữa phòng phủ khăn kẻ ô, cửa sổ phía sau nhìn ra vườn, chân tường bên phải có một lỗ nhỏ hình vòm là nhà của lũ gián";
+  "căn bếp nhỏ của một ngôi nhà trong phim hoạt hình: sàn gạch caro trắng đỏ, tủ bếp gỗ màu kem có ngăn kéo, bếp ga và tủ lạnh trắng bên trái, bàn ăn gỗ tròn ở giữa phòng phủ khăn kẻ ô, cửa sổ phía sau nhìn ra vườn, chân tường bên phải có một lỗ nhỏ hình vòm tối om";
 
 const CARTOON_EPISODE: WorkflowGraph = expandScenes(
   {

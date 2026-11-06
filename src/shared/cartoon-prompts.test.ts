@@ -36,10 +36,16 @@ describe("prompt phim hoạt hình", () => {
     const sheet = cartoon.CAST_SHEET(members, "hoat-hinh-2d");
     expect(sheet.map((v) => v.view)).toEqual(["front", "member-1", "member-2", "member-3"]);
     expect(sheet[0]!.prompt).toMatch(/đúng tỉ lệ kích thước/);
-    expect(sheet[0]!.prompt).toMatch(/gián Đỏ cao 7 cm, chỉ tới đầu gối Mướp/);
+    expect(sheet[0]!.prompt).toMatch(/gián Đỏ cao 7 cm, chỉ tới đầu gối Mướp — chỉ cao bằng 1\/6 chiều cao Mướp/);
+    expect(sheet[0]!.prompt).toMatch(/không phóng to cho dễ nhìn/);
     expect(sheet[0]!.prompt).toMatch(/vạch đo chiều cao/);
     expect(sheet[1]!.inChatPrompt).toMatch(/chỉ riêng Mướp trong ảnh bạn vừa tạo/);
     expect(sheet.every((v) => /hoạt hình 2D/.test(v.prompt) && !REAL_ONLY.test(v.prompt))).toBe(true);
+  });
+
+  it("ảnh bối cảnh hoạt hình: cấm cả con vật (không chỉ người)", () => {
+    const sheet = cartoon.CARTOON_LOCATION_SHEET("căn bếp có lỗ vòm", "hoạt hình 2D");
+    expect(sheet.every((v) => /không có nhân vật hay con vật nào/.test(v.prompt) && !/không có người/.test(v.prompt))).toBe(true);
   });
 
   it("ảnh khung: chỉ những ai có tên trong cast, nói rõ ai vắng mặt, nhắc tỉ lệ; cảnh không nhân vật nói rõ không có ai", () => {

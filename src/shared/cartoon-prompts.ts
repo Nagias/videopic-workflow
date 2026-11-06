@@ -2,7 +2,7 @@ import type { CastMember } from "./cast";
 import { findMember } from "./cast";
 import { CAMERA_ANGLES, CAMERA_MOVES, parsePropLines, SHOT_SECONDS, SHOT_SIZES, type Shot } from "./director";
 import type { PropSpecItem } from "./ports";
-import { codeVersion, type ReferenceView } from "./prompts";
+import { codeVersion, LOCATION_SHEET, type ReferenceView } from "./prompts";
 import type { CartoonStyle } from "./styles";
 
 // Mọi prompt phim hoạt hình (thiết kế docs/superpowers/specs/2026-11-06-phim-hoat-hinh-dao-dien-design.md mục 3.2).
@@ -42,8 +42,24 @@ const memberLine = (m: CastMember) => `${m.name}: ${m.look}, kích thước ${m.
 // Mô tả cả dàn (đi theo bộ ảnh nhân vật, dùng cho Biên kịch và cảnh).
 export const castDescription = (members: readonly CastMember[]): string => members.map(memberLine).join("; ");
 
-export const scaleLine = (members: readonly CastMember[]): string =>
-  `Tỉ lệ kích thước, giữ đúng trong mọi ảnh: ${members.map((m) => `${m.name} ${m.size}`).join("; ")}`;
+// Chiều cao (cm) ghi trong kích thước, vd "cao 8 cm, chỉ tới đầu gối Mướp" → 8.
+const cmOf = (size: string): number | undefined => {
+  const m = /(\d+(?:[.,]\d+)?)\s*cm/i.exec(size);
+  return m ? Number(m[1]!.replace(",", ".")) : undefined;
+};
+
+// Muse bỏ qua số cm khi vẽ (đo 07/11/2026: gián 9 cm vẽ cao gần bằng mèo 40 cm) → nói thẳng tỉ lệ so với nhân vật cao nhất của cả dàn.
+function ratioNote(m: CastMember, all: readonly CastMember[]): string {
+  const tallest = all.reduce<CastMember | undefined>((best, x) => ((cmOf(x.size) ?? 0) > (cmOf(best?.size ?? "") ?? 0) ? x : best), undefined);
+  const h = cmOf(m.size);
+  const top = tallest ? cmOf(tallest.size) : undefined;
+  if (!tallest || tallest === m || !h || !top || h >= top * 0.75) return "";
+  return ` — chỉ cao bằng 1/${Math.round(top / h)} chiều cao ${tallest.name}`;
+}
+
+// members: những nhân vật cần nhắc; all: cả dàn (tỉ lệ luôn so với nhân vật cao nhất của cả dàn).
+export const scaleLine = (members: readonly CastMember[], all: readonly CastMember[] = members): string =>
+  `Tỉ lệ kích thước, giữ đúng trong mọi ảnh: ${members.map((m) => `${m.name} ${m.size}${ratioNote(m, all)}`).join("; ")}. Nhân vật nhỏ phải trông nhỏ hẳn bên cạnh nhân vật lớn, không phóng to cho dễ nhìn`;
 
 // Bộ ảnh mẫu của dàn: ảnh xếp hàng đúng tỉ lệ (view "front", cũng là ảnh đính kèm khi cảnh phải mở chat mới),
 // rồi từng nhân vật nối tiếp trong cùng chat (view "member-<n>").
@@ -66,6 +82,14 @@ export function CAST_SHEET(members: readonly CastMember[], style: CartoonStyle):
     };
   };
   return [lineup, ...members.map(one)];
+}
+
+// Bộ ảnh bối cảnh hoạt hình: như LOCATION_SHEET nhưng cấm cả con vật (đo 07/11/2026: tả "lỗ là nhà của lũ gián" thì Muse vẽ
+// thêm gián tí hon vào ảnh bối cảnh, ảnh này lại đính kèm mọi cảnh).
+const emptyScene = (p: string) => p.replaceAll("không có người", "không có nhân vật hay con vật nào, bối cảnh trống");
+
+export function CARTOON_LOCATION_SHEET(d: string, look: string): ReferenceView[] {
+  return LOCATION_SHEET(d, look).map((v) => ({ ...v, prompt: emptyScene(v.prompt), ...(v.inChatPrompt ? { inChatPrompt: emptyScene(v.inChatPrompt) } : {}) }));
 }
 
 export function cartoonPropStillPrompt(item: PropSpecItem, style: CartoonStyle): string {
@@ -114,7 +138,7 @@ function castLines(shot: Shot, members: readonly CastMember[]): string[] {
   return [
     `Trong khung chỉ có: ${present.map((m) => `${m.name} (${m.look}, ${m.size})`).join("; ")}.`,
     absent.length ? `Không có trong khung: ${absent.map((m) => m.name).join(", ")}.` : "",
-    `${scaleLine(present)}.`,
+    `${scaleLine(present, members)}.`,
   ];
 }
 
@@ -326,8 +350,22 @@ export function episodeRepairPrompt(from: number, to: number, errors: string[]):
 
 // Mọi hàm xuất ra của file (test bắt đủ); phiên bản = mã nguồn các hàm + toàn bộ câu chữ CARTOON_TEXT.
 export const CARTOON_FUNCTIONS = [
+  // Hàm nội bộ cũng vào phiên bản: sửa chúng là đổi chữ prompt.
+  memberLine,
+  cmOf,
+  ratioNote,
+  cartoonFraming,
+  castLines,
+  cartoonEndStates,
+  craftBlock,
+  contextBlock,
+  shotRules,
+  batchLine,
+  jsonTemplate,
+  emptyScene,
   cartoonLook,
   castDescription,
+  CARTOON_LOCATION_SHEET,
   scaleLine,
   CAST_SHEET,
   cartoonPropStillPrompt,
