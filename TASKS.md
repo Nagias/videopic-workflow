@@ -142,3 +142,13 @@ Tổng lượt Muse thật Đợt 1A: 1.
 
 Tổng: 15 ảnh, ≥1 lượt chữ, 8 video (6 dùng được). Kiểm chứng: ffprobe phim; xem khung giữa 6 cảnh. Ảnh khung đầu giữ đúng sản phẩm; khâu ảnh → video của Muse làm lệch sản phẩm ở cảnh 3 (thân nồi thành màu bạc khi đóng nắp) và in chữ Nagakawa lên mặt trong nắp ở cảnh 2.
 Tài khoản: 01 bị Meta ngắt; 02 chưa đăng nhập; 03 vẽ ảnh được nhưng bị chặn tạo video; 04 dùng được cả ảnh và video.
+
+### Nhật ký gọi Muse thật — phim hoạt hình "Mèo và 3 con gián" (06/11/2026, workflow `meo-va-3-con-gian`)
+
+Thử phim hoạt hình cartoon 3D bằng các node có sẵn: một node Nhân vật tả cả dàn 4 nhân vật (mèo Mướp + 3 gián), Không gian là căn bếp với `look` hoạt hình, 6 cảnh × 5 giây (cảnh 5 nối tiếp cảnh 4), Ghép phim. Không sửa code.
+
+| Lượt chạy | Kết quả | Lượt Muse |
+|---|---|---|
+| Lần 1 (`MUSE_ACCOUNTS=muse_vid_04`, ~15 phút) | Mọi node xong, không lỗi. Phim h264 1280×720 24 fps có tiếng (aac), 29,9 giây (cảnh nối cắt 0,08 giây đầu) | 10 ảnh + 6 video (theo ước tính của app) |
+
+Kiểm chứng: ffprobe phim; xem khung giữa và khung cuối 6 cảnh. Bộ ảnh nhân vật ra đúng kiểu hoạt hình dù `CHARACTER_SHEET` vẫn dùng `DEFAULT_LOOK` "ảnh chụp điện thoại". Lệch: cảnh 2 và 3 có nhân vật mà khung đầu ghi "không có trong khung"; gián Vàng thành thân vàng ở cảnh 3; mèo ở cảnh 4–5 gầy và non hơn ảnh mẫu.
