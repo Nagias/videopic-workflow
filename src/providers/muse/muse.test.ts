@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../../core/config";
 import { createAccountPool, isProfileLoggedIn } from "./accounts";
 import { assertMuseAllowed, createMuseProvider, findMuseFailure, findRefusal, replyAfterPrompt, videoWaitMs } from "./index";
-import { formatImagePrompt, formatVideoPrompt } from "./prompt";
-import { validateVideoProbe } from "./validate";
+import { formatImagePrompt, formatVideoPrompt, videoToolRule } from "./prompt";
+import { validateVideoProbe, validateVideoSource, x264Core } from "./validate";
 
 describe("formatVideoPrompt", () => {
   it("giữ khuôn Story Studio: thời lượng, chế độ, hành động, 16:9", () => {
@@ -40,8 +40,33 @@ describe("validateVideoProbe", () => {
   it("chờ lâu hơn cho clip 10 giây", () => {
     expect(videoWaitMs(10)).toBeGreaterThan(videoWaitMs(5));
   });
-  it("clip 5 giây chờ quá 20 phút (Muse đo 07/11 mất ~19 phút vì tự kiểm khung)", () => {
-    expect(videoWaitMs(5)).toBeGreaterThan(20 * 60_000);
+  it("chờ dư nhiều lần so với video AI thật (~90–104 giây) nhưng không quá 10 phút cho clip 5 giây", () => {
+    expect(videoWaitMs(5)).toBeGreaterThanOrEqual(5 * 104_000);
+    expect(videoWaitMs(5)).toBeLessThanOrEqual(10 * 60_000);
+  });
+});
+
+describe("video phải từ công cụ tạo video AI của Muse (dấu x264)", () => {
+  const clip = (sei: string) => new Uint8Array(Buffer.concat([Buffer.alloc(4096, 1), Buffer.from(`\u0005ÿ${sei} - H.264/MPEG-4 AVC codec`, "latin1"), Buffer.alloc(4096, 2)]));
+  it("đọc số core x264 ghi trong file, không có thì null", () => {
+    expect(x264Core(clip("x264 - core 157 r2969 d4099dd"))).toBe(157);
+    expect(x264Core(clip("không phải x264"))).toBeNull();
+  });
+  it("nhận video có dấu máy tạo video Muse (core 157, đo 27/10–07/11/2026)", () => {
+    expect(validateVideoSource(clip("x264 - core 157 r2969"))).toEqual({ ok: true });
+  });
+  it("loại clip Muse tự dựng bằng code (core 164) và clip không đọc được dấu, nói rõ lý do", () => {
+    const fake = validateVideoSource(clip("x264 - core 164 r3108"));
+    expect(fake.ok).toBe(false);
+    expect(!fake.ok && fake.reason).toMatch(/core 164.*tự dựng|tự dựng.*core 164/);
+    const unknown = validateVideoSource(clip("lavc vp9"));
+    expect(unknown.ok).toBe(false);
+    expect(!unknown.ok && unknown.reason).toMatch(/không đọc được dấu/);
+  });
+  it("mọi yêu cầu video đều dặn dùng công cụ tạo video AI, cấm tự dựng bằng code", () => {
+    expect(videoToolRule(true)).toMatch(/Bắt buộc dùng công cụ tạo video AI.*từ ảnh đính kèm/);
+    expect(videoToolRule(false)).not.toMatch(/ảnh đính kèm/);
+    expect(videoToolRule(false)).toMatch(/Không tự dựng video bằng code.*báo lỗi/);
   });
 });
 
