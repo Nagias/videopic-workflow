@@ -40,6 +40,9 @@ describe("validateVideoProbe", () => {
   it("chờ lâu hơn cho clip 10 giây", () => {
     expect(videoWaitMs(10)).toBeGreaterThan(videoWaitMs(5));
   });
+  it("clip 5 giây chờ quá 20 phút (Muse đo 07/11 mất ~19 phút vì tự kiểm khung)", () => {
+    expect(videoWaitMs(5)).toBeGreaterThan(20 * 60_000);
+  });
 });
 
 describe("chặn Muse trong test", () => {

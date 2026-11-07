@@ -51,7 +51,7 @@ export const lastFrameOf = (ctx: NodeRunContext, clipId: string): Promise<{ medi
   ctx.step(chainFrameKey(clipId), async () => ({ mediaId: await frameOf(ctx, clipId, LAST_FRAME_FROM_END_SEC, "last-frame") }));
 
 // Mọi lần gọi dịch vụ đi qua đây: giữ một chỗ của dịch vụ (ctx.shared.slot) trong lúc gọi; lần chạy đã dừng
-// hoặc cầu dao đã ngắt thì không gửi; lỗi máy chủ được đếm vào cầu dao trước khi trả chỗ cho cảnh đang chờ.
+// hoặc cầu dao đã ngắt thì không gửi; lỗi máy chủ hoặc hết giờ chờ được đếm vào cầu dao trước khi trả chỗ cho cảnh đang chờ.
 // Thứ tự khoá: khoá chat (nếu có) ở ngoài, chỗ dịch vụ ở trong; không bao giờ giữ chỗ dịch vụ trong lúc chờ khoá chat.
 async function callProvider<T>(ctx: NodeRunContext, provider: MediaProvider, fn: () => Promise<T>): Promise<T> {
   return ctx.shared.slot(provider.id, async () => {
