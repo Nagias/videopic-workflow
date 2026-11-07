@@ -175,9 +175,11 @@ export function cartoonMotionPrompt(shot: Shot, c: { members: readonly CastMembe
     `Việc xảy ra sau khung hình này: ${shot.motion.trim()}.`,
     shot.end?.trim() ? `Cuối ${SHOT_SECONDS} giây: ${shot.end.trim()}.` : "",
     cartoonEndStates(shot),
+    // Tả cả ngoại hình như ảnh khung: đo 07/11/2026 chỉ có tên thì máy tạo video tô thân "gián Xanh" thành xanh, "gián Vàng"
+    // thành vàng; cảnh không nhân vật thì vẽ thêm con chuột chui ra từ lỗ tường.
     present.length
-      ? `Nhân vật trong cảnh: ${present.map((m) => `${m.name} (${m.size})`).join("; ")}; không thêm nhân vật khác.`
-      : "Không có nhân vật nào xuất hiện.",
+      ? `Nhân vật trong cảnh: ${present.map((m) => `${m.name} (${m.look}, ${m.size})`).join("; ")}; không thêm nhân vật hay con vật khác. Tên gọi chỉ là tên, không phải màu: màu thân và mặt từng nhân vật giữ đúng như ảnh suốt clip.`
+      : "Không có nhân vật hay con vật nào xuất hiện.",
     `Máy quay: ${CAMERA_MOVES[shot.move].vi}.`,
     CARTOON_TEXT.motion,
   ]
