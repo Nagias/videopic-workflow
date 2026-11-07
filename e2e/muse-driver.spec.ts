@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { copyFile } from "node:fs/promises";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
@@ -11,6 +11,18 @@ import { createTestEnv, type TestEnv } from "../tests/helpers/test-env";
 
 const patterned = (lavfi: string, out: string) =>
   execFileSync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", lavfi, "-frames:v", "1", out], { windowsHide: true });
+
+// Gắn dấu phần mềm nén vào clip thử (đo 07/11/2026): công cụ tạo video AI của Muse ghi "x264 - core 157", clip Muse tự
+// dựng bằng code ghi "core 164". Clip do ffmpeg trên máy tạo mang core của máy, nên phải gắn dấu mới giả được.
+const MUSE_AI_CORE = 157;
+const MUSE_SELFMADE_CORE = 164;
+const withX264Core = (file: string, core: number) => {
+  const bytes = readFileSync(file);
+  const at = /x264 - core \d{3}/.exec(bytes.toString("latin1"));
+  if (!at) throw new Error(`Clip thử ${file} không có dấu x264 ba chữ số để gắn dấu`);
+  bytes.write(`x264 - core ${core}`, at.index, "latin1");
+  writeFileSync(file, bytes);
+};
 
 // Trang giả theo giao diện muse.ai đo 27/10/2026: menu Chats → mục "New side chat" (không phải <button>) → URL /thread/new → gửi tin → /thread/<id>.
 const sideChatMenu = (clearLog: boolean) => `
@@ -55,7 +67,7 @@ ta.addEventListener('keydown', (e) => {
 </script></body></html>`;
 
 const OLD_VIDEO = `<div class="message"><video src="/old.mp4" width="640" muted preload="metadata"></video></div>`;
-const videoPage = (menu: string, extra: string) => shell(menu, OLD_VIDEO, `${extra} say('<video src="/new.mp4" width="640" muted preload="metadata"></video>', 3500);`);
+const videoPage = (menu: string, extra: string, src = "/new.mp4") => shell(menu, OLD_VIDEO, `${extra} say('<video src="${src}" width="640" muted preload="metadata"></video>', 3500);`);
 const imageOk = `say('<img src="/gen.jpg" width="640">', 3500);`;
 const imageRefuse = `say('<p>Xin lỗi, mình không thể tạo hình ảnh này vì vi phạm nguyên tắc.</p>', 3500);`;
 // Trả lời chữ theo 3 đợt (giống Muse gõ dần): đợt 1 lúc 3 giây, đợt 2 lúc 7 giây, đợt cuối lúc 11 giây.
@@ -76,9 +88,10 @@ test.describe("Muse provider trên trang Muse giả (không tốn lượt thật
 
   test.beforeAll(async () => {
     env = createTestEnv();
-    for (const [name, color, dur] of [["old", "aa0000", 10], ["new", "00aa00", 5]] as const) {
+    for (const [name, color, dur, core] of [["old", "aa0000", 10, MUSE_AI_CORE], ["new", "00aa00", 5, MUSE_AI_CORE], ["selfmade", "aaaa00", 5, MUSE_SELFMADE_CORE]] as const) {
       const out = await env.storage.tmpPath("mp4");
       await env.ffmpeg.makeTestClip({ out, durationSec: dur, colorHex: color, width: 1280, height: 720 });
+      withX264Core(out, core);
       clips[name] = out;
     }
     clips["old-copy"] = clips.old!;
@@ -116,6 +129,7 @@ test.describe("Muse provider trên trang Muse giả (không tốn lượt thật
       else if (url.startsWith("/text")) res.end(shell(sideChatMenu(true), "", textReply));
       else if (url.startsWith("/plusmenu")) res.end(shell(plusMenu, "<div class='message'><p>chat chính cũ</p></div>", imageOk));
       else if (url.startsWith("/nosidechat")) res.end(videoPage("", ""));
+      else if (url.startsWith("/selfmade")) res.end(videoPage(sideChatMenu(true), "", "/selfmade.mp4"));
       else if (url.startsWith("/keeplog")) res.end(videoPage(sideChatMenu(false), "say('<video src=\"/old-copy.mp4\" width=\"640\" muted></video>', 500);"));
       else res.end(videoPage(sideChatMenu(true), ""));
     });
@@ -167,8 +181,19 @@ test.describe("Muse provider trên trang Muse giả (không tốn lượt thật
     await copyFile(clips.old!, oldCopy);
     await env.storage.importFile(oldCopy, { kind: "video", source: "muse:truoc-day" });
     await env.ffmpeg.makeTestClip({ out: clips.new!, durationSec: 5, colorHex: "0000aa", width: 1280, height: 720 });
+    withX264Core(clips.new!, MUSE_AI_CORE);
     const result = await provider("/keeplog").generateVideo({ prompt: "x", durationSec: 5 }, ctx([]));
     expect(env.storage.getMedia(result.mediaId)!.sha256).toBe(await env.storage.sha256File(clips.new!));
+  });
+
+  test("Muse gửi clip tự dựng bằng code (dấu x264 lạ): không nhận, mở chat mới thử lại một lần rồi báo NOT_AI_VIDEO", async () => {
+    test.setTimeout(150_000);
+    const messages: string[] = [];
+    await expect(provider("/selfmade").generateVideo({ prompt: "x", durationSec: 5 }, ctx(messages))).rejects.toThrow(
+      /không phải từ công cụ tạo video AI của Muse \(dấu x264 core 164/,
+    );
+    expect(messages.filter((m) => m.includes("NOT_AI_VIDEO") && m.includes("thử lại lần 2/2")).length).toBe(1);
+    expect(messages.some((m) => m.startsWith("Đã nhận video"))).toBe(false);
   });
 
   test("ảnh có đính kèm: không nhận nhầm ảnh mình gửi, chuẩn hoá 1280x720, trả đường dẫn chat phụ", async () => {

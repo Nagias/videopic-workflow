@@ -20,7 +20,7 @@ export const CARTOON_TEXT = {
   sheetBackground: "nền tường sáng trơn một màu, sàn phẳng; trên tường có vạch đo chiều cao kẻ ngang cách đều (không ghi số) để so chiều cao các nhân vật",
   still: "Bố cục rõ như một khung phim hoạt hình, nhân vật nổi bật trên nền, không chữ, không logo, không khung truyện tranh, khung ngang 16:9.",
   motion:
-    "Diễn xuất kiểu phim hoạt hình hài không lời thoại: động tác cường điệu, có lấy đà trước khi làm, người co giãn khi nhảy và khi va chạm, mắt và miệng biểu cảm phóng đại, phản ứng (giật mình, tức tối, ngơ ngác) giữ lâu một nhịp; va chạm vui nhộn không gây thương tích, không máu; nhân vật chỉ kêu, cười, thở dốc, không nói thành lời; tiếng động hiệu ứng hoạt hình vui nhộn. Giữ đúng hình dáng, màu sắc, phụ kiện và tỉ lệ kích thước của từng nhân vật và đồ vật suốt clip; không đổi cỡ đồ vật; không thêm nhân vật; không cắt cảnh; không chữ; khung ngang 16:9.",
+    "Hoạt hình chuyển động thật như phim: nhân vật cử động cả thân, tay chân và nét mặt qua từng khung, không phải hình cắt dán trượt trên nền. Diễn xuất kiểu phim hoạt hình hài không lời thoại: động tác cường điệu, có lấy đà trước khi làm, người co giãn khi nhảy và khi va chạm, mắt và miệng biểu cảm phóng đại, phản ứng (giật mình, tức tối, ngơ ngác) giữ lâu một nhịp; va chạm vui nhộn không gây thương tích, không máu; nhân vật chỉ kêu, cười, thở dốc, không nói thành lời; tiếng động hiệu ứng hoạt hình vui nhộn. Giữ đúng hình dáng, màu sắc, phụ kiện và tỉ lệ kích thước của từng nhân vật và đồ vật suốt clip; không đổi cỡ đồ vật; không thêm nhân vật; không cắt cảnh; không chữ; khung ngang 16:9.",
   craft: [
     "Không lời thoại: mọi chuyện kể bằng hành động, biểu cảm và tiếng động.",
     "Cả tập xoay quanh MỘT mục tiêu cụ thể nhìn thấy được mà hai phe tranh nhau (một món đồ, một chỗ, một việc).",
@@ -175,9 +175,11 @@ export function cartoonMotionPrompt(shot: Shot, c: { members: readonly CastMembe
     `Việc xảy ra sau khung hình này: ${shot.motion.trim()}.`,
     shot.end?.trim() ? `Cuối ${SHOT_SECONDS} giây: ${shot.end.trim()}.` : "",
     cartoonEndStates(shot),
+    // Tả cả ngoại hình như ảnh khung: đo 07/11/2026 chỉ có tên thì máy tạo video tô thân "gián Xanh" thành xanh, "gián Vàng"
+    // thành vàng; cảnh không nhân vật thì vẽ thêm con chuột chui ra từ lỗ tường.
     present.length
-      ? `Nhân vật trong cảnh: ${present.map((m) => `${m.name} (${m.size})`).join("; ")}; không thêm nhân vật khác.`
-      : "Không có nhân vật nào xuất hiện.",
+      ? `Nhân vật trong cảnh: ${present.map((m) => `${m.name} (${m.look}, ${m.size})`).join("; ")}; không thêm nhân vật hay con vật khác. Tên gọi chỉ là tên, không phải màu: màu thân và mặt từng nhân vật giữ đúng như ảnh suốt clip.`
+      : "Không có nhân vật hay con vật nào xuất hiện.",
     `Máy quay: ${CAMERA_MOVES[shot.move].vi}.`,
     CARTOON_TEXT.motion,
   ]

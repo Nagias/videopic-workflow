@@ -186,3 +186,17 @@ Mẫu "Phim hoạt hình 3 phút": Dàn nhân vật (mèo Mướp + gián Đỏ,
 
 Tổng ảnh, video nhận được (đếm bảng `media`): 69 ảnh, 36 video; ≥5 lượt chữ; các lần video hỏng/hết giờ Muse vẫn có thể đã tính lượt.
 Kiểm chứng: ffprobe phim; bảng khung giữa và khung cuối 36 cảnh cắt từ chính phim. Đạt: nét 2D giữ đều cả phim, cùng một căn bếp, mèo và 3 gián giữ hình dáng, một mạch truyện mèo giành đĩa cá với 3 gián quanh bàn trải khăn caro, kết thúc gián ăn cá dưới sàn còn mèo ngồi cau có. Lệch: vết nhoè, bóng mờ do khâu ảnh → video của Muse ở cảnh 18, 20, 27, 29, 32–34; cảnh 28 bàn thành hình chữ nhật cao hơn; cảnh 19 gián Xanh cao tới ngực mèo; cảnh 4 cận cảnh 3 gián trông to vì không có mèo làm thước; cảnh 6 tủ ngăn kéo đứng riêng.
+
+**Sau đó chủ dự án xem: "hình vỡ tùm lum", chuyển động như cắt ghép ảnh.** Nguyên nhân thật (thay cho "Muse chậm" ở trên): từ tối 06/11 công cụ tạo video của Muse báo lỗi nội bộ, Muse không báo lỗi mà tự dựng clip bằng code (cắt hình rời, vá nền, cho trượt) — 35/36 clip của phim trên mang dấu nén `x264 core 164` thay vì `core 157` của video AI thật; vết nhoè là chỗ vá nền, 19 phút chờ là thời gian tự dựng. Sửa ở nhánh `muse-chan-video-cat-ghep` (PR #16).
+
+### Nhật ký gọi Muse thật — làm lại phim bằng video AI thật (07/11/2026, cùng workflow)
+
+| Lượt chạy | Kết quả | Lượt Muse |
+|---|---|---|
+| Thử cảnh 4 (câu dặn `videoToolRule()`) | Video AI thật (core 157) sau ~1,5 phút: ba gián đi, chụm đầu, máy quay tiến vào — clip cũ đứng im chỉ nhích mắt | 1 video |
+| Bản 2 (cả phim, 63 phút) | 36/36 clip core 157, mỗi clip 69–97 giây, không lỗi. Lệch mới: ~12 cảnh gián bị tô thân xanh/vàng (prompt video chỉ có tên "gián Xanh (cao 9 cm)"), cảnh 1 thêm con chuột chui ra từ lỗ tường | 35 video |
+| Thử cảnh 10, lần 1 (tả ngoại hình trong prompt video) | gián Xanh giữ thân nâu, khăn xanh; mặt gián Vàng vẫn ngả vàng cam | 1 video |
+| Thử cảnh 10, lần 2 (thêm "tên gọi không phải màu") | Ba con giữ thân nâu, chỉ khác mũ đỏ, khăn xanh, kính vàng | 1 video |
+| Bản 3 (cả phim, 49 phút) | 36/36 clip core 157, không lỗi. Phim h264 1280×720 24 fps có tiếng, 179,79 giây, 102 MB | 35 video |
+
+Tổng: 73 video, 0 ảnh, 0 chữ (ảnh nhân vật, ảnh khung, kịch bản dùng lại). Kiểm chứng: dấu nén từng clip; khung dày 4 hình/giây 20 giây đầu (bản cũ: cảnh 1, 2, 4 gần như ảnh tĩnh trượt; bản 3: chuyển động thật cả 4 cảnh, không chuột); bảng khung giữa và cuối 36 cảnh. Còn lệch ở bản 3: gián đổi màu ở cảnh 9, 24, 30 (giảm từ ~12 cảnh); cảnh 1 ánh sáng tối dần ngả nâu; cảnh 32 nền thành mảng tường trống.

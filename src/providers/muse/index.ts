@@ -27,8 +27,8 @@ import {
   SEND_BUTTON_SELECTOR,
   type MediaCandidate,
 } from "./dom";
-import { formatImagePrompt, formatVideoPrompt } from "./prompt";
-import { validateVideoProbe } from "./validate";
+import { formatImagePrompt, formatVideoPrompt, videoToolRule } from "./prompt";
+import { validateVideoProbe, validateVideoSource } from "./validate";
 
 const SCAN_INTERVAL_MS = 3_000;
 const STABLE_CHECKS = 2;
@@ -36,10 +36,10 @@ const MIN_IMAGE_SIDE = 512;
 const OWN_BUBBLE_SETTLE_MS = 2_000;
 const REFUSAL_GRACE_MS = 25_000;
 
-// Đo 07/11/2026: sau khi dựng, Muse còn tự kiểm khung ("Checking frames", "Verifying frames"), một clip 5 giây mất tới
-// ~19 phút. Chờ ngắn hơn thì app bỏ đi khi Muse sắp xong, mở chat mới làm lại và tốn thêm lượt.
+// Video AI thật của Muse: ~104 giây (đo 27/10/2026), ~90 giây (07/11/2026). Đợt 06–07/11 chờ tới ~19 phút là Muse tự dựng
+// clip bằng code ("Checking frames", "Patching sprites"), nay bị chặn bởi videoToolRule() + validateVideoSource().
 export function videoWaitMs(durationSec: number): number {
-  return (durationSec > 5 ? 1800 : 1500) * 1000;
+  return (durationSec > 5 ? 720 : 600) * 1000;
 }
 export const IMAGE_WAIT_MS = 180_000;
 export const TEXT_WAIT_MS = 240_000;
@@ -95,7 +95,7 @@ function expectMedia(r: Accepted): MediaAccepted {
 }
 
 export const MAX_JOB_ATTEMPTS = 2;
-const RETRY_IN_NEW_SIDE_CHAT = new Set(["REFUSED", "MUSE_FAILED", "NO_MEDIA", "NO_TEXT", "SIDE_CHAT_FAILED", "THREAD_NOT_FOUND"]);
+const RETRY_IN_NEW_SIDE_CHAT = new Set(["REFUSED", "MUSE_FAILED", "NO_MEDIA", "NOT_AI_VIDEO", "NO_TEXT", "SIDE_CHAT_FAILED", "THREAD_NOT_FOUND"]);
 
 export function isSideChatThread(url: string): boolean {
   return /\/thread\/(?!new(?:[/?#]|$))[^/?#]+/.test(url);
@@ -244,6 +244,15 @@ async function acceptCandidate(
       if (!verdict.ok) reasons.push(verdict.reason);
       await ctx.storage.removeTemp(tmp);
       return null;
+    }
+    // Clip đúng cỡ của chính lần gửi này mà không do công cụ tạo video làm ra: Muse đã trả lời xong bằng clip cắt ghép, chờ thêm vô ích.
+    const source = validateVideoSource(bytes);
+    if (!source.ok) {
+      await ctx.storage.removeTemp(tmp);
+      throw new ProviderError(
+        "NOT_AI_VIDEO",
+        `Muse gửi ${source.reason}. Thường là công cụ tạo video của Muse đang lỗi: chạy lại sau. Nếu Muse đã đổi máy tạo video thì thêm dấu mới vào MUSE_VIDEO_X264_CORES (src/providers/muse/validate.ts).`,
+      );
     }
     const rec = await ctx.storage.importFile(tmp, { kind: "video", source: `muse:${accId}`, width: probe.width, height: probe.height, durationSec: probe.durationSec });
     return { mediaId: rec.id, width: probe.width, height: probe.height, durationSec: probe.durationSec };
@@ -482,7 +491,7 @@ export function createMuseProvider(cfg: AppConfig, pool: AccountPool = createAcc
       const r = expectMedia(await runJob(
         {
           kind: "video",
-          text: req.verbatim ? req.prompt.trim() : formatVideoPrompt(req.prompt, req.durationSec, attachments.length > 0),
+          text: `${req.verbatim ? req.prompt.trim() : formatVideoPrompt(req.prompt, req.durationSec, attachments.length > 0)} ${videoToolRule(attachments.length > 0)}`,
           attachments,
           requestedSec: req.durationSec,
           waitMs: videoWaitMs(req.durationSec),

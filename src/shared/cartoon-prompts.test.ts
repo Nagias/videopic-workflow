@@ -65,8 +65,15 @@ describe("prompt phim hoạt hình", () => {
     expect(p).toMatch(/cường điệu/);
     expect(p).toMatch(/không nói thành lời/);
     expect(p).toMatch(/Cuối 5 giây: gián Đỏ đứng trên bánh, Mướp ngã dưới sàn/);
-    expect(p).toMatch(/Nhân vật trong cảnh: gián Đỏ \(cao 7 cm, chỉ tới đầu gối Mướp\); Mướp \(cao 40 cm\); không thêm nhân vật khác/);
+    expect(p).toMatch(/Nhân vật trong cảnh: gián Đỏ \(gián nâu đội mũ lưỡi trai đỏ, cao 7 cm, chỉ tới đầu gối Mướp\); Mướp \(mèo mướp cam béo tròn, mắt xanh lá, cao 40 cm\); không thêm nhân vật hay con vật khác/);
     expect(REAL_ONLY.test(p)).toBe(false);
+  });
+
+  it("video: tả ngoại hình từng nhân vật (đo 07/11: chỉ có tên thì 'gián Xanh' bị tô thân xanh), cấm thêm con vật", () => {
+    const p = cartoon.cartoonMotionPrompt(shot({ cast: ["gián Xanh", "Mướp"] }), { members });
+    expect(p).toMatch(/Nhân vật trong cảnh: gián Xanh \(gián nâu quàng khăn xanh, cao 7 cm\); Mướp \(mèo mướp cam béo tròn, mắt xanh lá, cao 40 cm\); không thêm nhân vật hay con vật khác/);
+    expect(p).toMatch(/Tên gọi chỉ là tên, không phải màu/);
+    expect(cartoon.cartoonMotionPrompt(shot({ subject: "none", cast: [] }), { members })).toMatch(/Không có nhân vật hay con vật nào xuất hiện/);
   });
 
   it("ai trong khung: tên không phân biệt hoa thường; tên lạ báo riêng; cảnh viết tay không có cast thì cả dàn", () => {

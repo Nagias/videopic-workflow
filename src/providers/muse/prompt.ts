@@ -6,6 +6,17 @@ const ROLE_CAPTION: Record<string, string> = {
   previous: "khung hình ngay trước — nối tiếp hành động, giữ bố cục",
 };
 
+// Đo 06–07/11/2026: công cụ tạo video của Muse báo lỗi nội bộ, Muse không báo lỗi nữa mà tự dựng clip bằng code (cắt nhân vật
+// thành hình rời, vá nền, cho trượt) — 35/36 cảnh phim hoạt hình là hình cắt ghép. Câu này đi kèm mọi yêu cầu video.
+export function videoToolRule(hasInputImage: boolean): string {
+  return [
+    `Bắt buộc dùng công cụ tạo video AI của bạn để tạo clip này${hasInputImage ? " từ ảnh đính kèm" : ""}.`,
+    "Không tự dựng video bằng code: không cắt nhân vật hay đồ vật thành hình rời rồi cho trượt trên nền, không dịch chuyển hay phóng to ảnh tĩnh, không vẽ từng khung rồi ghép thành video.",
+    "Gửi nguyên file do công cụ tạo video trả về, không cắt, không ghép, không nén lại.",
+    "Nếu công cụ tạo video báo lỗi thì chỉ trả lời là bị lỗi, không làm cách khác.",
+  ].join(" ");
+}
+
 export function formatVideoPrompt(prompt: string, durationSec: ClipDuration, hasInputImage = false): string {
   const action = prompt.trim();
   if (!action) throw new Error("Prompt đang trống");
