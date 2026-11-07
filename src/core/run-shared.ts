@@ -5,7 +5,7 @@ import { semaphore } from "./semaphore";
 
 export class ServiceBreakerOpen extends Error {
   constructor(limit: number) {
-    super(`Dừng: dịch vụ báo lỗi máy chủ ${limit} lần — không gửi thêm để tránh tốn lượt. Bấm Chạy lại khi dịch vụ ổn (cảnh đã xong được giữ).`);
+    super(`Dừng: dịch vụ báo lỗi hoặc hết giờ không trả kết quả ${limit} lần — không gửi thêm để tránh tốn lượt. Bấm Chạy lại khi dịch vụ ổn (cảnh đã xong được giữ).`);
     this.name = "ServiceBreakerOpen";
   }
 }

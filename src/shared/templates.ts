@@ -109,9 +109,71 @@ const IDEA_TO_FILM: WorkflowGraph = expandScenes(
   { writerId: "writer-1", shots: [], refs: REFS, provider: "muse", origin: { x: 940, y: 40 } },
 ).graph;
 
+// Phim hoạt hình 3 phút (thiết kế 2026-11-06): Dàn nhân vật → Ý tưởng tập (3 ý, chọn) → Dàn ý 36 cảnh → Biên kịch theo đợt →
+// Đồ vật → nhóm Phân cảnh rỗng (36 thẻ tự sinh khi Biên kịch xong) → Ghép phim. Chạy từng node để duyệt, hoặc chạy cả.
+// Học công thức phim hài không lời (cặp đối đầu, leo thang, cú chốt), nhân vật tự nghĩ, không chép phim có bản quyền.
+export const CARTOON_MEMBERS = [
+  {
+    name: "Mướp",
+    look: "mèo mướp màu cam béo tròn, sọc cam đậm trên lưng, bụng và mõm trắng, mắt to màu xanh lá, ria trắng dài, đeo vòng cổ đỏ có chuông vàng nhỏ, đi bằng hai chân sau",
+    size: "cao 40 cm khi đứng hai chân",
+    trait: "lười, tham ăn, nóng tính nhưng tốt bụng",
+  },
+  {
+    name: "gián Đỏ",
+    look: "gián màu nâu bóng đứng bằng hai chân sau, thân tròn như hạt đậu, mắt to tròn trắng, hai râu dài cong, đội mũ lưỡi trai đỏ quay ngược",
+    size: "cao 8 cm, chỉ tới đầu gối Mướp",
+    trait: "lanh lợi, cầm đầu, hay bày trò",
+  },
+  {
+    name: "gián Xanh",
+    look: "gián màu nâu bóng đứng bằng hai chân sau, dáng gầy dài, mắt to tròn trắng, hai râu dài cong, quàng khăn len xanh dương",
+    size: "cao 9 cm, chỉ tới đầu gối Mướp",
+    trait: "khoẻ nhưng ngốc nghếch, mê ăn",
+  },
+  {
+    name: "gián Vàng",
+    look: "gián màu nâu bóng đứng bằng hai chân sau, nhỏ nhất bọn, mập lùn, mắt to tròn trắng, hai râu ngắn, đeo kính tròn gọng vàng",
+    size: "cao 6 cm, chỉ tới mắt cá chân Mướp",
+    trait: "nhút nhát, thông minh, hay nghĩ ra mẹo",
+  },
+];
+
+const CARTOON_RULES =
+  "Mướp và ba chú gián sống chung một ngôi nhà, luôn tranh nhau đồ ăn, chỗ ngủ và đồ chơi. Gián nhỏ nhưng nhanh và nhiều mẹo; Mướp to khoẻ nhưng vụng và tham. Trong một tập Mướp thua phần lớn các đợt, cú chốt có khi Mướp thắng, có khi cả bọn cùng chịu thiệt rồi làm hoà. Không ai bị thương thật, không máu, không thuốc diệt côn trùng, không vũ khí. Không lời thoại.";
+
+const KITCHEN =
+  "căn bếp nhỏ của một ngôi nhà trong phim hoạt hình: sàn gạch caro trắng đỏ, tủ bếp gỗ màu kem có ngăn kéo, bếp ga và tủ lạnh trắng bên trái, bàn ăn gỗ tròn ở giữa phòng phủ khăn kẻ ô, cửa sổ phía sau nhìn ra vườn, chân tường bên phải có một lỗ nhỏ hình vòm tối om";
+
+const CARTOON_EPISODE: WorkflowGraph = expandScenes(
+  {
+    nodes: [
+      { id: "cast-1", type: "cast", position: { x: 40, y: 40 }, params: { name: "Mướp và lũ gián", style: "hoat-hinh-2d", members: CARTOON_MEMBERS, rules: CARTOON_RULES, provider: "muse" } },
+      { id: "location-1", type: "location", position: { x: 40, y: 760 }, params: { name: "Căn bếp", description: KITCHEN, look: "buổi chiều, nắng vàng ấm chiếu qua cửa sổ", style: "hoat-hinh-2d", provider: "muse" } },
+      { id: "ideas-1", type: "ideas", position: { x: 480, y: 40 }, params: { hint: "", pick: 1, own: "", provider: "muse" } },
+      { id: "outline-1", type: "outline", position: { x: 480, y: 520 }, params: { shotCount: 36, own: "", provider: "muse" } },
+      { id: "writer-1", type: "writer", position: { x: 920, y: 40 }, params: { idea: "", shotCount: 12, provider: "muse" } },
+      { id: "props-1", type: "props", position: { x: 920, y: 760 }, params: { name: "Đồ vật tập phim", items: [], provider: "muse" } },
+    ],
+    edges: [
+      { id: "e-cast-ideas", source: "cast-1", sourceHandle: "character", target: "ideas-1", targetHandle: "character" },
+      { id: "e-loc-ideas", source: "location-1", sourceHandle: "location", target: "ideas-1", targetHandle: "location" },
+      { id: "e-ideas-outline", source: "ideas-1", sourceHandle: "idea", target: "outline-1", targetHandle: "idea" },
+      { id: "e-cast-outline", source: "cast-1", sourceHandle: "character", target: "outline-1", targetHandle: "character" },
+      { id: "e-loc-outline", source: "location-1", sourceHandle: "location", target: "outline-1", targetHandle: "location" },
+      { id: "e-outline-writer", source: "outline-1", sourceHandle: "outline", target: "writer-1", targetHandle: "outline" },
+      { id: "e-cast-writer", source: "cast-1", sourceHandle: "character", target: "writer-1", targetHandle: "character" },
+      { id: "e-loc-writer", source: "location-1", sourceHandle: "location", target: "writer-1", targetHandle: "location" },
+      { id: "e-writer-props", source: "writer-1", sourceHandle: "props", target: "props-1", targetHandle: "spec" },
+    ],
+  },
+  { writerId: "writer-1", shots: [], refs: { character: "cast-1", location: "location-1", props: "props-1" }, provider: "muse", origin: { x: 1380, y: 40 } },
+).graph;
+
 export const WORKFLOW_TEMPLATES = [
   { id: "sinh-ton-son-la", label: "Sinh tồn Sơn La (12 cảnh ~60 giây)", name: "Sinh tồn Sơn La", graph: SON_LA },
   { id: "y-tuong-thanh-phim", label: "Ý tưởng → phim (Muse viết kịch bản, 8 cảnh)", name: "Ý tưởng → phim", graph: IDEA_TO_FILM },
+  { id: "hoat-hinh-3-phut", label: "Phim hoạt hình 3 phút (đạo diễn AI: ý tưởng → dàn ý → 36 cảnh)", name: "Phim hoạt hình 3 phút", graph: CARTOON_EPISODE },
 ] as const;
 
 export type TemplateId = (typeof WORKFLOW_TEMPLATES)[number]["id"];

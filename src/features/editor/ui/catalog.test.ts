@@ -19,7 +19,7 @@ describe("ô tìm node: danh mục", () => {
     const items = catalogItems();
     const keys = items.map((i) => i.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(items.filter((i) => i.template).map((i) => i.template)).toEqual(["sinh-ton-son-la", "y-tuong-thanh-phim"]);
+    expect(items.filter((i) => i.template).map((i) => i.template)).toEqual(["sinh-ton-son-la", "y-tuong-thanh-phim", "hoat-hinh-3-phut"]);
     expect(items.every((i) => i.tag === "have" && i.label.length > 0 && i.icon.length > 0)).toBe(true);
   });
 
@@ -88,15 +88,15 @@ describe("ô tìm node: lọc theo cổng", () => {
     expect(target("scene", { kind: "imageset", dir: "out" })).toBe("character");
   });
 
-  it("kéo từ cổng vào `location` của Cảnh: Hồ sơ không gian đứng đầu danh sách; từ `character`: Hồ sơ nhân vật", () => {
+  it("kéo từ cổng vào `location` của Cảnh: Hồ sơ không gian đứng đầu danh sách; từ `character`: Dàn nhân vật và Hồ sơ nhân vật", () => {
     const items = catalogItems();
-    expect(types(filterByPort(items, { kind: "imageset", dir: "in", handle: "location" }))).toEqual(["location", "character"]);
-    expect(types(filterByPort(items, { kind: "imageset", dir: "in", handle: "character" }))).toEqual(["character", "location"]);
-    expect(types(filterByPort(items, { kind: "imageset", dir: "in" }))).toEqual(["character", "location"]);
+    expect(types(filterByPort(items, { kind: "imageset", dir: "in", handle: "location" }))).toEqual(["location", "cast", "character"]);
+    expect(types(filterByPort(items, { kind: "imageset", dir: "in", handle: "character" }))).toEqual(["cast", "character", "location"]);
+    expect(types(filterByPort(items, { kind: "imageset", dir: "in" }))).toEqual(["cast", "character", "location"]);
   });
 
-  it("kéo từ cổng vào chữ: node có cổng ra chữ (Prompt)", () => {
-    expect(types(filterByPort(catalogItems(), { kind: "text", dir: "in" }))).toEqual(["prompt"]);
+  it("kéo từ cổng vào chữ: node có cổng ra chữ (Ý tưởng tập phim, Prompt)", () => {
+    expect(types(filterByPort(catalogItems(), { kind: "text", dir: "in" }))).toEqual(["ideas", "prompt"]);
   });
 });
 

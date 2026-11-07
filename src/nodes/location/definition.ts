@@ -4,6 +4,8 @@ import { shorten } from "../../shared/card-line";
 import { codeVersion, DEFAULT_LOOK, LOCATION_SHEET } from "../../shared/prompts";
 import type { ImageSetValue } from "../../shared/ports";
 import { PROVIDER_IDS } from "../../shared/providers";
+import { cartoonLook } from "../../shared/cartoon-prompts";
+import { FilmStyleSchema, isCartoon } from "../../shared/styles";
 
 export const params = z.object({
   name: z.string().optional(),
@@ -11,11 +13,20 @@ export const params = z.object({
   look: z.string().optional(),
   // Ảnh thật bối cảnh (tối đa 2: toàn cảnh, cận khu chính). Có ảnh thì không gọi dịch vụ (spec 2026-11-03 mục 3.3).
   photos: z.array(z.string().min(1)).max(2, "Tối đa 2 ảnh bối cảnh").optional(),
+  // Phong cách phim (thiết kế 2026-11-06): vắng = người thật như trước. Hoạt hình: tông = câu phong cách + tông riêng (giờ, ánh sáng).
+  style: FilmStyleSchema.optional(),
   provider: z.enum(PROVIDER_IDS, { error: "Chưa chọn dịch vụ" }),
 });
 export type LocationParams = z.infer<typeof params>;
 
-export const lookOf = (p: Pick<LocationParams, "look">) => p.look?.trim() || DEFAULT_LOOK;
+export function lookOf(p: Pick<LocationParams, "look" | "style">): string {
+  if (!isCartoon(p.style)) return p.look?.trim() || DEFAULT_LOOK;
+  const extra = p.look?.trim() === DEFAULT_LOOK ? "" : (p.look ?? "");
+  return cartoonLook(p.style, extra);
+}
+
+// Bộ ảnh hoạt hình mang phong cách (Cảnh, Biên kịch kiểm cùng phong cách với Dàn nhân vật); người thật giữ y hệt bản cũ.
+export const styleField = (p: Pick<LocationParams, "style">) => (isCartoon(p.style) ? { style: p.style } : {});
 
 const PHOTO_VIEWS = ["wide", "close"] as const;
 
@@ -23,7 +34,7 @@ const PHOTO_VIEWS = ["wide", "close"] as const;
 export function photoSet(p: LocationParams): ImageSetValue | undefined {
   const photos = p.photos ?? [];
   if (photos.length === 0) return undefined;
-  return { kind: "imageset", role: "location", description: p.description, images: photos.map((mediaId, i) => ({ mediaId, view: PHOTO_VIEWS[i]! })), look: lookOf(p) };
+  return { kind: "imageset", role: "location", description: p.description, images: photos.map((mediaId, i) => ({ mediaId, view: PHOTO_VIEWS[i]! })), look: lookOf(p), ...styleField(p) };
 }
 
 export const definition = defineNode<LocationParams>({

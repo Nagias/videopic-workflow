@@ -111,12 +111,21 @@ Công thức rút từ ComfyUI, Magnific, Higgsfield, Kling, Google Flow và s�
 - Cổng **Sản phẩm** (`product`, kiểu `props`) ở Biên kịch và Cảnh. Biên kịch chỉ được dùng đúng tên/trạng thái sản phẩm, không khai báo lại; không có luật số cảnh có sản phẩm (chủ dự án 03/11/2026). Tạo thẻ cảnh tự nối Sản phẩm vào mọi Cảnh. Cảnh gộp sản phẩm + đồ phụ, ảnh sản phẩm đính kèm trước.
 - Prompt sản phẩm là hàm **bọc ngoài** (`productKeyframePrompt`, `productMotionPrompt`, `productWriterPrompt`), không sửa `keyframePrompt`/`motionPrompt`/`writerPrompt`: mã nguồn các hàm đó là phiên bản cache của mọi Cảnh/Biên kịch, sửa là mọi kết quả cũ hiện "chưa chạy". Test dấu vân tay `src/shared/prompts.test.ts` chặn đổi prompt cũ.
 
+### 6.4 Phim hoạt hình có đạo diễn (06/11/2026, thiết kế `docs/superpowers/specs/2026-11-06-phim-hoat-hinh-dao-dien-design.md`)
+
+- **Phong cách phim** (`src/shared/styles.ts`) đi theo dữ liệu: trường `style` của bộ ảnh (Dàn nhân vật, Không gian) và danh sách đồ vật. Vắng = người thật: mọi prompt và khoá cũ y nguyên (test `src/shared/shot-plan.test.ts`). `styleMismatch()` chặn trước khi chạy khi Nhân vật và Không gian khác phong cách.
+- Prompt hoạt hình ở **một file riêng** `src/shared/cartoon-prompts.ts`; `CARTOON_VERSION` (mã nguồn mọi hàm + câu chữ `CARTOON_TEXT`) là `cacheVersion` của node **Dàn nhân vật**. Ý tưởng, Dàn ý, Biên kịch hoạt hình, Cảnh hoạt hình, Đồ vật nối từ Biên kịch đều nằm sau Dàn nhân vật nên đổi prompt hoạt hình là cả chuỗi chạy lại; Không gian/Đồ vật gõ tay thì chưa (DEBT N-020).
+- **Dàn nhân vật** (`cast`): nhiều nhân vật có kích thước thật; ảnh cả dàn đúng tỉ lệ + từng nhân vật. Ảnh khung cảnh hoạt hình **không** vẽ nối tiếp trong chat của nhân vật (khác mục 6.1): mỗi cảnh chat mới, đính kèm ảnh mẫu — tránh một chat dài 36 ảnh; nhân vật hoạt hình không vướng chuyện Muse từ chối ảnh người thật.
+- **Liền mạch**: mỗi cảnh có `cast` (ai trong khung) và `end` (cuối cảnh); Biên kịch viết theo đợt 12 cảnh trong cùng chat, đợt sau nhắc cuối cảnh trước; khung đầu cảnh cắt phải khớp cuối cảnh liền trước (luật trong prompt), tên nhân vật được kiểm tự động.
+- Luồng duyệt: Ý tưởng tập (3 ý) → Dàn ý (3 phần) → Biên kịch — node riêng trên canvas, chạy từng node để duyệt, gõ đè để sửa (0 lượt).
+
 ## 7. Lộ trình
 
 1. Bộ khung đi được: Prompt → Tạo video (Muse) → xem clip. (xong)
 2. Video ngắn đến ~2 phút: hồ sơ gốc, ảnh khung, chuỗi clip, chỉnh màu, ghép. (xong 28/10)
 3. Biên kịch viết danh sách cảnh bằng chính khung chat Muse; ảnh mẫu đồ vật; kho tài sản. (xong 28/10)
 4. Ảnh thật cho sản phẩm affiliate và bối cảnh. (xong 03/11)
+4b. Phim hoạt hình có đạo diễn ~3 phút: phong cách, Dàn nhân vật, ý tưởng → dàn ý → kịch bản liền mạch. (06/11)
 5. Khung dọc 9:16 (chủ dự án chọn làm ngay sau mục 4).
 6. App tự xem video mẫu và chép khung kịch bản.
 7. Video dài 10–60 phút.

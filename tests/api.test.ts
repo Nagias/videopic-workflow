@@ -357,6 +357,30 @@ describe("API mẫu workflow", () => {
     expect(backup.notice).toBeUndefined();
   });
 
+  it("mẫu Phim hoạt hình (dịch vụ giả, dàn ý 12 cảnh): ý tưởng → dàn ý → Biên kịch → 12 thẻ cảnh tự sinh → ra phim; cảnh có ai trong khung và cuối cảnh", async () => {
+    const res = await s.app.inject({ method: "POST", url: "/api/workflows/from-template/hoat-hinh-3-phut", payload: {} });
+    expect(res.statusCode).toBe(201);
+    const wf = WorkflowResponseSchema.parse(res.json());
+    expect(wf.graph.nodes.map((n) => n.type).slice(0, 6)).toEqual(["cast", "location", "ideas", "outline", "writer", "props"]);
+    const graph = {
+      ...wf.graph,
+      nodes: wf.graph.nodes.map((n) => ({ ...n, params: { ...n.params, ...("provider" in n.params ? { provider: "fake" } : {}), ...(n.type === "outline" ? { shotCount: 12 } : {}) } })),
+    };
+    expect((await s.app.inject({ method: "PUT", url: `/api/workflows/${wf.id}`, payload: { graph } })).statusCode).toBe(200);
+    const start = await s.app.inject({ method: "POST", url: `/api/workflows/${wf.id}/runs`, payload: {} });
+    while (await s.deps.queue.processNext());
+    const done = RunResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/runs/${start.json<{ runId: string }>().runId}` })).json());
+    expect(done.status, done.error ?? "").toBe("succeeded");
+    const after = WorkflowResponseSchema.parse((await s.app.inject({ method: "GET", url: `/api/workflows/${wf.id}` })).json());
+    const scenes = after.graph.nodes.filter((n) => n.type === "scene");
+    expect(scenes).toHaveLength(12);
+    expect(scenes.every((n) => Array.isArray(n.params.cast) && typeof n.params.end === "string")).toBe(true);
+    const combine = after.graph.nodes.find((n) => n.type === "film-combine")!;
+    const film = done.nodes[combine.id]?.output?.video;
+    expect(film?.kind === "video" && film.durationSec).toBeGreaterThan(55);
+    expect(done.nodes["props-1"]?.output?.props).toMatchObject({ kind: "props", style: "hoat-hinh-2d" });
+  });
+
   it("mọi mẫu đi qua kiểm đồ thị và kiểm luật Ghép phim; cảnh Sơn La qua luật đạo diễn với đúng danh sách đồ vật, không cảnh báo", async () => {
     const { orderSources, planGraph } = await import("../src/core/executor");
     const { preflightErrors } = await import("../src/core/preflight");

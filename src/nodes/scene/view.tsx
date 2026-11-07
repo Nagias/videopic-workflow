@@ -47,6 +47,32 @@ export function SceneView({ id, params, setParams, state }: NodeViewProps<SceneP
         placeholder="Chuyển động 5 giây: chỉ việc xảy ra SAU khung đầu, có lực và hệ quả"
         onChange={(e) => setParams({ motion: e.target.value })}
       />
+      {params.cast !== undefined || params.end !== undefined ? (
+        <>
+          <input
+            className="nodrag"
+            value={(params.cast ?? []).join(", ")}
+            data-testid={`scene-cast-${id}`}
+            placeholder="Ai có mặt trong khung, cách nhau dấu phẩy (đúng tên trong Dàn nhân vật)"
+            onChange={(e) =>
+              setParams({
+                cast: e.target.value
+                  .split(",")
+                  .map((x) => x.trim())
+                  .filter(Boolean),
+              })
+            }
+          />
+          <textarea
+            className="nodrag"
+            rows={2}
+            value={params.end ?? ""}
+            data-testid={`scene-end-${id}`}
+            placeholder="Cuối cảnh: ai ở đâu, đồ vật ở đâu, to cỡ nào (cảnh sau bắt đầu từ đây)"
+            onChange={(e) => setParams({ end: e.target.value })}
+          />
+        </>
+      ) : null}
       <textarea
         className="nodrag"
         rows={2}

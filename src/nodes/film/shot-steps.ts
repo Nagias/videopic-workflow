@@ -1,8 +1,8 @@
 import type { NodeRunContext } from "../../core/node-runtime";
 import type { MediaProvider, ProviderContext } from "../../providers/types";
-import { SHOT_SECONDS, textOnly, type Shot } from "../../shared/director";
+import { SHOT_SECONDS, type Shot } from "../../shared/director";
 import type { ImageSetValue, PropSetValue } from "../../shared/ports";
-import { chainFrameKey, clipStep, keyframeStep, textClipStep, thumbKey } from "../../shared/shot-plan";
+import { chainFrameKey, clipStep, keyframeStep, textClipStep, textOnlyShot, thumbKey } from "../../shared/shot-plan";
 import { CHAIN_TRIM_SEC, LAST_FRAME_FROM_END_SEC } from "./definition";
 
 // Tạo một cảnh: dùng chung cho Dựng phim (film) và Cảnh (scene). Hai node cùng stepScope "film"; khoá và prompt
@@ -51,7 +51,7 @@ export const lastFrameOf = (ctx: NodeRunContext, clipId: string): Promise<{ medi
   ctx.step(chainFrameKey(clipId), async () => ({ mediaId: await frameOf(ctx, clipId, LAST_FRAME_FROM_END_SEC, "last-frame") }));
 
 // Mọi lần gọi dịch vụ đi qua đây: giữ một chỗ của dịch vụ (ctx.shared.slot) trong lúc gọi; lần chạy đã dừng
-// hoặc cầu dao đã ngắt thì không gửi; lỗi máy chủ được đếm vào cầu dao trước khi trả chỗ cho cảnh đang chờ.
+// hoặc cầu dao đã ngắt thì không gửi; lỗi máy chủ hoặc hết giờ chờ được đếm vào cầu dao trước khi trả chỗ cho cảnh đang chờ.
 // Thứ tự khoá: khoá chat (nếu có) ở ngoài, chỗ dịch vụ ở trong; không bao giờ giữ chỗ dịch vụ trong lúc chờ khoá chat.
 async function callProvider<T>(ctx: NodeRunContext, provider: MediaProvider, fn: () => Promise<T>): Promise<T> {
   return ctx.shared.slot(provider.id, async () => {
@@ -120,7 +120,7 @@ export async function makeShot(ctx: NodeRunContext, a: ShotArgs): Promise<ShotRe
 
   let keyframeId: string;
   let clip: { mediaId: string };
-  if (textOnly(shot)) {
+  if (textOnlyShot(shot, character)) {
     // Ảnh xem trước rút từ clip.
     const plan = textClipStep(shot, provider.id, location);
     clip = await ctx.step(plan.keyParts, () =>

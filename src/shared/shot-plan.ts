@@ -2,6 +2,8 @@ import { MAX_PROP_REFS, parsePropLines, SHOT_SECONDS, textOnly, type Shot } from
 import type { Calls } from "./node-definition";
 import { mediaIdOf, mergePropSets, type ImageSetValue, type PropSetValue } from "./ports";
 import { DEFAULT_LOOK, keyframePrompt, motionPrompt, productKeyframePrompt, productMotionPrompt, textVideoPrompt, type KeyframeCtx } from "./prompts";
+import { cartoonKeyframePrompt, cartoonLook, cartoonMotionPrompt, castInShot } from "./cartoon-prompts";
+import { isCartoon, type CartoonStyle } from "./styles";
 
 // Khoá bước con (ctx.step) và yêu cầu gửi dịch vụ của từng bước tạo một cảnh. Một nơi duy nhất:
 // makeShot() (src/nodes/film/shot-steps.ts) chạy theo đây, ước tính lượt của node Cảnh tra cache theo đây (shotCalls()).
@@ -48,8 +50,48 @@ function propsInFrame(shot: Shot, props: PropSetValue | undefined, product?: Pro
   return { described, refs, captions };
 }
 
+// Cảnh chữ → video: như textOnly(), trừ phim hoạt hình (luôn vẽ ảnh khung từ ảnh bối cảnh để bối cảnh giữ đúng; cảnh có trường
+// cast là cảnh Biên kịch hoạt hình viết, kể cả khi chưa biết Nhân vật lúc ước tính).
+export const textOnlyShot = (shot: Shot, character: ImageSetValue | undefined): boolean => textOnly(shot) && shot.cast === undefined && !isCartoon(character?.style);
+
+// Tông của cảnh hoạt hình: bối cảnh cùng phong cách thì dùng tông của nó (đã gồm câu phong cách), không thì câu phong cách.
+const cartoonFrameLook = (style: CartoonStyle, location: ImageSetValue) => (location.style === style && location.look ? location.look : cartoonLook(style));
+
+// Ảnh khung hoạt hình (thiết kế 2026-11-06): chat mới, đính kèm ảnh cả dàn đúng tỉ lệ + từng nhân vật có mặt (tối đa 3,
+// đông hơn thì chỉ ảnh cả dàn) + bối cảnh + đồ vật.
+function cartoonKeyframeStep(a: ShotInputs, style: CartoonStyle): KeyframeStep {
+  const { shot, providerId, character, location, product } = a;
+  const members = character.members ?? [];
+  const props = mergePropSets(product, a.props);
+  const inFrame = propsInFrame(shot, props, product);
+  const { present } = castInShot(shot, members);
+  const people: ShotRef[] = [];
+  const captions: string[] = [];
+  if (present.length) {
+    for (const r of pickView(character, "front")) {
+      people.push(r);
+      captions.push("cả dàn nhân vật, đúng tỉ lệ kích thước");
+    }
+    if (present.length <= 3) {
+      for (const m of present) {
+        const idx = members.indexOf(m);
+        for (const r of pickView(character, `member-${idx + 1}`)) {
+          people.push(r);
+          captions.push(m.name);
+        }
+      }
+    }
+  }
+  const locationRef = pickView(location, "wide");
+  const references = [...people, ...locationRef, ...inFrame.refs];
+  const refCaptions = [...captions, ...locationRef.map(() => "bối cảnh"), ...inFrame.captions];
+  const prompt = cartoonKeyframePrompt(shot, { members, look: cartoonFrameLook(style, location), location: location.description, props: inFrame.described, refs: refCaptions });
+  return { keyParts: ["keyframe-cartoon", providerId, prompt, references.map((r) => r.mediaId)], prompt, references };
+}
+
 // Ảnh khung: có người → nối tiếp trong chat phụ của nhân vật; không người → chat mới, đính kèm bối cảnh + đồ vật.
 export function keyframeStep(a: ShotInputs): KeyframeStep {
+  if (isCartoon(a.character.style)) return cartoonKeyframeStep(a, a.character.style);
   const { shot, providerId, character, location, product } = a;
   const props = mergePropSets(product, a.props);
   const framePrompt = productInShot(shot, product) ? productKeyframePrompt : keyframePrompt;
@@ -82,6 +124,10 @@ export function keyframeStep(a: ShotInputs): KeyframeStep {
 
 // Clip từ ảnh khung (hoặc khung cuối cảnh trước). Cảnh có sản phẩm: prompt video giữ chữ/logo in trên sản phẩm.
 export function clipStep(shot: Shot, providerId: string, character: ImageSetValue, keyframeMediaId: string, product?: PropSetValue): { keyParts: unknown[]; prompt: string } {
+  if (isCartoon(character.style)) {
+    const cartoon = cartoonMotionPrompt(shot, { members: character.members ?? [] });
+    return { keyParts: ["clip", providerId, cartoon, keyframeMediaId, SHOT_SECONDS], prompt: cartoon };
+  }
   const prompt = (productInShot(shot, product) ? productMotionPrompt : motionPrompt)(shot, { character: character.description });
   return { keyParts: ["clip", providerId, prompt, keyframeMediaId, SHOT_SECONDS], prompt };
 }
@@ -104,7 +150,7 @@ export type ShotCacheInputs = { providerId: string; character?: ImageSetValue; l
 // calls: số lần gọi dịch vụ còn thiếu; thiếu Nhân vật/Không gian (node phía trước sẽ chạy) hoặc chưa biết khung đầu thì coi
 // như phải tạo (ước dư, không ước thiếu). keyframeId/clipId: ảnh khung (cảnh chữ→video: ảnh xem trước) và clip khi đã có sẵn.
 export function shotFromCache(shot: Shot, a: ShotCacheInputs, step: (keyParts: unknown) => unknown): { calls: Calls; keyframeId?: string; clipId?: string } {
-  if (textOnly(shot)) {
+  if (textOnlyShot(shot, a.character)) {
     const clipId = a.location ? mediaIdOf(step(textClipStep(shot, a.providerId, a.location).keyParts)) : undefined;
     const keyframeId = clipId === undefined ? undefined : mediaIdOf(step(thumbKey(clipId)));
     return { calls: { image: 0, video: clipId === undefined ? 1 : 0, text: 0 }, keyframeId, clipId };

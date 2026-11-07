@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { CastMemberSchema } from "./cast";
 import { ShotSchema } from "./director";
+import { FilmStyleSchema } from "./styles";
 
-export const PORT_KINDS = ["text", "image", "video", "imageset", "shotlist", "storyboard", "props", "propspec"] as const;
+export const PORT_KINDS = ["text", "image", "video", "imageset", "shotlist", "storyboard", "props", "propspec", "outline"] as const;
 export type PortKind = (typeof PORT_KINDS)[number];
 
 export const PORT_KIND_LABEL: Record<PortKind, string> = {
@@ -13,6 +15,7 @@ export const PORT_KIND_LABEL: Record<PortKind, string> = {
   storyboard: "Storyboard",
   props: "Đồ vật",
   propspec: "Danh sách đồ vật",
+  outline: "Dàn ý",
 };
 
 // optional: node vẫn chạy khi cổng vào này chưa nối (planGraph bỏ qua).
@@ -102,11 +105,17 @@ export const PortValueSchema = z.discriminatedUnion("kind", [
     images: z.array(ImageRefSchema),
     session: z.object({ accountId: z.string(), threadUrl: z.string() }).optional(),
     look: z.string().optional(),
+    // Phim hoạt hình (thiết kế 2026-11-06): phong cách (vắng = người thật), dàn nhân vật và luật loạt phim của node Dàn nhân vật.
+    style: FilmStyleSchema.optional(),
+    members: z.array(CastMemberSchema).optional(),
+    rules: z.string().optional(),
   }),
   z.object({ kind: z.literal("shotlist"), shots: z.array(ShotSchema) }),
   z.object({ kind: z.literal("storyboard"), shots: z.array(StoryboardShotSchema) }),
-  z.object({ kind: z.literal("props"), items: z.array(PropItemSchema) }),
-  z.object({ kind: z.literal("propspec"), items: z.array(PropSpecItemSchema) }),
+  z.object({ kind: z.literal("props"), items: z.array(PropItemSchema), style: FilmStyleSchema.optional() }),
+  z.object({ kind: z.literal("propspec"), items: z.array(PropSpecItemSchema), style: FilmStyleSchema.optional() }),
+  // Dàn ý tập phim (node Dàn ý): chữ để duyệt/sửa, số cảnh Biên kịch phải viết.
+  z.object({ kind: z.literal("outline"), title: z.string(), text: z.string(), shotCount: z.number().int() }),
 ]);
 export type PortValue = z.infer<typeof PortValueSchema>;
 export type TextValue = Extract<PortValue, { kind: "text" }>;
@@ -117,6 +126,7 @@ export type ShotListValue = Extract<PortValue, { kind: "shotlist" }>;
 export type StoryboardValue = Extract<PortValue, { kind: "storyboard" }>;
 export type PropSetValue = Extract<PortValue, { kind: "props" }>;
 export type PropSpecValue = Extract<PortValue, { kind: "propspec" }>;
+export type OutlineValue = Extract<PortValue, { kind: "outline" }>;
 
 export const NodeOutputsSchema = z.record(z.string(), PortValueSchema);
 export type NodeOutputs = z.infer<typeof NodeOutputsSchema>;

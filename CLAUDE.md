@@ -33,8 +33,8 @@ Cách đọc nhãn:
 | Kết nối tài khoản Muse bằng Playwright + Chrome | `src/providers/muse/`, hồ sơ `.data/chrome_profiles/muse_vid_0N` | Chưa đính kèm ảnh |
 | Giữ mặt người, sản phẩm, không gian | Nhân vật vẽ bằng Muse trong một chat phụ; sản phẩm và bối cảnh nhận ảnh thật tải lên (`docs/ARCHITECTURE.md` mục 6.3) | Chưa tải ảnh người thật; khung dọc 9:16 chưa có |
 | Cảnh cuối video này là cảnh đầu video kia, ghép nối | — | Tính năng 2 |
-| Video ~2 phút, sau đó 10–60 phút | — | Tính năng 2 và 4 |
-| Kiến thức đạo diễn | — | Tính năng 3 |
+| Video ~2 phút, sau đó 10–60 phút | Chuỗi cảnh + Ghép phim (người thật ~1 phút); phim hoạt hình đến 36 cảnh ≈ 3 phút (`docs/ARCHITECTURE.md` mục 6.4) | 10–60 phút chưa có |
+| Kiến thức đạo diễn | Phim hoạt hình: Dàn nhân vật (kích thước thật), Ý tưởng tập, Dàn ý 3 phần, Biên kịch theo đợt có ai trong khung và cuối cảnh (`src/shared/cartoon-prompts.ts`) | Người thật chưa có Ý tưởng/Dàn ý; app chưa tự xem video để kiểm liền mạch |
 
 ## 2. Nguyên tắc
 
@@ -171,6 +171,7 @@ Giải nghĩa các mục A/B/C (agent ghi lại đề xuất đã được duy�
 | Muse lỗi không rõ lý do | thông báo lỗi trên node có `[ảnh lỗi: …png]` | mở ảnh + file `.html` cùng tên trong `.data/debug/` để xem Muse đang hiện gì, rồi sửa `dom.ts`; thử lại bằng `npx playwright test e2e/muse-driver.spec.ts` (trang giả, không tốn lượt) trước khi gọi Muse thật |
 | Mở `localhost:5173` ra app khác | dự án khác trên máy chiếm cổng 5173 qua IPv6 | dự án này dùng `http://127.0.0.1:5190`; đổi bằng biến `WEB_PORT` |
 | Muse không trả ảnh/video, chat Muse ghi "tạm lỗi", "lỗi hệ thống" | node báo `MUSE_FAILED` | lỗi phía Muse: đợi rồi bấm Chạy lại (các cảnh đã xong được giữ). Xem ô nhiệm vụ bên phải trang Muse trong ảnh lỗi `.data/debug/` |
+| Muse làm video quá lâu | node báo "Không nhận được video hợp lệ sau … giây", ảnh lỗi `.data/debug/` hiện "Checking frames" / "Verifying frames" / "Rebuilding video" | Muse còn đang tự kiểm khung (đo 07/11/2026: tới ~19 phút một clip 5 giây): bấm Chạy lại. Lặp nhiều lần thì nâng `videoWaitMs()` trong `src/providers/muse/index.ts`. Ba lần hết giờ trong một lần chạy làm cầu dao ngắt các cảnh còn lại ("Dừng: dịch vụ báo lỗi hoặc hết giờ…") |
 | Muse từ chối ảnh có người | node báo `REFUSED` | không đính kèm ảnh người chân thực (chính sách Muse, `docs/ARCHITECTURE.md` mục 6.1) |
 | Muốn xem Chrome điều khiển Muse | — | chạy với `MUSE_HEADLESS=0` |
 | Meta ngắt Muse trên một tài khoản | node báo "Meta đã ngắt Muse trên tài khoản muse_vid_0N" (ảnh lỗi `.data/debug/` hiện "Muse is disconnected") | app tự gạt tài khoản đó ra 10 phút. Chủ dự án mở `npm run muse:login -- muse_vid_0N`, bấm "Submit a ticket" xin kết nối lại; trong lúc chờ, bật app với `MUSE_ACCOUNTS` không có tài khoản đó |

@@ -40,6 +40,9 @@ describe("validateVideoProbe", () => {
   it("chờ lâu hơn cho clip 10 giây", () => {
     expect(videoWaitMs(10)).toBeGreaterThan(videoWaitMs(5));
   });
+  it("clip 5 giây chờ quá 20 phút (Muse đo 07/11 mất ~19 phút vì tự kiểm khung)", () => {
+    expect(videoWaitMs(5)).toBeGreaterThan(20 * 60_000);
+  });
 });
 
 describe("chặn Muse trong test", () => {
@@ -164,5 +167,8 @@ describe("đọc câu trả lời của Muse sau prompt vừa gửi", () => {
 Mình đã thử tạo 3 lần nhưng bên tạo video đang lỗi (502).`)).toMatch(/đang lỗi/);
     const refused = `${prompt}\nMình chưa tạo được hình này theo đúng yêu cầu của bạn.`;
     expect(findRefusal(replyAfterPrompt(refused, prompt, ""))).toMatch(/chưa tạo được/);
+    // 07/11/2026: "lỗi nội bộ" là lỗi tạm phía Muse, không phải từ chối (trước đó bị xếp nhầm, hoặc chờ đủ 10 phút).
+    expect(findMuseFailure(`${prompt}\nVideo 5 giây này vẫn chưa tạo được — hệ thống tạo video lại báo lỗi nội bộ, nên chưa có file nào ra cả.`)).toBeTruthy();
+    expect(findMuseFailure(`${prompt}\nVideo 5 giây này mình vừa thử lại nhưng hệ thống tạo video vẫn báo lỗi nội bộ, nên chưa có file nào ra cả.`)).toBeTruthy();
   });
 });

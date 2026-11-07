@@ -36,8 +36,10 @@ const MIN_IMAGE_SIDE = 512;
 const OWN_BUBBLE_SETTLE_MS = 2_000;
 const REFUSAL_GRACE_MS = 25_000;
 
+// Đo 07/11/2026: sau khi dựng, Muse còn tự kiểm khung ("Checking frames", "Verifying frames"), một clip 5 giây mất tới
+// ~19 phút. Chờ ngắn hơn thì app bỏ đi khi Muse sắp xong, mở chat mới làm lại và tốn thêm lượt.
 export function videoWaitMs(durationSec: number): number {
-  return (durationSec > 5 ? 720 : 600) * 1000;
+  return (durationSec > 5 ? 1800 : 1500) * 1000;
 }
 export const IMAGE_WAIT_MS = 180_000;
 export const TEXT_WAIT_MS = 240_000;

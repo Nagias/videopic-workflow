@@ -151,6 +151,6 @@ describe("node film (Dựng phim)", () => {
     expect(counter.log.video).toBeLessThanOrEqual(4);
     const last = partials.at(-1)?.storyboard;
     const board = last?.kind === "storyboard" ? last.shots : [];
-    expect(board.filter((b) => b.status === "skipped" && /Dừng: dịch vụ báo lỗi máy chủ 3 lần/.test(b.error ?? "")).length).toBeGreaterThanOrEqual(2);
+    expect(board.filter((b) => b.status === "skipped" && /Dừng: dịch vụ báo lỗi hoặc hết giờ không trả kết quả 3 lần/.test(b.error ?? "")).length).toBeGreaterThanOrEqual(2);
   });
 });

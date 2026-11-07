@@ -6,6 +6,7 @@ import { mediaIdOf, pickInput, type NodeOutputs } from "../../shared/ports";
 import { chainFrameKey, shotFromCache, type ShotCacheInputs } from "../../shared/shot-plan";
 import { PROVIDER_IDS, type ProviderId } from "../../shared/providers";
 import { SHOT_CACHE_VERSION } from "../film/definition";
+import { styleMismatch } from "../../shared/style-check";
 
 const keys = <T extends object>(o: T) => Object.keys(o) as [keyof T & string, ...(keyof T & string)[]];
 
@@ -20,6 +21,9 @@ export const params = z.object({
   start: z.string(),
   motion: z.string(),
   props: z.string(),
+  // Phim hoạt hình (thiết kế 2026-11-06): ai có mặt trong khung, khoảnh khắc cuối cảnh. Vắng ở cảnh người thật (khoá cũ giữ nguyên).
+  cast: z.array(z.string()).optional(),
+  end: z.string().optional(),
   provider: z.enum(PROVIDER_IDS, { error: "Chưa chọn dịch vụ" }),
   // Lần tạo: không có mặc định, để thiếu vẫn là thiếu (khoá cache cũ giữ nguyên).
   take: z.number().int().min(1).optional(),
@@ -36,6 +40,8 @@ export const sceneShot = (p: SceneParams, follows: boolean): Shot => ({
   start: p.start,
   motion: p.motion,
   props: p.props,
+  ...(p.cast ? { cast: p.cast } : {}),
+  ...(p.end !== undefined ? { end: p.end } : {}),
 });
 
 // Đầu vào đã biết của cảnh, dạng shotFromCache() cần (cổng chưa biết thì vắng).
@@ -71,6 +77,8 @@ export const definition = defineNode<SceneParams>({
   // Cùng vùng bước con và cùng phiên bản prompt với Dựng phim: cảnh giống hệt dùng lại kết quả của nhau.
   stepScope: "film",
   cacheVersion: SHOT_CACHE_VERSION,
+  // Nhân vật và Không gian cùng phong cách phim (khoá cứng, báo trước khi tốn lượt).
+  preflight: styleMismatch,
   params,
   defaults: { size: "MS", angle: "eye", move: "static", subject: "character", start: "", motion: "", props: "", provider: "fake" },
   cardLine: (p, _out, wires) =>

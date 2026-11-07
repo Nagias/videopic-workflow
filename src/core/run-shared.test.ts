@@ -92,7 +92,7 @@ describe("RunShared", () => {
     shared.breaker.record(new ProviderError("MUSE_FAILED", "Muse lỗi"));
     expect(() => shared.breaker.check()).toThrow(ServiceBreakerOpen);
     expect(() => shared.breaker.check()).toThrow(/không gửi thêm để tránh tốn lượt/);
-    expect(() => shared.breaker.check()).toThrow("Dừng: dịch vụ báo lỗi máy chủ 3 lần — không gửi thêm để tránh tốn lượt. Bấm Chạy lại khi dịch vụ ổn (cảnh đã xong được giữ).");
+    expect(() => shared.breaker.check()).toThrow("Dừng: dịch vụ báo lỗi hoặc hết giờ không trả kết quả 3 lần — không gửi thêm để tránh tốn lượt. Bấm Chạy lại khi dịch vụ ổn (cảnh đã xong được giữ).");
   });
 
   it("session trả chat mới nhất của nhân vật theo chat gốc", () => {

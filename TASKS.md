@@ -152,3 +152,37 @@ Thử phim hoạt hình cartoon 3D bằng các node có sẵn: một node Nhân 
 | Lần 1 (`MUSE_ACCOUNTS=muse_vid_04`, ~15 phút) | Mọi node xong, không lỗi. Phim h264 1280×720 24 fps có tiếng (aac), 29,9 giây (cảnh nối cắt 0,08 giây đầu) | 10 ảnh + 6 video (theo ước tính của app) |
 
 Kiểm chứng: ffprobe phim; xem khung giữa và khung cuối 6 cảnh. Bộ ảnh nhân vật ra đúng kiểu hoạt hình dù `CHARACTER_SHEET` vẫn dùng `DEFAULT_LOOK` "ảnh chụp điện thoại". Lệch: cảnh 2 và 3 có nhân vật mà khung đầu ghi "không có trong khung"; gián Vàng thành thân vàng ở cảnh 3; mèo ở cảnh 4–5 gầy và non hơn ảnh mẫu.
+
+## Phim hoạt hình có đạo diễn (thiết kế: `docs/superpowers/specs/2026-11-06-phim-hoat-hinh-dao-dien-design.md`, nhánh `phim-hoat-hinh-dao-dien`)
+
+- [x] 1. Phong cách phim `src/shared/styles.ts` + prompt hoạt hình `src/shared/cartoon-prompts.ts` (+ test)
+- [x] 2. Cổng/giá trị: `style`, `members` trong bộ ảnh; `style` trong đồ vật; kiểu cổng `outline`; `Shot.cast`, `Shot.end`
+- [x] 3. Node Dàn nhân vật `cast`
+- [x] 4. Không gian + Đồ vật nhận phong cách
+- [x] 5. Cảnh hoạt hình (ảnh khung, video, cảnh không người vẽ từ bối cảnh, ai trong khung, cuối cảnh)
+- [x] 6. Node Ý tưởng tập `ideas`, node Dàn ý `outline`
+- [x] 7. Biên kịch chế độ hoạt hình: dàn ý, viết theo đợt ≤ 12 cảnh, tối đa 36
+- [x] 8. Dịch vụ giả trả lời ý tưởng/dàn ý/đợt cảnh
+- [x] 9. Mẫu "Phim hoạt hình 3 phút" + e2e
+- [x] 10. Tài liệu: FEATURE_MAP, ARCHITECTURE, DEBT
+- [x] 11. Kiểm chứng: `npm run verify:full`, bấm thử giao diện (CI PR #15: verify + e2e xanh; mở workflow thật: 36 cảnh có ảnh, Ghép phim "179,8 giây · 36 clip" phát được)
+- [x] 12. Kiểm chứng: Muse thật ra phim ~3 phút, xem khung từng cảnh
+
+### Nhật ký gọi Muse thật — phim hoạt hình 3 phút "Mèo và 3 con gián" (06–07/11/2026, workflow `hoat-hinh-3-phut-mw58bhkx`)
+
+Mẫu "Phim hoạt hình 3 phút": Dàn nhân vật (mèo Mướp + gián Đỏ, Xanh, Vàng) → Ý tưởng tập → Dàn ý → Biên kịch 36 cảnh → Đồ vật → 36 Cảnh × 5 giây → Ghép phim. Agent tự chọn ý tưởng và duyệt (chủ dự án giao toàn quyền). `MUSE_ACCOUNTS=muse_vid_04`.
+
+| Lượt chạy | Kết quả | Lượt Muse |
+|---|---|---|
+| Lần 1–3 (06/11, chỉ Dàn nhân vật) | Chỉnh prompt dàn nhân vật giữa các lần đến khi đúng nét 2D và tỉ lệ (gián tới đầu gối mèo) | 15 ảnh |
+| Lần 4 (đến Dàn ý) | Ý tưởng tập, bối cảnh căn bếp, dàn ý 3 phần | 2 ảnh + ≥2 chữ |
+| Lần 5 (đến Biên kịch) | 36 cảnh viết theo 3 đợt; bối cảnh vẽ lại | 2 ảnh + ≥3 chữ |
+| Lần 6 (cả workflow) | 17 ảnh đồ vật + 33 ảnh khung xong; 33 cảnh lỗi vì Muse báo lỗi nội bộ khi tạo video, 3 cảnh bỏ qua | 50 ảnh + video hỏng (không đếm được) |
+| Lần 7–8 (riêng cảnh 1) | Lần 7 lỗi Muse, lần 8 xong | 1 video |
+| Lần 9 (cả workflow, ~5,5 giờ) | 25 cảnh xong; cảnh 12, 27, 32 hết 600 giây chờ (Muse còn "Rebuilding video") làm cầu dao ngắt 6 cảnh còn lại | 25 video + 18 lần thử hỏng (ảnh lỗi `.data/debug/` cách nhau ~11 phút, khớp hết 600 giây chờ; nhiều cảnh hỏng lần đầu, xong ở lần thử lại) |
+| Lần 10 | Cảnh 9 xong; cảnh 11, 12, 27 lại hết 600 giây (Muse còn "Checking/Verifying frames", bảng việc Muse ghi một clip mất ~19 phút); cầu dao ngắt cảnh 32–36 | 1 video + 7 lần thử hỏng |
+| Sửa code | `videoWaitMs()` 600 → 1500 giây (clip 5 giây), câu báo cầu dao nói đúng cả hết giờ | — |
+| Lần 11 (1 giờ 35 phút) | 9 cảnh còn lại xong (1 cảnh hết 1500 giây lúc Muse "Patching sprites", thử lại chat mới thì xong), Ghép phim xong: h264 1280×720 24 fps có tiếng (aac stereo), 179,75 giây, 47 MB | 9 video + 1 lần thử hỏng |
+
+Tổng ảnh, video nhận được (đếm bảng `media`): 69 ảnh, 36 video; ≥5 lượt chữ; các lần video hỏng/hết giờ Muse vẫn có thể đã tính lượt.
+Kiểm chứng: ffprobe phim; bảng khung giữa và khung cuối 36 cảnh cắt từ chính phim. Đạt: nét 2D giữ đều cả phim, cùng một căn bếp, mèo và 3 gián giữ hình dáng, một mạch truyện mèo giành đĩa cá với 3 gián quanh bàn trải khăn caro, kết thúc gián ăn cá dưới sàn còn mèo ngồi cau có. Lệch: vết nhoè, bóng mờ do khâu ảnh → video của Muse ở cảnh 18, 20, 27, 29, 32–34; cảnh 28 bàn thành hình chữ nhật cao hơn; cảnh 19 gián Xanh cao tới ngực mèo; cảnh 4 cận cảnh 3 gián trông to vì không có mèo làm thước; cảnh 6 tủ ngăn kéo đứng riêng.
