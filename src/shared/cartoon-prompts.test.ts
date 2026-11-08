@@ -77,6 +77,9 @@ describe("prompt phim hoạt hình", () => {
     expect(p).toMatch(/giữ đúng loài.*không biến thành con vật khác/);
     expect(p).toMatch(/Máy quay: máy đứng yên trên chân máy, không zoom, không tiến lại gần/);
     expect(cartoon.cartoonMotionPrompt(shot({ move: "push_in" }), { members })).not.toMatch(/không zoom/);
+    // Đo 08/11 bản thử 20 giây: prompt video chỉ có "cao 6 cm" thì gián cao ngang chân bàn, gần nửa con mèo.
+    expect(p).toMatch(/Tỉ lệ kích thước, giữ đúng suốt clip, kể cả khi nhân vật đi lại gần máy quay: gián Xanh cao 7 cm.*không phóng to cho dễ nhìn/);
+    expect(cartoon.scaleLine(members)).toMatch(/^Tỉ lệ kích thước, giữ đúng trong mọi ảnh:/);
     expect(cartoon.cartoonMotionPrompt(shot({ subject: "none", cast: [] }), { members })).toMatch(/Không có nhân vật hay con vật nào xuất hiện/);
   });
 

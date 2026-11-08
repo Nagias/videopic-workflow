@@ -58,8 +58,8 @@ function ratioNote(m: CastMember, all: readonly CastMember[]): string {
 }
 
 // members: những nhân vật cần nhắc; all: cả dàn (tỉ lệ luôn so với nhân vật cao nhất của cả dàn).
-export const scaleLine = (members: readonly CastMember[], all: readonly CastMember[] = members): string =>
-  `Tỉ lệ kích thước, giữ đúng trong mọi ảnh: ${members.map((m) => `${m.name} ${m.size}${ratioNote(m, all)}`).join("; ")}. Nhân vật nhỏ phải trông nhỏ hẳn bên cạnh nhân vật lớn, không phóng to cho dễ nhìn`;
+export const scaleLine = (members: readonly CastMember[], all: readonly CastMember[] = members, where = "trong mọi ảnh"): string =>
+  `Tỉ lệ kích thước, giữ đúng ${where}: ${members.map((m) => `${m.name} ${m.size}${ratioNote(m, all)}`).join("; ")}. Nhân vật nhỏ phải trông nhỏ hẳn bên cạnh nhân vật lớn, không phóng to cho dễ nhìn`;
 
 // Bộ ảnh mẫu của dàn: ảnh xếp hàng đúng tỉ lệ (view "front", cũng là ảnh đính kèm khi cảnh phải mở chat mới),
 // rồi từng nhân vật nối tiếp trong cùng chat (view "member-<n>").
@@ -181,7 +181,7 @@ export function cartoonMotionPrompt(shot: Shot, c: { members: readonly CastMembe
     // Tả cả ngoại hình như ảnh khung: đo 07/11/2026 chỉ có tên thì máy tạo video tô thân "gián Xanh" thành xanh, "gián Vàng"
     // thành vàng, gián thò đầu ra khỏi lỗ vòm chân tường thì thành chuột; cảnh không nhân vật thì vẽ thêm con chuột.
     present.length
-      ? `Nhân vật trong cảnh: ${present.map((m) => `${m.name} (${m.look}, ${m.size})`).join("; ")}; không thêm nhân vật hay con vật khác. Tên gọi chỉ là tên, không phải màu: mỗi nhân vật giữ đúng loài, màu thân và mặt như ảnh suốt clip, không biến thành con vật khác.`
+      ? `Nhân vật trong cảnh: ${present.map((m) => `${m.name} (${m.look}, ${m.size})`).join("; ")}; không thêm nhân vật hay con vật khác. Tên gọi chỉ là tên, không phải màu: mỗi nhân vật giữ đúng loài, màu thân và mặt như ảnh suốt clip, không biến thành con vật khác. ${scaleLine(present, c.members, "suốt clip, kể cả khi nhân vật đi lại gần máy quay")}.`
       : "Không có nhân vật hay con vật nào xuất hiện.",
     // Đo 07/11/2026: chỉ có tên đồ vật thì con cá nướng hoạt hình thành cá nướng thật sẫm màu giữa clip.
     props.length ? `Đồ vật trong cảnh giữ đúng hình dáng, màu sắc và kích thước như ảnh: ${props.map((p) => `${p.name} (${p.description.trim()})`).join("; ")}.` : "",
