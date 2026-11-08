@@ -200,3 +200,17 @@ Kiểm chứng: ffprobe phim; bảng khung giữa và khung cuối 36 cảnh c�
 | Bản 3 (cả phim, 49 phút) | 36/36 clip core 157, không lỗi. Phim h264 1280×720 24 fps có tiếng, 179,79 giây, 102 MB | 35 video |
 
 Tổng: 73 video, 0 ảnh, 0 chữ (ảnh nhân vật, ảnh khung, kịch bản dùng lại). Kiểm chứng: dấu nén từng clip; khung dày 4 hình/giây 20 giây đầu (bản cũ: cảnh 1, 2, 4 gần như ảnh tĩnh trượt; bản 3: chuyển động thật cả 4 cảnh, không chuột); bảng khung giữa và cuối 36 cảnh. Còn lệch ở bản 3: gián đổi màu ở cảnh 9, 24, 30 (giảm từ ~12 cảnh); cảnh 1 ánh sáng tối dần ngả nâu; cảnh 32 nền thành mảng tường trống.
+
+### Nhật ký gọi Muse thật — thử hoạt hình 3D 20 giây (07–08/11/2026, workflow `hoat-hinh-20-giay-thu`)
+
+Chủ dự án chê phim 3 phút: cá đổi hình, gián lúc to lúc nhỏ và đổi màu, tủ ngăn kéo tự mọc rồi biến mất, gián giật khăn vô lý, nét vẽ như tranh 2D trên giấy. Bản thử: hoạt hình 3D, 2 nhân vật (mèo Mướp, gián "Tí" — tên không có chữ màu), bối cảnh tối giản ghi rõ "không có tủ, ngăn kéo, cửa sổ", 1 đồ vật (cá nướng: trên đĩa → dưới sàn → bộ xương), 4 cảnh kịch bản viết tay (cảnh 1→2 nối liền). Dựng bằng `.cache/tam/hh20.ts` qua `PUT /api/workflows/:id`.
+
+| Lượt chạy | Kết quả | Lượt Muse |
+|---|---|---|
+| Nhân vật, bối cảnh, đồ vật | Ảnh 3D đúng tỉ lệ (gián tới mắt cá chân mèo), bối cảnh đúng mô tả; cá vẽ mắt mở miệng cười như cá sống | 8 ảnh |
+| Vẽ lại cá ("chín, mắt nhắm, vệt nướng") | Cả 3 trạng thái cùng hình | 3 ảnh |
+| Bản 1 | Mạch truyện đúng; lỗi: gián thành chuột xám ở cuối (lỗ vòm "kiểu lỗ chuột"), cá thành cá nướng thật sẫm màu ở cảnh 2, máy "đứng yên" vẫn tiến vào làm gián to | 3 ảnh + 4 video |
+| Bản 2 (prompt video: giữ đúng loài, tả đồ vật, đứng yên thì không zoom; lỗ vòm → khe hở) | Hết chuột, cá giữ hình, máy đứng yên; gián còn cao ngang chân bàn, gần nửa con mèo | 5 ảnh + 4 video |
+| Bản 3 (prompt video thêm câu tỉ lệ "chỉ cao bằng 1/7 Mướp, giữ đúng suốt clip") | Gián nhỏ đúng ở cảnh 1 và đầu cảnh 4; cảnh 2 máy vẫn tiến vào lúc cá rơi, gián to lên chút; cuối phim gián ~1/3 mèo ngồi | 4 video |
+
+Tổng: 19 ảnh, 12 video, 0 chữ. Kiểm chứng: dấu nén 12 clip đều core 157; bảng 4 khung/giây cả 20 giây mỗi bản; phim bản 3 h264 1280×720 24 fps có tiếng, 19,9 giây.

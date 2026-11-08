@@ -73,6 +73,13 @@ describe("prompt phim hoạt hình", () => {
     const p = cartoon.cartoonMotionPrompt(shot({ cast: ["gián Xanh", "Mướp"] }), { members });
     expect(p).toMatch(/Nhân vật trong cảnh: gián Xanh \(gián nâu quàng khăn xanh, cao 7 cm\); Mướp \(mèo mướp cam béo tròn, mắt xanh lá, cao 40 cm\); không thêm nhân vật hay con vật khác/);
     expect(p).toMatch(/Tên gọi chỉ là tên, không phải màu/);
+    // Đo 07/11: gián thò đầu ra khỏi lỗ vòm chân tường thì thành chuột; máy "đứng yên" vẫn tiến vào làm gián to bằng đầu mèo.
+    expect(p).toMatch(/giữ đúng loài.*không biến thành con vật khác/);
+    expect(p).toMatch(/Máy quay: máy đứng yên trên chân máy, không zoom, không tiến lại gần/);
+    expect(cartoon.cartoonMotionPrompt(shot({ move: "push_in" }), { members })).not.toMatch(/không zoom/);
+    // Đo 08/11 bản thử 20 giây: prompt video chỉ có "cao 6 cm" thì gián cao ngang chân bàn, gần nửa con mèo.
+    expect(p).toMatch(/Tỉ lệ kích thước, giữ đúng suốt clip, kể cả khi nhân vật đi lại gần máy quay: gián Xanh cao 7 cm.*không phóng to cho dễ nhìn/);
+    expect(cartoon.scaleLine(members)).toMatch(/^Tỉ lệ kích thước, giữ đúng trong mọi ảnh:/);
     expect(cartoon.cartoonMotionPrompt(shot({ subject: "none", cast: [] }), { members })).toMatch(/Không có nhân vật hay con vật nào xuất hiện/);
   });
 

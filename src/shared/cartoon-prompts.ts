@@ -58,8 +58,8 @@ function ratioNote(m: CastMember, all: readonly CastMember[]): string {
 }
 
 // members: những nhân vật cần nhắc; all: cả dàn (tỉ lệ luôn so với nhân vật cao nhất của cả dàn).
-export const scaleLine = (members: readonly CastMember[], all: readonly CastMember[] = members): string =>
-  `Tỉ lệ kích thước, giữ đúng trong mọi ảnh: ${members.map((m) => `${m.name} ${m.size}${ratioNote(m, all)}`).join("; ")}. Nhân vật nhỏ phải trông nhỏ hẳn bên cạnh nhân vật lớn, không phóng to cho dễ nhìn`;
+export const scaleLine = (members: readonly CastMember[], all: readonly CastMember[] = members, where = "trong mọi ảnh"): string =>
+  `Tỉ lệ kích thước, giữ đúng ${where}: ${members.map((m) => `${m.name} ${m.size}${ratioNote(m, all)}`).join("; ")}. Nhân vật nhỏ phải trông nhỏ hẳn bên cạnh nhân vật lớn, không phóng to cho dễ nhìn`;
 
 // Bộ ảnh mẫu của dàn: ảnh xếp hàng đúng tỉ lệ (view "front", cũng là ảnh đính kèm khi cảnh phải mở chat mới),
 // rồi từng nhân vật nối tiếp trong cùng chat (view "member-<n>").
@@ -168,19 +168,25 @@ function cartoonEndStates(shot: Shot): string {
   return changed.length ? `Đồ vật cuối cảnh: ${changed.map((p) => `${p.name} ${p.to}`).join(", ")}.` : "";
 }
 
-export function cartoonMotionPrompt(shot: Shot, c: { members: readonly CastMember[] }): string {
+export type CartoonPropLook = { name: string; description: string };
+
+export function cartoonMotionPrompt(shot: Shot, c: { members: readonly CastMember[]; props?: readonly CartoonPropLook[] }): string {
   const { present } = castInShot(shot, c.members);
+  const props = (c.props ?? []).filter((p) => p.description.trim());
   return [
     `Tạo video ${SHOT_SECONDS} giây từ ảnh đính kèm, giữ nguyên nhân vật, đồ vật và bối cảnh trong ảnh.`,
     `Việc xảy ra sau khung hình này: ${shot.motion.trim()}.`,
     shot.end?.trim() ? `Cuối ${SHOT_SECONDS} giây: ${shot.end.trim()}.` : "",
     cartoonEndStates(shot),
     // Tả cả ngoại hình như ảnh khung: đo 07/11/2026 chỉ có tên thì máy tạo video tô thân "gián Xanh" thành xanh, "gián Vàng"
-    // thành vàng; cảnh không nhân vật thì vẽ thêm con chuột chui ra từ lỗ tường.
+    // thành vàng, gián thò đầu ra khỏi lỗ vòm chân tường thì thành chuột; cảnh không nhân vật thì vẽ thêm con chuột.
     present.length
-      ? `Nhân vật trong cảnh: ${present.map((m) => `${m.name} (${m.look}, ${m.size})`).join("; ")}; không thêm nhân vật hay con vật khác. Tên gọi chỉ là tên, không phải màu: màu thân và mặt từng nhân vật giữ đúng như ảnh suốt clip.`
+      ? `Nhân vật trong cảnh: ${present.map((m) => `${m.name} (${m.look}, ${m.size})`).join("; ")}; không thêm nhân vật hay con vật khác. Tên gọi chỉ là tên, không phải màu: mỗi nhân vật giữ đúng loài, màu thân và mặt như ảnh suốt clip, không biến thành con vật khác. ${scaleLine(present, c.members, "suốt clip, kể cả khi nhân vật đi lại gần máy quay")}.`
       : "Không có nhân vật hay con vật nào xuất hiện.",
-    `Máy quay: ${CAMERA_MOVES[shot.move].vi}.`,
+    // Đo 07/11/2026: chỉ có tên đồ vật thì con cá nướng hoạt hình thành cá nướng thật sẫm màu giữa clip.
+    props.length ? `Đồ vật trong cảnh giữ đúng hình dáng, màu sắc và kích thước như ảnh: ${props.map((p) => `${p.name} (${p.description.trim()})`).join("; ")}.` : "",
+    // Đo 07/11/2026: "máy đứng yên" mà máy tạo video vẫn tiến vào, con gián to dần bằng đầu mèo.
+    `Máy quay: ${CAMERA_MOVES[shot.move].vi}${shot.move === "static" ? ", không zoom, không tiến lại gần, khung hình giữ nguyên cỡ suốt clip" : ""}.`,
     CARTOON_TEXT.motion,
   ]
     .filter(Boolean)
