@@ -123,9 +123,18 @@ export function keyframeStep(a: ShotInputs): KeyframeStep {
 }
 
 // Clip từ ảnh khung (hoặc khung cuối cảnh trước). Cảnh có sản phẩm: prompt video giữ chữ/logo in trên sản phẩm.
-export function clipStep(shot: Shot, providerId: string, character: ImageSetValue, keyframeMediaId: string, product?: PropSetValue): { keyParts: unknown[]; prompt: string } {
+// Hoạt hình: prompt video tả cả đồ vật của cảnh như ảnh khung; người thật không dùng `props` (khoá cũ giữ nguyên).
+export function clipStep(
+  shot: Shot,
+  providerId: string,
+  character: ImageSetValue,
+  keyframeMediaId: string,
+  product?: PropSetValue,
+  props?: PropSetValue,
+): { keyParts: unknown[]; prompt: string } {
   if (isCartoon(character.style)) {
-    const cartoon = cartoonMotionPrompt(shot, { members: character.members ?? [] });
+    const described = propsInFrame(shot, mergePropSets(product, props), product).described.map((p) => ({ name: p.name, description: p.description }));
+    const cartoon = cartoonMotionPrompt(shot, { members: character.members ?? [], props: described });
     return { keyParts: ["clip", providerId, cartoon, keyframeMediaId, SHOT_SECONDS], prompt: cartoon };
   }
   const prompt = (productInShot(shot, product) ? productMotionPrompt : motionPrompt)(shot, { character: character.description });
@@ -163,7 +172,7 @@ export function shotFromCache(shot: Shot, a: ShotCacheInputs, step: (keyParts: u
     keyframeId = a.character && a.location ? mediaIdOf(step(keyframeStep({ shot, providerId: a.providerId, character: a.character, location: a.location, props: a.props, product: a.product }).keyParts)) : undefined;
     if (keyframeId === undefined) image = 1;
   }
-  const clipId = keyframeId !== undefined && a.character ? mediaIdOf(step(clipStep(shot, a.providerId, a.character, keyframeId, a.product).keyParts)) : undefined;
+  const clipId = keyframeId !== undefined && a.character ? mediaIdOf(step(clipStep(shot, a.providerId, a.character, keyframeId, a.product, a.props).keyParts)) : undefined;
   return { calls: { image, video: clipId === undefined ? 1 : 0, text: 0 }, keyframeId, clipId };
 }
 

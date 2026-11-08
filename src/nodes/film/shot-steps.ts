@@ -140,7 +140,7 @@ export async function makeShot(ctx: NodeRunContext, a: ShotArgs): Promise<ShotRe
     }
     keyframeId = keyframe.mediaId;
     a.onKeyframe?.(keyframeId);
-    const plan = clipStep(shot, provider.id, character, keyframe.mediaId, a.product);
+    const plan = clipStep(shot, provider.id, character, keyframe.mediaId, a.product, a.props);
     clip = await ctx.step(plan.keyParts, () =>
       callProvider(ctx, provider, async () => {
         const v = await provider.generateVideo({ prompt: plan.prompt, durationSec: SHOT_SECONDS, firstFrameMediaId: keyframe.mediaId, verbatim: true }, pctx);

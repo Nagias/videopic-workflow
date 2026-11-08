@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { testCastSet } from "../../tests/helpers/cartoon";
 import type { Shot } from "./director";
-import type { ImageSetValue } from "./ports";
+import type { ImageSetValue, PropSetValue } from "./ports";
 import { keyframePrompt, motionPrompt } from "./prompts";
 import { clipStep, keyframeStep, shotFromCache, textOnlyShot } from "./shot-plan";
 
@@ -88,5 +88,15 @@ describe("dựng cảnh: người thật giữ nguyên, hoạt hình đi đườ
     expect(p).toMatch(/Cuối 5 giây: Mướp nằm dưới sàn/);
     expect(p).toMatch(/không nói thành lời/);
     expect(p).not.toMatch(/Chuyển động thật, có lực, đúng vật lý/);
+  });
+
+  const fish: PropSetValue = { kind: "props", items: [{ name: "cá nướng", description: "cá nướng vàng nâu có vệt nướng", images: [] }] };
+  it("hoạt hình: prompt video tả đồ vật trong cảnh như ảnh mẫu (đo 07/11: chỉ có tên thì con cá đổi hình giữa clip)", () => {
+    const p = clipStep(shot({ cast: ["Mướp"], props: "cá nướng: trên đĩa -> dưới sàn" }), "fake", testCastSet(), "k1", undefined, fish).prompt;
+    expect(p).toMatch(/Đồ vật trong cảnh giữ đúng hình dáng, màu sắc và kích thước như ảnh: cá nướng \(cá nướng vàng nâu có vệt nướng\)/);
+  });
+  it("người thật: truyền thêm đồ vật không đổi prompt và khoá clip", () => {
+    const s = shot({ props: "cá nướng: trên đĩa" });
+    expect(clipStep(s, "fake", realCharacter, "k1", undefined, fish)).toEqual(clipStep(s, "fake", realCharacter, "k1"));
   });
 });
